@@ -769,7 +769,7 @@ void FT2PluginEditor::readDiskOpDirectory()
                 strncpy(entry.name, file.getFileName().toRawUTF8(), sizeof(entry.name) - 1);
                 entry.name[sizeof(entry.name) - 1] = '\0';
                 entry.isDir = file.isDirectory();
-                entry.filesize = file.isDirectory() ? 0 : (int32_t)juce::jmin((int64_t)INT32_MAX, file.getSize());
+                entry.filesize = file.isDirectory() ? 0 : (int32_t)juce::jmin((juce::int64)INT32_MAX, file.getSize());
             }
         }
     }
