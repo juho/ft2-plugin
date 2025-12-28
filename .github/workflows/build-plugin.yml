@@ -2,13 +2,12 @@ name: Build Plugin
 
 on:
   push:
-    branches: [master, juce]
+    branches: [master]
     paths:
       - 'plugin/**'
       - 'src/**'
       - 'JUCE'
-  pull_request:
-    branches: [master]
+  workflow_dispatch:
 
 jobs:
   version:
@@ -120,7 +119,7 @@ jobs:
   release:
     needs: [version, build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
     env:
