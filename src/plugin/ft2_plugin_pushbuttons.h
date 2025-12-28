@@ -1,0 +1,469 @@
+/**
+ * @file ft2_plugin_pushbuttons.h
+ * @brief Push button definitions for the FT2 plugin UI.
+ * 
+ * Ported from ft2_pushbuttons.h - all coordinates preserved exactly.
+ */
+
+#pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+
+struct ft2_video_t;
+struct ft2_bmp_t;
+struct ft2_instance_t;
+
+enum
+{
+	/* Reserved pushbuttons for system dialogs */
+	PB_RES_1,
+	PB_RES_2,
+	PB_RES_3,
+	PB_RES_4,
+	PB_RES_5,
+	PB_RES_6,
+	PB_RES_7,
+	PB_RES_8,
+
+	/* Position editor */
+	PB_POSED_POS_UP,
+	PB_POSED_POS_DOWN,
+	PB_POSED_INS,
+	PB_POSED_PATT_UP,
+	PB_POSED_PATT_DOWN,
+	PB_POSED_DEL,
+	PB_POSED_LEN_UP,
+	PB_POSED_LEN_DOWN,
+	PB_POSED_REP_UP,
+	PB_POSED_REP_DOWN,
+
+	/* Song/Pattern */
+	PB_BPM_UP,
+	PB_BPM_DOWN,
+	PB_SPEED_UP,
+	PB_SPEED_DOWN,
+	PB_EDITADD_UP,
+	PB_EDITADD_DOWN,
+	PB_PATT_UP,
+	PB_PATT_DOWN,
+	PB_PATTLEN_UP,
+	PB_PATTLEN_DOWN,
+	PB_PATT_EXPAND,
+	PB_PATT_SHRINK,
+
+	/* Logo */
+	PB_LOGO,
+	PB_BADGE,
+
+	/* Main menu */
+	PB_ABOUT,
+	PB_NIBBLES,
+	PB_KILL,
+	PB_TRIM,
+	PB_EXTEND_VIEW,
+	PB_TRANSPOSE,
+	PB_INST_ED_EXT,
+	PB_SMP_ED_EXT,
+	PB_ADV_EDIT,
+	PB_ADD_CHANNELS,
+	PB_SUB_CHANNELS,
+	PB_PLAY_SONG,
+	PB_PLAY_PATT,
+	PB_STOP,
+	PB_RECORD_SONG,
+	PB_RECORD_PATT,
+	PB_DISK_OP,
+	PB_INST_ED,
+	PB_SMP_ED,
+	PB_CONFIG,
+	PB_HELP,
+	PB_EXIT_EXT_PATT,
+
+	/* Instrument switcher */
+	PB_RANGE1,
+	PB_RANGE2,
+	PB_RANGE3,
+	PB_RANGE4,
+	PB_RANGE5,
+	PB_RANGE6,
+	PB_RANGE7,
+	PB_RANGE8,
+	PB_RANGE9,
+	PB_RANGE10,
+	PB_RANGE11,
+	PB_RANGE12,
+	PB_RANGE13,
+	PB_RANGE14,
+	PB_RANGE15,
+	PB_RANGE16,
+	PB_SWAP_BANK,
+	PB_SAMPLE_LIST_UP,
+	PB_SAMPLE_LIST_DOWN,
+
+	/* Nibbles */
+	PB_NIBBLES_PLAY,
+	PB_NIBBLES_HELP,
+	PB_NIBBLES_HIGHS,
+	PB_NIBBLES_EXIT,
+
+	/* Advanced edit */
+	PB_REMAP_TRACK,
+	PB_REMAP_PATTERN,
+	PB_REMAP_SONG,
+	PB_REMAP_BLOCK,
+
+	/* About */
+	PB_EXIT_ABOUT,
+
+	/* Help */
+	PB_HELP_EXIT,
+	PB_HELP_SCROLL_UP,
+	PB_HELP_SCROLL_DOWN,
+
+	/* Pattern editor */
+	PB_CHAN_SCROLL_LEFT,
+	PB_CHAN_SCROLL_RIGHT,
+
+	/* Transpose */
+	PB_TRANSP_CUR_INS_TRK_UP,
+	PB_TRANSP_CUR_INS_TRK_DN,
+	PB_TRANSP_CUR_INS_TRK_12UP,
+	PB_TRANSP_CUR_INS_TRK_12DN,
+	PB_TRANSP_ALL_INS_TRK_UP,
+	PB_TRANSP_ALL_INS_TRK_DN,
+	PB_TRANSP_ALL_INS_TRK_12UP,
+	PB_TRANSP_ALL_INS_TRK_12DN,
+	PB_TRANSP_CUR_INS_PAT_UP,
+	PB_TRANSP_CUR_INS_PAT_DN,
+	PB_TRANSP_CUR_INS_PAT_12UP,
+	PB_TRANSP_CUR_INS_PAT_12DN,
+	PB_TRANSP_ALL_INS_PAT_UP,
+	PB_TRANSP_ALL_INS_PAT_DN,
+	PB_TRANSP_ALL_INS_PAT_12UP,
+	PB_TRANSP_ALL_INS_PAT_12DN,
+	PB_TRANSP_CUR_INS_SNG_UP,
+	PB_TRANSP_CUR_INS_SNG_DN,
+	PB_TRANSP_CUR_INS_SNG_12UP,
+	PB_TRANSP_CUR_INS_SNG_12DN,
+	PB_TRANSP_ALL_INS_SNG_UP,
+	PB_TRANSP_ALL_INS_SNG_DN,
+	PB_TRANSP_ALL_INS_SNG_12UP,
+	PB_TRANSP_ALL_INS_SNG_12DN,
+	PB_TRANSP_CUR_INS_BLK_UP,
+	PB_TRANSP_CUR_INS_BLK_DN,
+	PB_TRANSP_CUR_INS_BLK_12UP,
+	PB_TRANSP_CUR_INS_BLK_12DN,
+	PB_TRANSP_ALL_INS_BLK_UP,
+	PB_TRANSP_ALL_INS_BLK_DN,
+	PB_TRANSP_ALL_INS_BLK_12UP,
+	PB_TRANSP_ALL_INS_BLK_12DN,
+
+	/* Sample editor */
+	PB_SAMP_SCROLL_LEFT,
+	PB_SAMP_SCROLL_RIGHT,
+	PB_SAMP_PNOTE_UP,
+	PB_SAMP_PNOTE_DOWN,
+	PB_SAMP_STOP,
+	PB_SAMP_PWAVE,
+	PB_SAMP_PRANGE,
+	PB_SAMP_PDISPLAY,
+	PB_SAMP_SHOW_RANGE,
+	PB_SAMP_RANGE_ALL,
+	PB_SAMP_CLR_RANGE,
+	PB_SAMP_ZOOM_OUT,
+	PB_SAMP_SHOW_ALL,
+	PB_SAMP_SAVE_RNG,
+	PB_SAMP_CUT,
+	PB_SAMP_COPY,
+	PB_SAMP_PASTE,
+	PB_SAMP_CROP,
+	PB_SAMP_VOLUME,
+	PB_SAMP_EFFECTS,
+	PB_SAMP_EXIT,
+	PB_SAMP_CLEAR,
+	PB_SAMP_MIN,
+	PB_SAMP_REPEAT_UP,
+	PB_SAMP_REPEAT_DOWN,
+	PB_SAMP_REPLEN_UP,
+	PB_SAMP_REPLEN_DOWN,
+
+	/* Sample editor effects */
+	PB_SAMPFX_CYCLES_UP,
+	PB_SAMPFX_CYCLES_DOWN,
+	PB_SAMPFX_TRIANGLE,
+	PB_SAMPFX_SAW,
+	PB_SAMPFX_SINE,
+	PB_SAMPFX_SQUARE,
+	PB_SAMPFX_RESO_UP,
+	PB_SAMPFX_RESO_DOWN,
+	PB_SAMPFX_LOWPASS,
+	PB_SAMPFX_HIGHPASS,
+	PB_SAMPFX_SUB_BASS,
+	PB_SAMPFX_SUB_TREBLE,
+	PB_SAMPFX_ADD_BASS,
+	PB_SAMPFX_ADD_TREBLE,
+	PB_SAMPFX_SET_AMP,
+	PB_SAMPFX_UNDO,
+	PB_SAMPFX_XFADE,
+	PB_SAMPFX_BACK,
+
+	/* Sample editor extension */
+	PB_SAMP_EXT_CLEAR_COPYBUF,
+	PB_SAMP_EXT_CONV,
+	PB_SAMP_EXT_ECHO,
+	PB_SAMP_EXT_BACKWARDS,
+	PB_SAMP_EXT_CONV_W,
+	PB_SAMP_EXT_MORPH,
+	PB_SAMP_EXT_COPY_INS,
+	PB_SAMP_EXT_COPY_SMP,
+	PB_SAMP_EXT_XCHG_INS,
+	PB_SAMP_EXT_XCHG_SMP,
+	PB_SAMP_EXT_RESAMPLE,
+	PB_SAMP_EXT_MIX_SAMPLE,
+
+	/* Instrument editor */
+	PB_INST_VDEF1,
+	PB_INST_VDEF2,
+	PB_INST_VDEF3,
+	PB_INST_VDEF4,
+	PB_INST_VDEF5,
+	PB_INST_VDEF6,
+	PB_INST_PDEF1,
+	PB_INST_PDEF2,
+	PB_INST_PDEF3,
+	PB_INST_PDEF4,
+	PB_INST_PDEF5,
+	PB_INST_PDEF6,
+	PB_INST_EXIT,
+	PB_INST_VP_ADD,
+	PB_INST_VP_DEL,
+	PB_INST_VS_UP,
+	PB_INST_VS_DOWN,
+	PB_INST_VREPS_UP,
+	PB_INST_VREPS_DOWN,
+	PB_INST_VREPE_UP,
+	PB_INST_VREPE_DOWN,
+	PB_INST_PP_ADD,
+	PB_INST_PP_DEL,
+	PB_INST_PS_UP,
+	PB_INST_PS_DOWN,
+	PB_INST_PREPS_UP,
+	PB_INST_PREPS_DOWN,
+	PB_INST_PREPE_UP,
+	PB_INST_PREPE_DOWN,
+	PB_INST_VOL_DOWN,
+	PB_INST_VOL_UP,
+	PB_INST_PAN_DOWN,
+	PB_INST_PAN_UP,
+	PB_INST_FTUNE_DOWN,
+	PB_INST_FTUNE_UP,
+	PB_INST_FADEOUT_DOWN,
+	PB_INST_FADEOUT_UP,
+	PB_INST_VIBSPEED_DOWN,
+	PB_INST_VIBSPEED_UP,
+	PB_INST_VIBDEPTH_DOWN,
+	PB_INST_VIBDEPTH_UP,
+	PB_INST_VIBSWEEP_DOWN,
+	PB_INST_VIBSWEEP_UP,
+	PB_INST_OCT_UP,
+	PB_INST_HALFTONE_UP,
+	PB_INST_OCT_DOWN,
+	PB_INST_HALFTONE_DOWN,
+
+	/* Instrument editor extension */
+	PB_INST_EXT_MIDI_CH_DOWN,
+	PB_INST_EXT_MIDI_CH_UP,
+	PB_INST_EXT_MIDI_PRG_DOWN,
+	PB_INST_EXT_MIDI_PRG_UP,
+	PB_INST_EXT_MIDI_BEND_DOWN,
+	PB_INST_EXT_MIDI_BEND_UP,
+
+	/* Trim screen */
+	PB_TRIM_CALC,
+	PB_TRIM_TRIM,
+
+	/* Config left panel */
+	PB_CONFIG_RESET,
+	PB_CONFIG_LOAD,
+	PB_CONFIG_SAVE,
+	PB_CONFIG_EXIT,
+
+	/* Config audio */
+	PB_CONFIG_AUDIO_RESCAN,
+	PB_CONFIG_AUDIO_OUTPUT_DOWN,
+	PB_CONFIG_AUDIO_OUTPUT_UP,
+	PB_CONFIG_AUDIO_INPUT_DOWN,
+	PB_CONFIG_AUDIO_INPUT_UP,
+	PB_CONFIG_AMP_DOWN,
+	PB_CONFIG_AMP_UP,
+	PB_CONFIG_MASTVOL_DOWN,
+	PB_CONFIG_MASTVOL_UP,
+
+	/* Config layout */
+	PB_CONFIG_PAL_R_DOWN,
+	PB_CONFIG_PAL_R_UP,
+	PB_CONFIG_PAL_G_DOWN,
+	PB_CONFIG_PAL_G_UP,
+	PB_CONFIG_PAL_B_DOWN,
+	PB_CONFIG_PAL_B_UP,
+	PB_CONFIG_PAL_CONT_DOWN,
+	PB_CONFIG_PAL_CONT_UP,
+
+	/* Config miscellaneous */
+	PB_CONFIG_QUANTIZE_UP,
+	PB_CONFIG_QUANTIZE_DOWN,
+	PB_CONFIG_MIDICHN_UP,
+	PB_CONFIG_MIDICHN_DOWN,
+	PB_CONFIG_MIDITRANS_UP,
+	PB_CONFIG_MIDITRANS_DOWN,
+	PB_CONFIG_MIDISENS_DOWN,
+	PB_CONFIG_MIDISENS_UP,
+
+	/* Disk op */
+	PB_DISKOP_SAVE,
+	PB_DISKOP_DELETE,
+	PB_DISKOP_RENAME,
+	PB_DISKOP_MAKEDIR,
+	PB_DISKOP_REFRESH,
+	PB_DISKOP_SET_PATH,
+	PB_DISKOP_SHOW_ALL,
+	PB_DISKOP_EXIT,
+	PB_DISKOP_ROOT,
+	PB_DISKOP_PARENT,
+	PB_DISKOP_HOME,
+	PB_DISKOP_LIST_UP,
+	PB_DISKOP_LIST_DOWN,
+
+	/* WAV renderer */
+	PB_WAV_RENDER,
+	PB_WAV_EXIT,
+	PB_WAV_FREQ_UP,
+	PB_WAV_FREQ_DOWN,
+	PB_WAV_AMP_UP,
+	PB_WAV_AMP_DOWN,
+	PB_WAV_START_UP,
+	PB_WAV_START_DOWN,
+	PB_WAV_END_UP,
+	PB_WAV_END_DOWN,
+
+	NUM_PUSHBUTTONS
+};
+
+enum
+{
+	PUSHBUTTON_UNPRESSED = 0,
+	PUSHBUTTON_PRESSED = 1
+};
+
+/* Button delay after first trigger */
+#define BUTTON_DOWN_DELAY 25
+
+/* Special characters for button graphics */
+#define ARROW_UP_STRING    "\x01"
+#define ARROW_DOWN_STRING  "\x02"
+#define ARROW_LEFT_STRING  "\x03"
+#define ARROW_RIGHT_STRING "\x04"
+#define SMALL_1_STRING     "\x05"
+#define SMALL_2_STRING     "\x06"
+#define SMALL_3_STRING     "\x07"
+#define SMALL_4_STRING     "\x08"
+#define SMALL_5_STRING     "\x09"
+#define SMALL_6_STRING     "\x0A"
+
+typedef void (*pbCallback_t)(struct ft2_instance_t *inst);
+
+typedef struct pushButton_t
+{
+	uint16_t x, y, w, h;
+	uint8_t preDelay, delayFrames;
+	const char *caption;
+	const char *caption2;
+	pbCallback_t callbackFuncOnDown;
+	pbCallback_t callbackFuncOnUp;
+	uint8_t state;
+	bool bitmapFlag;
+	bool visible;
+	const uint8_t *bitmapUnpressed;
+	const uint8_t *bitmapPressed;
+} pushButton_t;
+
+extern pushButton_t pushButtons[NUM_PUSHBUTTONS];
+
+/**
+ * Initialize push buttons array.
+ */
+void initPushButtons(void);
+
+/**
+ * Draw a push button.
+ * @param video Video context
+ * @param bmp Bitmap assets
+ * @param pushButtonID Button ID
+ */
+void drawPushButton(struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t pushButtonID);
+
+/**
+ * Show a push button (make visible and draw).
+ * @param video Video context
+ * @param bmp Bitmap assets
+ * @param pushButtonID Button ID
+ */
+void showPushButton(struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t pushButtonID);
+
+/**
+ * Hide a push button.
+ * @param pushButtonID Button ID
+ */
+void hidePushButton(uint16_t pushButtonID);
+
+/**
+ * Test if mouse click is on a push button.
+ * @param mouseX Mouse X coordinate
+ * @param mouseY Mouse Y coordinate
+ * @param sysReqShown Whether system request dialog is shown
+ * @return Button ID if clicked, -1 otherwise
+ */
+int16_t testPushButtonMouseDown(struct ft2_instance_t *inst, int32_t mouseX, int32_t mouseY, bool sysReqShown);
+
+/**
+ * Handle push button mouse release.
+ * @param inst FT2 instance
+ * @param video Video context
+ * @param bmp Bitmap assets
+ * @param mouseX Mouse X coordinate
+ * @param mouseY Mouse Y coordinate
+ * @param lastButtonID Last button that was pressed
+ * @param runCallback Whether to run callback
+ * @return Button ID if released on button, -1 otherwise
+ */
+int16_t testPushButtonMouseRelease(struct ft2_instance_t *inst, struct ft2_video_t *video,
+	const struct ft2_bmp_t *bmp, int32_t mouseX, int32_t mouseY, int16_t lastButtonID, bool runCallback);
+
+/**
+ * Handle continuous push button interaction while mouse is held down.
+ * @param inst FT2 instance
+ * @param video Video context
+ * @param bmp Bitmap assets
+ * @param mouseX Mouse X coordinate
+ * @param mouseY Mouse Y coordinate
+ * @param buttonID Button ID being held
+ */
+void handlePushButtonWhileMouseDown(struct ft2_instance_t *inst, struct ft2_video_t *video,
+	const struct ft2_bmp_t *bmp, int32_t mouseX, int32_t mouseY, int16_t buttonID,
+	bool *firstTimePressingButton, uint8_t *buttonCounter);
+
+/**
+ * Set logo type (which FT2 logo to display).
+ * @param bmp Bitmap assets
+ * @param logoType 0 or 1 for different logo styles
+ */
+void changeLogoType(const struct ft2_bmp_t *bmp, uint8_t logoType);
+
+/**
+ * Set badge type (which badge to display).
+ * @param bmp Bitmap assets
+ * @param badgeType Badge style (0-3)
+ */
+void changeBadgeType(const struct ft2_bmp_t *bmp, uint8_t badgeType);
+

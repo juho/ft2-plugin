@@ -1,10 +1,10 @@
-
 vs2019_project/.vs/ft2-clone/v16/.suo
 vs2019_project/enc_temp_folder/*
 vs2019_project/ft2-clone/Release/ft2-clone.vcxproj.FileListAbsolute.txt
 vs2019_project/ft2-clone/x64/Debug/ft2-clone.vcxproj.FileListAbsolute.txt
 vs2019_project/ft2-clone/Debug/ft2-clone.vcxproj.FileListAbsolute.txt
 .DS_Store
+**/.DS_Store
 *.exe
 *.db
 *.ilk
@@ -24,3 +24,4 @@ vs2019_project/ft2-clone/Debug/ft2-clone.vcxproj.FileListAbsolute.txt
 *.iobj
 *.enc
 release/macos/ft2-clone-macos.app/Contents/MacOS/ft2-clone-macos
+plugin/build/

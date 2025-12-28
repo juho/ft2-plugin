@@ -1,44 +1,24 @@
-# ft2-clone
-Fasttracker II clone for Windows/macOS/Linux
+# ft2-plugin
 
-Aims to be a highly accurate clone of the classic Fasttracker II software for MS-DOS. \
-The XM player itself has been directly ported from the original source code, for maximum accuracy. \
-The code is partly my own, partly based on the original FT2 code.
+This is a fork of [8bitbubsy's standalone ft2-clone](https://github.com/8bitbubsy/ft2-clone), including *a full rewrite* of the code to a multi-instance aware VST3/AU/LV2 plugin by [Blamstrain/TPOLM](https://blamstrain.com) with DAW sync capabilities.
 
-*What is Fasttracker II? Read about it on [Wikipedia](https://en.wikipedia.org/wiki/FastTracker_2).*
+**Consider the plugin ALPHA software.** I've tried to match standalone behavior as closely as possible. As it's a rewrite, there are still bugs and some divergence from the standalone version, however there should be no show-stopping crash bugs at this stage. If you find any issues **IN THE PLUGIN**, please report them with thorough reproduction steps.
 
-# Releases
-Windows/macOS binary releases can always be found at [16-bits.org](https://16-bits.org/ft2.php).
+**Standalone builds are not a concern in this repository.**
 
-Linux binaries can be found [here](https://repology.org/project/fasttracker2/versions). \
-If these don't work for you, you'll have to compile the code manually.
+All credit goes to [8bitbubsy](https://16-bits.org) for his tireless work on the port from original, on which the plugin is based on. The plugin version is in its own folder so further updates from the standalone version can be pulled in, compared and integrated.
 
-# Improvements over original DOS version
-- New sample editor features, like waveform generators and resonant filters
-- The channel resampler/mixer uses floating-point arithmetics for less errors, and has extra interpolation options (3-point quadratic spline, 4-point cubic spline, 8-point/16-point windowed-sinc)
-- The sample loader supports FLAC/AIFF/BRR (SNES) samples and more WAV types than original FT2. It will also attempt to tune the sample (finetune and rel. note) to its playback frequency on load.
-- It contains a new "Trim" feature, which will remove unused stuff to potentially make the module smaller
-- Drag n' drop of modules/samples
-- The waveform display in the sample editor shows peak based data when zoomed out
-- Text boxes has a text marking option, where you can cut/copy/paste
-- MOD/STM/S3M import has been slightly improved (S3M import is still not ideal, as it's not compatible with XM)
-- Supports loading DIGI Booster (non-Pro) modules
-- Supports loading Impulse Tracker modules (Awful support! Don't use this for playback)
-- It supports loading XMs with stereo samples, uneven amount of channels, more than 32 channels, more than 16 samples per instrument, more than 128 patterns etc. The unsupported data will be mixed to mono/truncated.
-- It has some small additions to make life easier (C4/middle-C Hz display in Instr. Ed., envelope point coordinate display, etc).
+## Changes from standalone version
 
-# Screenshots
+- General: Compiles as VST2/VST3/AU/LV2 plugin using JUCE framework.
+- General: DAW sync to BPM and transport (toggleable in config).
+- General: Only XM, MOD and S3M modules are supported.
+- General: Some config settings do not make sense in a plugin, so they have been disabled.
+- Graphics: Uses OpenGL instead of SDL.
+- Disk op: WAV save option is removed (if you need to save a WAV, use the standalone version).
+- Disk op: Rename and delete disk operation buttons are removed.
+- Config: Settings for DAW transport, BPM and position sync have been added.
 
-![Example #1](https://16-bits.org/ft2-clone-3.png)
-![Example #2](https://16-bits.org/ft2-clone-4.png)
+## License
 
-# Compiling the code
-Build instructions can be found in the repository (HOW-TO-COMPILE.txt).
-
-Keep in mind that the program may fail to compile on Linux, depending on your distribution and GCC version. \
-Please don't nag me about it, and try to use the Linux packages linked to from [16-bits.org](https://16-bits.org/ft2.php) instead.
-
-PS: The source code is quite hackish and hardcoded. \
-My first priority is to make an accurate clone, and not to make flexible and easily modifiable code.
-
-Big parts of the code (except GUI) are directly ported from the original FT2 source code, with permission to use a BSD 3-Clause license.
+Same as standalone version: BSD 3-Clause License.

@@ -1,0 +1,624 @@
+/**
+ * @file ft2_plugin_palette.c
+ * @brief Palette/color scheme handling for the FT2 plugin.
+ * 
+ * Ported from ft2_palette.c in the standalone version.
+ */
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <math.h>
+#include <stdio.h>
+
+#include "ft2_plugin_video.h"
+#include "ft2_plugin_config.h"
+#include "ft2_plugin_palette.h"
+#include "ft2_plugin_bmp.h"
+#include "ft2_plugin_scrollbars.h"
+#include "ft2_plugin_pushbuttons.h"
+#include "ft2_plugin_radiobuttons.h"
+#include "ft2_plugin_dialog.h"
+#include "ft2_plugin_ui.h"
+#include "../ft2_instance.h"
+
+/* Current selected color entry (0-5: Pattern text, Block mark, Text on block, Mouse, Desktop, Buttons) */
+uint8_t cfg_ColorNum = 0;
+
+/* Current slider values */
+static uint8_t cfg_Red, cfg_Green, cfg_Blue, cfg_Contrast;
+
+/* Maps color entry index to actual palette index */
+static const uint8_t FTC_EditOrder[6] = { PAL_PATTEXT, PAL_BLCKMRK, PAL_BLCKTXT, PAL_MOUSEPT, PAL_DESKTOP, PAL_BUTTONS };
+
+/* For contrast calculation on desktop/buttons */
+static const uint8_t scaleOrder[3] = { 8, 4, 9 };
+
+/* Contrast values for desktop/buttons per palette preset */
+static uint8_t palContrast[12][2] = {
+	{59, 55}, {59, 53}, {56, 59}, {68, 55}, {57, 59}, {48, 55},
+	{66, 62}, {68, 57}, {58, 42}, {57, 55}, {62, 57}, {52, 57}
+};
+
+/* FT2 palettes (18-bit VGA RGB, 16 color palette) - copied from ft2_tables.c */
+pal16 pluginPalTable[12][16] = {
+	{ /* PAL_ARCTIC */
+		{0, 0, 0},{30, 38, 63},{0, 0, 17},{63, 63, 63},
+		{27, 36, 40},{63, 63, 63},{40, 40, 40},{0, 0, 0},
+		{10, 13, 14},{49, 63, 63},{15, 15, 15},{63, 63, 63},
+		{63, 63, 63},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	},
+	{ /* PAL_AURORA_BOREALIS */
+		{0, 0, 0},{21, 40, 63},{0, 0, 17},{63, 63, 63},
+		{6, 39, 35},{63, 63, 63},{40, 40, 40},{0, 0, 0},
+		{2, 14, 13},{11, 63, 63},{16, 16, 16},{63, 63, 63},
+		{63, 63, 63},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	},
+	{ /* PAL_BLUES */
+		{0, 0, 0},{39, 52, 63},{8, 8, 13},{57, 57, 63},
+		{10, 21, 33},{63, 63, 63},{37, 37, 45},{0, 0, 0},
+		{4, 8, 13},{18, 37, 58},{13, 13, 16},{63, 63, 63},
+		{63, 63, 63},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	},
+	{ /* PAL_GOLD */
+		{0, 0, 0},{47, 47, 47},{9, 9, 9},{63, 63, 63},
+		{37, 29, 7},{63, 63, 63},{40, 40, 40},{0, 0, 0},
+		{11, 9, 2},{63, 58, 14},{15, 15, 15},{63, 63, 63},
+		{63, 63, 63},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	},
+	{ /* PAL_HEAVY_METAL */
+		{0, 0, 0},{46, 45, 46},{13, 9, 9},{63, 63, 63},
+		{22, 19, 22},{63, 63, 63},{36, 32, 34},{0, 0, 0},
+		{8, 7, 8},{39, 34, 39},{13, 12, 12},{63, 58, 62},
+		{63, 63, 63},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	},
+	{ /* PAL_JUNGLE */
+		{0, 0, 0},{19, 49, 54},{0, 11, 7},{52, 63, 61},
+		{9, 31, 21},{63, 63, 63},{40, 40, 40},{0, 0, 0},
+		{4, 13, 9},{15, 50, 34},{15, 15, 15},{63, 63, 63},
+		{63, 63, 63},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	},
+	{ /* PAL_LITHE_DARK */
+		{0, 0, 0},{27, 37, 53},{0, 0, 20},{63, 63, 63},
+		{7, 12, 21},{63, 63, 63},{38, 39, 39},{0, 0, 0},
+		{2, 4, 7},{14, 23, 41},{13, 13, 13},{63, 63, 63},
+		{63, 63, 63},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	},
+	{ /* PAL_ROSE */
+		{0, 0, 0},{63, 54, 62},{18, 3, 3},{63, 63, 63},
+		{36, 19, 25},{63, 63, 63},{40, 40, 40},{0, 0, 0},
+		{11, 6, 8},{63, 38, 50},{15, 15, 15},{63, 63, 63},
+		{63, 63, 63},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	},
+	{ /* PAL_DARK_MODE */
+		{0, 0, 0},{31, 36, 42},{6, 6, 9},{47, 50, 54},
+		{11, 12, 13},{55, 55, 56},{32, 32, 33},{0, 0, 0},
+		{3, 4, 4},{22, 24, 26},{15, 15, 15},{50, 50, 52},
+		{55, 55, 56},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	},
+	{ /* PAL_VIOLENT */
+		{0, 0, 0},{50, 46, 63},{15, 0, 16},{59, 58, 63},
+		{34, 21, 41},{63, 63, 63},{40, 40, 40},{0, 0, 0},
+		{13, 8, 15},{61, 37, 63},{15, 15, 15},{63, 63, 63},
+		{63, 63, 63},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	},
+	{ /* PAL_WHY_COLORS */
+		{0, 0, 0},{63, 63, 32},{10, 10, 10},{63, 63, 63},
+		{18, 29, 32},{63, 63, 63},{39, 39, 39},{0, 0, 0},
+		{6, 10, 11},{34, 54, 60},{15, 15, 15},{63, 63, 63},
+		{63, 63, 63},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	},
+	{ /* PAL_USER_DEFINED - default to Blues-ish */
+		{0, 0, 0},{36, 47, 63},{9, 9, 16},{63, 63, 63},
+		{19, 24, 38},{63, 63, 63},{39, 39, 39},{0, 0, 0},
+		{8, 10, 15},{32, 41, 63},{15, 15, 15},{63, 63, 63},
+		{63, 63, 63},{63, 63, 63},{63, 63, 63},{63, 63, 63}
+	}
+};
+
+uint8_t palMax(int32_t c)
+{
+	if (c < 0) return 0;
+	if (c > 63) return 63;
+	return (uint8_t)c;
+}
+
+static double palPow(double dX, double dY)
+{
+	if (dY == 1.0)
+		return dX;
+
+	dY *= log(fabs(dX));
+	if (dY < -86.0) dY = -86.0;
+	if (dY > 86.0) dY = 86.0;
+
+	return exp(dY);
+}
+
+void setPal16(ft2_video_t *video, pal16 *p, bool redrawScreen)
+{
+#define LOOP_PIN_COL_SUB 96
+#define TEXT_MARK_COLOR 0x0078D7
+#define BOX_SELECT_COLOR 0x7F7F7F
+
+	int16_t r, g, b;
+
+	if (video == NULL)
+		return;
+
+	/* Set main palette with 6-bit to 8-bit conversion */
+	for (int32_t i = 0; i < 16; i++)
+	{
+		r = P6_TO_P8(p[i].r);
+		g = P6_TO_P8(p[i].g);
+		b = P6_TO_P8(p[i].b);
+
+		video->palette[i] = ((uint32_t)i << 24) | RGB32(r, g, b);
+	}
+
+	/* Set custom FT2 clone palette entries */
+	video->palette[PAL_TEXTMRK] = ((uint32_t)PAL_TEXTMRK << 24) | TEXT_MARK_COLOR;
+	video->palette[PAL_BOXSLCT] = ((uint32_t)PAL_BOXSLCT << 24) | BOX_SELECT_COLOR;
+
+	r = RGB32_R(video->palette[PAL_PATTEXT]);
+	g = RGB32_G(video->palette[PAL_PATTEXT]);
+	b = RGB32_B(video->palette[PAL_PATTEXT]);
+
+	r = (r - LOOP_PIN_COL_SUB > 0) ? r - LOOP_PIN_COL_SUB : 0;
+	g = (g - LOOP_PIN_COL_SUB > 0) ? g - LOOP_PIN_COL_SUB : 0;
+	b = (b - LOOP_PIN_COL_SUB > 0) ? b - LOOP_PIN_COL_SUB : 0;
+
+	video->palette[PAL_LOOPPIN] = ((uint32_t)PAL_LOOPPIN << 24) | RGB32(r, g, b);
+
+	/* Update framebuffer pixels with new palette */
+	if (redrawScreen && video->frameBuffer != NULL)
+	{
+		for (int32_t i = 0; i < SCREEN_W * SCREEN_H; i++)
+			video->frameBuffer[i] = video->palette[(video->frameBuffer[i] >> 24) & 15];
+	}
+}
+
+/* Flag to prevent multiple error dialogs during drag */
+static bool colorErrorShown = false;
+
+static void showColorErrorMsg(ft2_instance_t *inst)
+{
+	if (colorErrorShown)
+		return;
+
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (ui != NULL)
+	{
+		ft2_dialog_show_message(&ui->dialog, "System message", "Default colors cannot be modified.");
+		colorErrorShown = true;
+	}
+	(void)inst;
+}
+
+/* Called when mouse button is released to reset the error flag */
+void resetPaletteErrorFlag(void)
+{
+	colorErrorShown = false;
+}
+
+void drawCurrentPaletteColor(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+{
+	if (inst == NULL || video == NULL || bmp == NULL)
+		return;
+
+	const uint8_t palIndex = FTC_EditOrder[cfg_ColorNum];
+
+	const uint8_t r = P6_TO_P8(cfg_Red);
+	const uint8_t g = P6_TO_P8(cfg_Green);
+	const uint8_t b = P6_TO_P8(cfg_Blue);
+
+	/* Draw "Palette:" label */
+	textOutShadow(video, bmp, 516, 3, PAL_FORGRND, PAL_DSKTOP2, "Palette:");
+
+	/* Draw hex color value */
+	uint32_t color = RGB32(r, g, b) & 0xFFFFFF;
+	hexOutBg(video, bmp, 573, 3, PAL_FORGRND, PAL_DESKTOP, color, 6);
+
+	/* Draw color preview box */
+	clearRect(video, 616, 2, 12, 10);
+	fillRect(video, 617, 3, 10, 8, palIndex);
+}
+
+void updatePaletteEditor(ft2_instance_t *inst, ft2_video_t *video)
+{
+	if (inst == NULL)
+		return;
+
+	const uint8_t colorNum = FTC_EditOrder[cfg_ColorNum];
+	const uint8_t palNum = inst->config.palettePreset;
+
+	cfg_Red = pluginPalTable[palNum][colorNum].r;
+	cfg_Green = pluginPalTable[palNum][colorNum].g;
+	cfg_Blue = pluginPalTable[palNum][colorNum].b;
+
+	if (cfg_ColorNum == 4 || cfg_ColorNum == 5)
+		cfg_Contrast = palContrast[palNum][cfg_ColorNum - 4];
+	else
+		cfg_Contrast = 0;
+
+	setScrollBarPos(inst, video, SB_PAL_R, cfg_Red, false);
+	setScrollBarPos(inst, video, SB_PAL_G, cfg_Green, false);
+	setScrollBarPos(inst, video, SB_PAL_B, cfg_Blue, false);
+	setScrollBarPos(inst, video, SB_PAL_CONTRAST, cfg_Contrast, false);
+}
+
+static void paletteDragMoved(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (inst == NULL || ui == NULL)
+		return;
+
+	ft2_video_t *video = &ui->video;
+
+	if (inst->config.palettePreset != PAL_USER_DEFINED)
+	{
+		updatePaletteEditor(inst, video);
+		showColorErrorMsg(inst);
+		return;
+	}
+
+	const uint8_t colorNum = FTC_EditOrder[cfg_ColorNum];
+	const uint8_t p = inst->config.palettePreset;
+
+	pluginPalTable[p][colorNum].r = cfg_Red;
+	pluginPalTable[p][colorNum].g = cfg_Green;
+	pluginPalTable[p][colorNum].b = cfg_Blue;
+
+	if (cfg_ColorNum == 4 || cfg_ColorNum == 5)
+	{
+		double dRed = cfg_Red;
+		double dGreen = cfg_Green;
+		double dBlue = cfg_Blue;
+
+		int32_t contrast = cfg_Contrast;
+		if (contrast < 1)
+			contrast = 1;
+
+		const double dContrast = contrast * (1.0 / 40.0);
+
+		for (int32_t i = 0; i < 3; i++)
+		{
+			const int32_t k = scaleOrder[i] + (cfg_ColorNum - 4) * 2;
+
+			double dMul = palPow((i + 1) * (1.0 / 2.0), dContrast);
+
+			pluginPalTable[p][k].r = palMax((int32_t)((dRed * dMul) + 0.5));
+			pluginPalTable[p][k].g = palMax((int32_t)((dGreen * dMul) + 0.5));
+			pluginPalTable[p][k].b = palMax((int32_t)((dBlue * dMul) + 0.5));
+		}
+
+		palContrast[p][cfg_ColorNum - 4] = cfg_Contrast;
+	}
+	else
+	{
+		cfg_Contrast = 0;
+
+		setScrollBarPos(inst, video, SB_PAL_R, cfg_Red, false);
+		setScrollBarPos(inst, video, SB_PAL_G, cfg_Green, false);
+		setScrollBarPos(inst, video, SB_PAL_B, cfg_Blue, false);
+	}
+
+	setScrollBarPos(inst, video, SB_PAL_CONTRAST, cfg_Contrast, false);
+
+	setPal16(video, pluginPalTable[inst->config.palettePreset], true);
+	drawCurrentPaletteColor(inst, video, &ui->bmp);
+}
+
+/* Scrollbar position callbacks */
+
+void sbPalRPos(ft2_instance_t *inst, uint32_t pos)
+{
+	if (cfg_Red != (uint8_t)pos)
+	{
+		cfg_Red = (uint8_t)pos;
+		paletteDragMoved(inst);
+	}
+}
+
+void sbPalGPos(ft2_instance_t *inst, uint32_t pos)
+{
+	if (cfg_Green != (uint8_t)pos)
+	{
+		cfg_Green = (uint8_t)pos;
+		paletteDragMoved(inst);
+	}
+}
+
+void sbPalBPos(ft2_instance_t *inst, uint32_t pos)
+{
+	if (cfg_Blue != (uint8_t)pos)
+	{
+		cfg_Blue = (uint8_t)pos;
+		paletteDragMoved(inst);
+	}
+}
+
+void sbPalContrastPos(ft2_instance_t *inst, uint32_t pos)
+{
+	if (cfg_Contrast != (uint8_t)pos)
+	{
+		cfg_Contrast = (uint8_t)pos;
+		paletteDragMoved(inst);
+	}
+}
+
+/* Pushbutton callbacks */
+
+void configPalRDown(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (inst == NULL || ui == NULL) return;
+	if (inst->config.palettePreset != PAL_USER_DEFINED)
+		showColorErrorMsg(inst);
+	else
+		scrollBarScrollLeft(inst, &ui->video, SB_PAL_R, 1);
+}
+
+void configPalRUp(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (inst == NULL || ui == NULL) return;
+	if (inst->config.palettePreset != PAL_USER_DEFINED)
+		showColorErrorMsg(inst);
+	else
+		scrollBarScrollRight(inst, &ui->video, SB_PAL_R, 1);
+}
+
+void configPalGDown(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (inst == NULL || ui == NULL) return;
+	if (inst->config.palettePreset != PAL_USER_DEFINED)
+		showColorErrorMsg(inst);
+	else
+		scrollBarScrollLeft(inst, &ui->video, SB_PAL_G, 1);
+}
+
+void configPalGUp(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (inst == NULL || ui == NULL) return;
+	if (inst->config.palettePreset != PAL_USER_DEFINED)
+		showColorErrorMsg(inst);
+	else
+		scrollBarScrollRight(inst, &ui->video, SB_PAL_G, 1);
+}
+
+void configPalBDown(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (inst == NULL || ui == NULL) return;
+	if (inst->config.palettePreset != PAL_USER_DEFINED)
+		showColorErrorMsg(inst);
+	else
+		scrollBarScrollLeft(inst, &ui->video, SB_PAL_B, 1);
+}
+
+void configPalBUp(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (inst == NULL || ui == NULL) return;
+	if (inst->config.palettePreset != PAL_USER_DEFINED)
+		showColorErrorMsg(inst);
+	else
+		scrollBarScrollRight(inst, &ui->video, SB_PAL_B, 1);
+}
+
+void configPalContDown(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (inst == NULL || ui == NULL) return;
+	if (inst->config.palettePreset != PAL_USER_DEFINED)
+		showColorErrorMsg(inst);
+	else
+		scrollBarScrollLeft(inst, &ui->video, SB_PAL_CONTRAST, 1);
+}
+
+void configPalContUp(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (inst == NULL || ui == NULL) return;
+	if (inst->config.palettePreset != PAL_USER_DEFINED)
+		showColorErrorMsg(inst);
+	else
+		scrollBarScrollRight(inst, &ui->video, SB_PAL_CONTRAST, 1);
+}
+
+/* Radio button callbacks - palette entry selection */
+
+void rbConfigPalPatternText(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	cfg_ColorNum = 0;
+	checkRadioButtonNoRedraw(RB_CONFIG_PAL_PATTEXT);
+	if (inst != NULL && ui != NULL)
+		updatePaletteEditor(inst, &ui->video);
+}
+
+void rbConfigPalBlockMark(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	cfg_ColorNum = 1;
+	checkRadioButtonNoRedraw(RB_CONFIG_PAL_BLOCKMARK);
+	if (inst != NULL && ui != NULL)
+		updatePaletteEditor(inst, &ui->video);
+}
+
+void rbConfigPalTextOnBlock(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	cfg_ColorNum = 2;
+	checkRadioButtonNoRedraw(RB_CONFIG_PAL_TEXTONBLOCK);
+	if (inst != NULL && ui != NULL)
+		updatePaletteEditor(inst, &ui->video);
+}
+
+void rbConfigPalMouse(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	cfg_ColorNum = 3;
+	checkRadioButtonNoRedraw(RB_CONFIG_PAL_MOUSE);
+	if (inst != NULL && ui != NULL)
+		updatePaletteEditor(inst, &ui->video);
+}
+
+void rbConfigPalDesktop(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	cfg_ColorNum = 4;
+	checkRadioButtonNoRedraw(RB_CONFIG_PAL_DESKTOP);
+	if (inst != NULL && ui != NULL)
+		updatePaletteEditor(inst, &ui->video);
+}
+
+void rbConfigPalButtons(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	cfg_ColorNum = 5;
+	checkRadioButtonNoRedraw(RB_CONFIG_PAL_BUTTONS);
+	if (inst != NULL && ui != NULL)
+		updatePaletteEditor(inst, &ui->video);
+}
+
+/* Radio button callbacks - palette preset selection */
+
+static void applyPalettePreset(ft2_instance_t *inst, uint8_t preset, uint16_t rbId)
+{
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (inst == NULL || ui == NULL)
+		return;
+
+	inst->config.palettePreset = preset;
+	updatePaletteEditor(inst, &ui->video);
+	setPal16(&ui->video, pluginPalTable[preset], true);
+	checkRadioButtonNoRedraw(rbId);
+	drawCurrentPaletteColor(inst, &ui->video, &ui->bmp);
+}
+
+void rbConfigPalArctic(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_ARCTIC, RB_CONFIG_PAL_ARCTIC);
+}
+
+void rbConfigPalLitheDark(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_LITHE_DARK, RB_CONFIG_PAL_LITHE_DARK);
+}
+
+void rbConfigPalAuroraBorealis(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_AURORA_BOREALIS, RB_CONFIG_PAL_AURORA_BOREALIS);
+}
+
+void rbConfigPalRose(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_ROSE, RB_CONFIG_PAL_ROSE);
+}
+
+void rbConfigPalBlues(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_BLUES, RB_CONFIG_PAL_BLUES);
+}
+
+void rbConfigPalDarkMode(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_DARK_MODE, RB_CONFIG_PAL_DARK_MODE);
+}
+
+void rbConfigPalGold(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_GOLD, RB_CONFIG_PAL_GOLD);
+}
+
+void rbConfigPalViolent(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_VIOLENT, RB_CONFIG_PAL_VIOLENT);
+}
+
+void rbConfigPalHeavyMetal(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_HEAVY_METAL, RB_CONFIG_PAL_HEAVY_METAL);
+}
+
+void rbConfigPalWhyColors(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_WHY_COLORS, RB_CONFIG_PAL_WHY_COLORS);
+}
+
+void rbConfigPalJungle(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_JUNGLE, RB_CONFIG_PAL_JUNGLE);
+}
+
+void rbConfigPalUserDefined(ft2_instance_t *inst)
+{
+	applyPalettePreset(inst, PAL_USER_DEFINED, RB_CONFIG_PAL_USER);
+}
+
+void showPaletteEditor(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+{
+	if (inst == NULL || video == NULL || bmp == NULL)
+		return;
+
+	/* Draw R/G/B labels */
+	charOutShadow(video, bmp, 503, 17, PAL_FORGRND, PAL_DSKTOP2, 'R');
+	charOutShadow(video, bmp, 503, 31, PAL_FORGRND, PAL_DSKTOP2, 'G');
+	charOutShadow(video, bmp, 503, 45, PAL_FORGRND, PAL_DSKTOP2, 'B');
+
+	/* Show RGB scrollbars */
+	showScrollBar(video, SB_PAL_R);
+	showScrollBar(video, SB_PAL_G);
+	showScrollBar(video, SB_PAL_B);
+
+	/* Show RGB up/down buttons */
+	showPushButton(video, bmp, PB_CONFIG_PAL_R_DOWN);
+	showPushButton(video, bmp, PB_CONFIG_PAL_R_UP);
+	showPushButton(video, bmp, PB_CONFIG_PAL_G_DOWN);
+	showPushButton(video, bmp, PB_CONFIG_PAL_G_UP);
+	showPushButton(video, bmp, PB_CONFIG_PAL_B_DOWN);
+	showPushButton(video, bmp, PB_CONFIG_PAL_B_UP);
+
+	/* Show palette entry radio buttons */
+	showRadioButtonGroup(video, bmp, RB_GROUP_CONFIG_PAL_ENTRIES);
+
+	/* Draw Contrast label and widgets */
+	textOutShadow(video, bmp, 516, 59, PAL_FORGRND, PAL_DSKTOP2, "Contrast:");
+	showScrollBar(video, SB_PAL_CONTRAST);
+	showPushButton(video, bmp, PB_CONFIG_PAL_CONT_DOWN);
+	showPushButton(video, bmp, PB_CONFIG_PAL_CONT_UP);
+
+	/* Show palette preset radio buttons */
+	showRadioButtonGroup(video, bmp, RB_GROUP_CONFIG_PAL_PRESET);
+
+	/* Set initial radio button states based on current config */
+	checkRadioButtonNoRedraw(RB_CONFIG_PAL_PATTEXT + cfg_ColorNum);
+	
+	/* Set preset radio button based on current palette */
+	uint16_t presetRbId;
+	switch (inst->config.palettePreset)
+	{
+		case PAL_ARCTIC:          presetRbId = RB_CONFIG_PAL_ARCTIC; break;
+		case PAL_AURORA_BOREALIS: presetRbId = RB_CONFIG_PAL_AURORA_BOREALIS; break;
+		case PAL_BLUES:           presetRbId = RB_CONFIG_PAL_BLUES; break;
+		case PAL_GOLD:            presetRbId = RB_CONFIG_PAL_GOLD; break;
+		case PAL_HEAVY_METAL:     presetRbId = RB_CONFIG_PAL_HEAVY_METAL; break;
+		case PAL_JUNGLE:          presetRbId = RB_CONFIG_PAL_JUNGLE; break;
+		case PAL_LITHE_DARK:      presetRbId = RB_CONFIG_PAL_LITHE_DARK; break;
+		case PAL_ROSE:            presetRbId = RB_CONFIG_PAL_ROSE; break;
+		case PAL_DARK_MODE:       presetRbId = RB_CONFIG_PAL_DARK_MODE; break;
+		case PAL_VIOLENT:         presetRbId = RB_CONFIG_PAL_VIOLENT; break;
+		case PAL_WHY_COLORS:      presetRbId = RB_CONFIG_PAL_WHY_COLORS; break;
+		case PAL_USER_DEFINED:    presetRbId = RB_CONFIG_PAL_USER; break;
+		default:                  presetRbId = RB_CONFIG_PAL_DARK_MODE; break;
+	}
+	checkRadioButtonNoRedraw(presetRbId);
+
+	/* Initialize slider positions and draw color preview */
+	updatePaletteEditor(inst, video);
+	drawCurrentPaletteColor(inst, video, bmp);
+}
+

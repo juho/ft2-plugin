@@ -1,7 +1,10 @@
 This project uses the following licenses:
 
-Source code (BSD 3-clause):
-src\LICENSE.txt
+FT2 Clone source code (BSD 3-clause):
+src\LICENSE
+
+Plugin source code (BSD 3-clause):
+src\plugin\LICENSE
 
 libFLAC:
 src\libflac\COPYING.txt
@@ -9,9 +12,13 @@ src\libflac\COPYING.txt
 rtmidi:
 src\rtmidi\LICENSE.txt
 
-Graphics, except a few bitmaps: by Magnus Högdahl
+Graphics, except a few bitmaps: by Magnus H?dahl
 (CC BY-NC-SA 4.0):
 src\gfxdata\bmp\LICENSE.txt
 
 SDL2:
 vs2019_project\ft2-clone\sdl\LICENSE.txt
+
+JUCE:
+JUCE 8 End User Licence Agreement
+https://juce.com/legal/juce-8-licence/

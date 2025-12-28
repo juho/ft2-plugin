@@ -1,0 +1,2704 @@
+/**
+ * @file ft2_plugin_instr_ed.c
+ * @brief Exact port of instrument editor from ft2_inst_ed.c
+ *
+ * This is a full port of the FT2 instrument editor drawing code, adapted for
+ * the plugin architecture with instance-aware state.
+ */
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include <stdio.h>
+#include <math.h>
+#include "ft2_plugin_video.h"
+#include "ft2_plugin_bmp.h"
+#include "ft2_plugin_instr_ed.h"
+#include "ft2_plugin_scrollbars.h"
+#include "ft2_plugin_pushbuttons.h"
+#include "ft2_plugin_checkboxes.h"
+#include "ft2_plugin_radiobuttons.h"
+#include "ft2_plugin_config.h"
+#include "ft2_plugin_widgets.h"
+#include "ft2_plugin_replayer.h"
+#include "ft2_plugin_pattern_ed.h"
+#include "ft2_plugin_sample_ed.h"
+#include "ft2_instance.h"
+
+/* Forward declarations */
+static ft2_instr_t *getInstrForInst(ft2_instance_t *inst);
+
+/* ============ ENVELOPE PRESET FUNCTIONS ============ */
+
+/* Apply volume envelope preset to instrument - matches standalone setStdVolEnvelope() */
+void setStdVolEnvelope(ft2_instance_t *inst, uint8_t num)
+{
+	if (inst == NULL || num >= 6)
+		return;
+	
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL || inst->editor.curInstr == 0)
+		return;
+	
+	ft2_plugin_config_t *cfg = &inst->config;
+	
+	/* Stop voices to prevent race conditions */
+	ft2_stop_all_voices(inst);
+	
+	ins->fadeout = cfg->stdFadeout[num];
+	ins->volEnvSustain = (uint8_t)cfg->stdVolEnvSustain[num];
+	ins->volEnvLoopStart = (uint8_t)cfg->stdVolEnvLoopStart[num];
+	ins->volEnvLoopEnd = (uint8_t)cfg->stdVolEnvLoopEnd[num];
+	ins->volEnvLength = (uint8_t)cfg->stdVolEnvLength[num];
+	ins->volEnvFlags = (uint8_t)cfg->stdVolEnvFlags[num];
+	ins->autoVibRate = (uint8_t)cfg->stdVibRate[num];
+	ins->autoVibDepth = (uint8_t)cfg->stdVibDepth[num];
+	ins->autoVibSweep = (uint8_t)cfg->stdVibSweep[num];
+	ins->autoVibType = (uint8_t)cfg->stdVibType[num];
+	
+	memcpy(ins->volEnvPoints, cfg->stdEnvPoints[num][0], sizeof(int16_t) * 12 * 2);
+}
+
+/* Apply panning envelope preset to instrument - matches standalone setStdPanEnvelope() */
+void setStdPanEnvelope(ft2_instance_t *inst, uint8_t num)
+{
+	if (inst == NULL || num >= 6)
+		return;
+	
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL || inst->editor.curInstr == 0)
+		return;
+	
+	ft2_plugin_config_t *cfg = &inst->config;
+	
+	/* Stop voices to prevent race conditions */
+	ft2_stop_all_voices(inst);
+	
+	ins->panEnvLength = (uint8_t)cfg->stdPanEnvLength[num];
+	ins->panEnvSustain = (uint8_t)cfg->stdPanEnvSustain[num];
+	ins->panEnvLoopStart = (uint8_t)cfg->stdPanEnvLoopStart[num];
+	ins->panEnvLoopEnd = (uint8_t)cfg->stdPanEnvLoopEnd[num];
+	ins->panEnvFlags = (uint8_t)cfg->stdPanEnvFlags[num];
+	
+	memcpy(ins->panEnvPoints, cfg->stdEnvPoints[num][1], sizeof(int16_t) * 12 * 2);
+}
+
+/* Store or recall volume envelope preset - matches standalone setOrStoreVolEnvPreset() */
+void setOrStoreVolEnvPreset(ft2_instance_t *inst, uint8_t num)
+{
+	if (inst == NULL || num >= 6)
+		return;
+	
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL || inst->editor.curInstr == 0)
+		return;
+	
+	ft2_plugin_config_t *cfg = &inst->config;
+	
+	if (isMouseRightButtonReleased())
+	{
+		/* Store preset */
+		cfg->stdFadeout[num] = ins->fadeout;
+		cfg->stdVolEnvSustain[num] = ins->volEnvSustain;
+		cfg->stdVolEnvLoopStart[num] = ins->volEnvLoopStart;
+		cfg->stdVolEnvLoopEnd[num] = ins->volEnvLoopEnd;
+		cfg->stdVolEnvLength[num] = ins->volEnvLength;
+		cfg->stdVolEnvFlags[num] = ins->volEnvFlags;
+		cfg->stdVibRate[num] = ins->autoVibRate;
+		cfg->stdVibDepth[num] = ins->autoVibDepth;
+		cfg->stdVibSweep[num] = ins->autoVibSweep;
+		cfg->stdVibType[num] = ins->autoVibType;
+		
+		memcpy(cfg->stdEnvPoints[num][0], ins->volEnvPoints, sizeof(int16_t) * 12 * 2);
+	}
+	else if (isMouseLeftButtonReleased())
+	{
+		/* Recall preset */
+		setStdVolEnvelope(inst, num);
+		inst->uiState.updateInstEditor = true;
+	}
+}
+
+/* Store or recall panning envelope preset - matches standalone setOrStorePanEnvPreset() */
+void setOrStorePanEnvPreset(ft2_instance_t *inst, uint8_t num)
+{
+	if (inst == NULL || num >= 6)
+		return;
+	
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL || inst->editor.curInstr == 0)
+		return;
+	
+	ft2_plugin_config_t *cfg = &inst->config;
+	
+	if (isMouseRightButtonReleased())
+	{
+		/* Store preset */
+		cfg->stdFadeout[num] = ins->fadeout;
+		cfg->stdPanEnvSustain[num] = ins->panEnvSustain;
+		cfg->stdPanEnvLoopStart[num] = ins->panEnvLoopStart;
+		cfg->stdPanEnvLoopEnd[num] = ins->panEnvLoopEnd;
+		cfg->stdPanEnvLength[num] = ins->panEnvLength;
+		cfg->stdPanEnvFlags[num] = ins->panEnvFlags;
+		cfg->stdVibRate[num] = ins->autoVibRate;
+		cfg->stdVibDepth[num] = ins->autoVibDepth;
+		cfg->stdVibSweep[num] = ins->autoVibSweep;
+		cfg->stdVibType[num] = ins->autoVibType;
+		
+		memcpy(cfg->stdEnvPoints[num][1], ins->panEnvPoints, sizeof(int16_t) * 12 * 2);
+	}
+	else if (isMouseLeftButtonReleased())
+	{
+		/* Recall preset */
+		setStdPanEnvelope(inst, num);
+		inst->uiState.updateInstEditor = true;
+	}
+}
+
+/* Piano key lookup tables - exact match to original */
+static const bool keyIsBlackTab[12] = { false, true, false, true, false, false, true, false, true, false, true, false };
+static const uint8_t whiteKeyIndex[7] = { 0, 2, 4, 5, 7, 9, 11 };
+static const uint16_t whiteKeysBmpOrder[12] = { 0, 0, 506, 0, 1012, 0, 0, 506, 0, 506, 0, 1012 };
+static const uint8_t keyXPos[12] = { 8, 15, 19, 26, 30, 41, 48, 52, 59, 63, 70, 74 };
+
+/* Mouse X to piano key lookup (for top part of piano with black keys) - exact match to original */
+static const uint8_t mx2PianoKey[77] =
+{
+	0,0,0,0,0,0,0,1,1,1,1,1,1,1,2,2,2,2,3,3,3,3,3,3,3,4,4,4,4,
+	4,4,4,4,5,5,5,5,5,5,5,6,6,6,6,6,6,6,7,7,7,7,8,8,8,8,8,8,8,
+	9,9,9,9,10,10,10,10,10,10,10,11,11,11,11,11,11,11,11
+};
+
+/* Note tables - same as pattern editor */
+static const uint8_t noteTab1[96] = 
+{
+	0,1,2,3,4,5,6,7,8,9,10,11,
+	0,1,2,3,4,5,6,7,8,9,10,11,
+	0,1,2,3,4,5,6,7,8,9,10,11,
+	0,1,2,3,4,5,6,7,8,9,10,11,
+	0,1,2,3,4,5,6,7,8,9,10,11,
+	0,1,2,3,4,5,6,7,8,9,10,11,
+	0,1,2,3,4,5,6,7,8,9,10,11,
+	0,1,2,3,4,5,6,7,8,9,10,11,
+};
+
+static const uint8_t noteTab2[96] =
+{
+	0,0,0,0,0,0,0,0,0,0,0,0,
+	1,1,1,1,1,1,1,1,1,1,1,1,
+	2,2,2,2,2,2,2,2,2,2,2,2,
+	3,3,3,3,3,3,3,3,3,3,3,3,
+	4,4,4,4,4,4,4,4,4,4,4,4,
+	5,5,5,5,5,5,5,5,5,5,5,5,
+	6,6,6,6,6,6,6,6,6,6,6,6,
+	7,7,7,7,7,7,7,7,7,7,7,7,
+};
+
+/* Current instrument editor for callbacks */
+static ft2_instrument_editor_t *currentInstrEditor = NULL;
+
+void ft2_instr_ed_set_current(ft2_instrument_editor_t *editor)
+{
+	currentInstrEditor = editor;
+}
+
+ft2_instrument_editor_t *ft2_instr_ed_get_current(void)
+{
+	return currentInstrEditor;
+}
+
+/* ============ STATIC DRAWING FUNCTIONS ============ */
+
+/* Draw a pixel in the envelope area - exact match to standalone */
+static void envelopePixel(ft2_video_t *video, int32_t envNum, int32_t x, int32_t y, uint8_t paletteIndex)
+{
+	if (video == NULL || video->frameBuffer == NULL)
+		return;
+
+	int32_t screenY = y + ((envNum == 0) ? VOL_ENV_Y : PAN_ENV_Y);
+
+	if (x >= 0 && x < SCREEN_W && screenY >= 0 && screenY < SCREEN_H)
+		video->frameBuffer[(screenY * SCREEN_W) + x] = video->palette[paletteIndex];
+}
+
+/* Draw a line in the envelope area - safe implementation with bounds checking */
+static void envelopeLine(ft2_video_t *video, int32_t envNum, int32_t x1, int32_t y1, int32_t x2, int32_t y2, uint8_t paletteIndex)
+{
+	if (video == NULL || video->frameBuffer == NULL)
+		return;
+
+	/* Clamp coordinates like standalone */
+	if (y1 < 0) y1 = 0; if (y1 > 66) y1 = 66;
+	if (y2 < 0) y2 = 0; if (y2 > 66) y2 = 66;
+	if (x1 < 0) x1 = 0; if (x1 > 335) x1 = 335;
+	if (x2 < 0) x2 = 0; if (x2 > 335) x2 = 335;
+
+	int32_t baseY = (envNum == 0) ? VOL_ENV_Y : PAN_ENV_Y;
+	y1 += baseY;
+	y2 += baseY;
+	
+	/* Get palette colors for skip check */
+	const uint32_t pal1 = video->palette[PAL_BLCKMRK];
+	const uint32_t pal2 = video->palette[PAL_BLCKTXT];
+	const uint32_t pixVal = video->palette[paletteIndex];
+
+	/* Bresenham's line algorithm with safe pixel access */
+	int32_t dx = (x2 > x1) ? (x2 - x1) : (x1 - x2);
+	int32_t dy = (y2 > y1) ? (y2 - y1) : (y1 - y2);
+	int32_t sx = (x1 < x2) ? 1 : -1;
+	int32_t sy = (y1 < y2) ? 1 : -1;
+	int32_t err = dx - dy;
+	int32_t x = x1;
+	int32_t y = y1;
+
+	while (true)
+	{
+		/* Safe pixel access with bounds check and color skip */
+		if (x >= 0 && x < SCREEN_W && y >= 0 && y < SCREEN_H)
+		{
+			uint32_t *dst = &video->frameBuffer[(y * SCREEN_W) + x];
+			if (*dst != pal1 && *dst != pal2)
+				*dst = pixVal;
+		}
+
+		if (x == x2 && y == y2)
+			break;
+
+		int32_t e2 = 2 * err;
+		if (e2 > -dy)
+		{
+			err -= dy;
+			x += sx;
+		}
+		if (e2 < dx)
+		{
+			err += dx;
+			y += sy;
+		}
+	}
+}
+
+/* Draw an envelope point marker */
+static void drawEnvPoint(ft2_video_t *video, int32_t envNum, int32_t x, int32_t y, bool selected)
+{
+	if (video == NULL)
+		return;
+
+	int32_t baseY = (envNum == 0) ? VOL_ENV_Y : PAN_ENV_Y;
+	int32_t screenX = 5 + x;
+	int32_t screenY = baseY + y;
+
+	uint8_t color = selected ? PAL_PATTEXT : PAL_PATTEXT;
+	uint32_t pixVal = video->palette[color];
+
+	/* Draw 3x3 marker */
+	for (int32_t dy = -1; dy <= 1; dy++)
+	{
+		for (int32_t dx = -1; dx <= 1; dx++)
+		{
+			int32_t px = screenX + dx;
+			int32_t py = screenY + dy;
+			if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H)
+			{
+				if (selected)
+					video->frameBuffer[(py * SCREEN_W) + px] = video->palette[PAL_FORGRND];
+				else if (dx == 0 || dy == 0)
+					video->frameBuffer[(py * SCREEN_W) + px] = pixVal;
+			}
+		}
+	}
+}
+
+/* Key digit X positions for sample numbers - exact match to standalone */
+static const uint8_t keyDigitXPos[12] = { 11, 16, 22, 27, 33, 44, 49, 55, 60, 66, 71, 77 };
+
+/* Draw piano number (hex digit 0-F) - exact match to standalone pianoNumberOut() */
+static void pianoNumberOut(ft2_video_t *video, const ft2_bmp_t *bmp, uint16_t xPos, uint16_t yPos, 
+                           uint8_t fgPalette, uint8_t bgPalette, uint8_t val)
+{
+	if (video == NULL || video->frameBuffer == NULL || bmp == NULL || bmp->font8 == NULL)
+		return;
+
+	if (val > 0xF)
+		val = 0xF;
+
+	const uint32_t fg = video->palette[fgPalette];
+	const uint32_t bg = video->palette[bgPalette];
+	uint32_t *dstPtr = &video->frameBuffer[(yPos * SCREEN_W) + xPos];
+	const uint8_t *srcPtr = &bmp->font8[val * FONT8_CHAR_W];
+
+	for (int32_t y = 0; y < FONT8_CHAR_H; y++)
+	{
+		for (int32_t x = 0; x < FONT8_CHAR_W; x++)
+			dstPtr[x] = srcPtr[x] ? fg : bg;
+
+		dstPtr += SCREEN_W;
+		srcPtr += FONT8_WIDTH;
+	}
+}
+
+/* Write sample number on piano key - exact match to standalone writePianoNumber() */
+static void writePianoNumber(ft2_instrument_editor_t *ed, const ft2_bmp_t *bmp, uint8_t note, uint8_t key, uint8_t octave)
+{
+	if (ed == NULL || ed->video == NULL || ed->instance == NULL)
+		return;
+
+	uint8_t number = 0;
+	if (ed->currInstr > 0 && ed->currInstr < 128)
+	{
+		ft2_instr_t *ins = ed->instance->replayer.instr[ed->currInstr];
+		if (ins != NULL)
+			number = ins->note2SampleLUT[note];
+	}
+
+	const uint16_t x = keyDigitXPos[key] + (octave * 77);
+
+	if (keyIsBlackTab[key])
+		pianoNumberOut(ed->video, bmp, x, 361, PAL_FORGRND, PAL_BCKGRND, number);
+	else
+		pianoNumberOut(ed->video, bmp, x, 385, PAL_BCKGRND, PAL_FORGRND, number);
+}
+
+/* Draw a white piano key - exact match to standalone using bitmap */
+static void drawWhitePianoKey(ft2_instrument_editor_t *ed, int key, int octave, bool keyDown, const ft2_bmp_t *bmp)
+{
+	if (ed == NULL || ed->video == NULL)
+		return;
+
+	ft2_video_t *video = ed->video;
+	const uint16_t x = keyXPos[key] + (octave * 77);
+
+	/* Use bitmap if available - exact match to standalone */
+	if (bmp != NULL && bmp->whitePianoKeys != NULL)
+	{
+		const uint8_t *src = &bmp->whitePianoKeys[(keyDown * (11*46*3)) + whiteKeysBmpOrder[key]];
+		blit(video, x, 351, src, 11, 46);
+	}
+	else
+	{
+		/* Fallback: draw simple key */
+	uint8_t color = keyDown ? PAL_BUTTONS : PAL_BCKGRND;
+		fillRect(video, x, 351, 11, 46, color);
+		vLine(video, x, 351, 46, PAL_DSKTOP2);
+		vLine(video, x + 10, 351, 46, PAL_DSKTOP2);
+		hLine(video, x, 396, 11, PAL_DSKTOP2);
+	}
+}
+
+/* Draw a black piano key - exact match to standalone using bitmap */
+static void drawBlackPianoKey(ft2_instrument_editor_t *ed, int key, int octave, bool keyDown, const ft2_bmp_t *bmp)
+{
+	if (ed == NULL || ed->video == NULL)
+		return;
+
+	ft2_video_t *video = ed->video;
+	const uint16_t x = keyXPos[key] + (octave * 77);
+
+	/* Use bitmap if available - exact match to standalone */
+	if (bmp != NULL && bmp->blackPianoKeys != NULL)
+	{
+		const uint8_t *src = &bmp->blackPianoKeys[keyDown * (7*27)];
+		blit(video, x, 351, src, 7, 27);
+	}
+	else
+	{
+		/* Fallback: draw simple key */
+	uint8_t color = keyDown ? PAL_BUTTONS : PAL_DSKTOP2;
+		fillRect(video, x, 351, 7, 27, color);
+	}
+}
+
+/* ============ ENVELOPE COORDINATE DISPLAY ============ */
+
+/* Draw volume envelope coordinates (tick/value) - exact match to standalone drawVolEnvCoords() */
+static void drawVolEnvCoords(ft2_video_t *video, const ft2_bmp_t *bmp, int16_t tick, int16_t val)
+{
+	if (video == NULL || bmp == NULL)
+		return;
+
+	char str[8];
+
+	if (tick < 0) tick = 0;
+	if (tick > 324) tick = 324;
+	snprintf(str, sizeof(str), "%03d", tick);
+	textOutTinyOutline(video, bmp, 326, 190, str);
+
+	if (val < 0) val = 0;
+	if (val > 64) val = 64;
+	snprintf(str, sizeof(str), "%02d", val);
+	textOutTinyOutline(video, bmp, 330, 198, str);
+}
+
+/* Draw panning envelope coordinates (tick/value) - exact match to standalone drawPanEnvCoords() */
+static void drawPanEnvCoords(ft2_video_t *video, const ft2_bmp_t *bmp, int16_t tick, int16_t val)
+{
+	if (video == NULL || bmp == NULL)
+		return;
+
+	char str[8];
+
+	if (tick < 0) tick = 0;
+	if (tick > 324) tick = 324;
+	snprintf(str, sizeof(str), "%03d", tick);
+	textOutTinyOutline(video, bmp, 326, 277, str);
+
+	bool negative = false;
+	val -= 32;
+	if (val < -32) val = -32;
+	if (val > 31) val = 31;
+	if (val < 0)
+	{
+		negative = true;
+		val = -val;
+	}
+
+	if (negative)
+	{
+		/* Draw minus sign with outline */
+		hLine(video, 326, 287, 3, PAL_BCKGRND);
+		hLine(video, 326, 289, 3, PAL_BCKGRND);
+		video->frameBuffer[(288 * SCREEN_W) + 325] = video->palette[PAL_BCKGRND];
+		video->frameBuffer[(288 * SCREEN_W) + 329] = video->palette[PAL_BCKGRND];
+		hLine(video, 326, 288, 3, PAL_FORGRND);
+	}
+
+	snprintf(str, sizeof(str), "%02d", val);
+	textOutTinyOutline(video, bmp, 330, 285, str);
+}
+
+/* ============ PUBLIC FUNCTIONS ============ */
+
+void ft2_instr_ed_init(ft2_instrument_editor_t *editor, ft2_video_t *video)
+{
+	if (editor == NULL)
+		return;
+
+	memset(editor, 0, sizeof(ft2_instrument_editor_t));
+	editor->video = video;
+	editor->instance = NULL;
+	editor->currInstr = 1;
+	editor->currSmp = 0;
+	editor->currVolEnvPoint = 0;
+	editor->currPanEnvPoint = 0;
+	editor->draggingVolEnv = false;
+	editor->draggingPanEnv = false;
+	memset(editor->pianoKeyStatus, 0, sizeof(editor->pianoKeyStatus));
+}
+
+void ft2_instr_ed_set_instance(ft2_instrument_editor_t *editor, ft2_instance_t *inst)
+{
+	if (editor == NULL)
+		return;
+	editor->instance = inst;
+}
+
+void ft2_instr_ed_set_instr(ft2_instrument_editor_t *editor, int instr)
+{
+	if (editor == NULL)
+		return;
+	editor->currInstr = (int16_t)instr;
+	editor->currVolEnvPoint = 0;
+	editor->currPanEnvPoint = 0;
+}
+
+/* Draw 3x3 envelope point dot - exact match to standalone envelopeDot() */
+static void envelopeDot(ft2_video_t *video, int32_t envNum, int32_t x, int32_t y)
+{
+	if (video == NULL || video->frameBuffer == NULL)
+		return;
+
+	y += (envNum == 0) ? VOL_ENV_Y : PAN_ENV_Y;
+
+	/* Bounds check - dot is 3x3 pixels */
+	if (x < 0 || x > SCREEN_W - 3 || y < 0 || y > SCREEN_H - 3)
+		return;
+
+	const uint32_t pixVal = video->palette[PAL_BLCKTXT];
+	uint32_t *dstPtr = &video->frameBuffer[(y * SCREEN_W) + x];
+
+	for (int32_t i = 0; i < 3; i++)
+	{
+		*dstPtr++ = pixVal;
+		*dstPtr++ = pixVal;
+		*dstPtr++ = pixVal;
+		dstPtr += SCREEN_W - 3;
+	}
+}
+
+/* Draw dotted vertical line in envelope area - exact match to standalone */
+static void envelopeVertLine(ft2_video_t *video, int32_t envNum, int32_t x, int32_t y, uint8_t pal)
+{
+	if (video == NULL || video->frameBuffer == NULL)
+		return;
+
+	y += (envNum == 0) ? VOL_ENV_Y : PAN_ENV_Y;
+
+	/* Bounds check - line spans 66 pixels vertically (33 iterations * 2 stride) */
+	if (x < 0 || x >= SCREEN_W || y < 0 || y + 66 > SCREEN_H)
+		return;
+
+	const uint32_t pixVal1 = video->palette[pal];
+	const uint32_t pixVal2 = video->palette[PAL_BLCKTXT];
+
+	uint32_t *dstPtr = &video->frameBuffer[(y * SCREEN_W) + x];
+	for (int32_t i = 0; i < 33; i++)
+	{
+		if (*dstPtr != pixVal2)
+			*dstPtr = pixVal1;
+		dstPtr += SCREEN_W * 2;
+	}
+}
+
+void ft2_instr_ed_draw_envelope(ft2_instrument_editor_t *ed, int envNum)
+{
+	if (ed == NULL || ed->video == NULL || ed->instance == NULL)
+		return;
+
+	ft2_video_t *video = ed->video;
+	ft2_instance_t *inst = ed->instance;
+
+	/* Clear envelope area - exact match to standalone */
+	int32_t baseY = (envNum == 0) ? 189 : 276;
+	clearRect(video, 5, baseY, 333, 67);
+
+	/* Draw dotted x/y lines - exact match to standalone */
+	for (int32_t i = 0; i <= 32; i++)
+		envelopePixel(video, envNum, 5, 1 + i * 2, PAL_PATTEXT);
+	for (int32_t i = 0; i <= 8; i++)
+		envelopePixel(video, envNum, 4, 1 + i * 8, PAL_PATTEXT);
+	for (int32_t i = 0; i <= 162; i++)
+		envelopePixel(video, envNum, 8 + i * 2, 65, PAL_PATTEXT);
+	for (int32_t i = 0; i <= 6; i++)
+		envelopePixel(video, envNum, 8 + i * 50, 66, PAL_PATTEXT);
+
+	/* Draw center line on pan envelope */
+	if (envNum == 1)
+		envelopeLine(video, envNum, 8, 33, 332, 33, PAL_BLCKMRK);
+
+	/* Get instrument */
+	if (ed->currInstr <= 0 || ed->currInstr >= 128)
+		return;
+
+	ft2_instr_t *ins = inst->replayer.instr[ed->currInstr];
+	if (ins == NULL)
+		return;
+
+	/* Collect variables - exact match to standalone */
+	int16_t nd, sp, ls, le;
+	int16_t (*curEnvP)[2];
+	uint8_t selected;
+
+	if (envNum == 0) /* Volume envelope */
+	{
+		nd = ins->volEnvLength;
+		sp = (ins->volEnvFlags & ENV_SUSTAIN) ? ins->volEnvSustain : -1;
+		if (ins->volEnvFlags & ENV_LOOP)
+		{
+			ls = ins->volEnvLoopStart;
+			le = ins->volEnvLoopEnd;
+		}
+		else
+		{
+			ls = -1;
+			le = -1;
+		}
+		curEnvP = ins->volEnvPoints;
+		selected = ed->currVolEnvPoint;
+	}
+	else /* Panning envelope */
+	{
+		nd = ins->panEnvLength;
+		sp = (ins->panEnvFlags & ENV_SUSTAIN) ? ins->panEnvSustain : -1;
+		if (ins->panEnvFlags & ENV_LOOP)
+		{
+			ls = ins->panEnvLoopStart;
+			le = ins->panEnvLoopEnd;
+		}
+		else
+		{
+			ls = -1;
+			le = -1;
+		}
+		curEnvP = ins->panEnvPoints;
+		selected = ed->currPanEnvPoint;
+	}
+
+	if (nd > 12)
+		nd = 12;
+
+	int16_t lx = 0;
+	int16_t ly = 0;
+
+	/* Draw envelope - exact match to standalone */
+	for (int16_t i = 0; i < nd; i++)
+	{
+		int16_t x = curEnvP[i][0];
+		int16_t y = curEnvP[i][1];
+
+		if (x < 0) x = 0;
+		if (x > 324) x = 324;
+
+		if (envNum == 0)
+		{
+		if (y < 0) y = 0;
+		if (y > 64) y = 64;
+		}
+		else
+		{
+			if (y < 0) y = 0;
+			if (y > 63) y = 63;
+		}
+
+		if ((uint16_t)curEnvP[i][0] <= 324)
+		{
+			envelopeDot(video, envNum, 7 + x, 64 - y);
+			
+			/* Draw "envelope selected" data */
+			if (i == selected)
+			{
+				envelopeLine(video, envNum, 5 + x, 64 - y, 5 + x, 66 - y, PAL_BLCKTXT);
+				envelopeLine(video, envNum, 11 + x, 64 - y, 11 + x, 66 - y, PAL_BLCKTXT);
+				envelopePixel(video, envNum, 5, 65 - y, PAL_BLCKTXT);
+				envelopePixel(video, envNum, 8 + x, 65, PAL_BLCKTXT);
+		}
+
+			/* Draw loop start marker (triangle pointing down) */
+			if (i == ls)
+			{
+				envelopeLine(video, envNum, x + 6, 1, x + 10, 1, PAL_PATTEXT);
+				envelopeLine(video, envNum, x + 7, 2, x + 9, 2, PAL_PATTEXT);
+				envelopeVertLine(video, envNum, x + 8, 1, PAL_PATTEXT);
+	}
+
+			/* Draw sustain marker (vertical line) */
+			if (i == sp)
+				envelopeVertLine(video, envNum, x + 8, 1, PAL_BLCKTXT);
+
+			/* Draw loop end marker (triangle pointing up) */
+			if (i == le)
+			{
+				envelopeLine(video, envNum, x + 6, 65, x + 10, 65, PAL_PATTEXT);
+				envelopeLine(video, envNum, x + 7, 64, x + 9, 64, PAL_PATTEXT);
+				envelopeVertLine(video, envNum, x + 8, 1, PAL_PATTEXT);
+			}
+		}
+
+		/* Draw envelope line */
+		if (i > 0 && lx < x)
+			envelopeLine(video, envNum, lx + 8, 65 - ly, x + 8, 65 - y, PAL_PATTEXT);
+
+		lx = x;
+		ly = y;
+	}
+}
+
+void ft2_instr_ed_draw_vol_env(ft2_instrument_editor_t *editor)
+{
+	ft2_instr_ed_draw_envelope(editor, 0);
+}
+
+void ft2_instr_ed_draw_pan_env(ft2_instrument_editor_t *editor)
+{
+	ft2_instr_ed_draw_envelope(editor, 1);
+}
+
+void ft2_instr_ed_draw_note_map(ft2_instrument_editor_t *ed, const ft2_bmp_t *bmp)
+{
+	if (ed == NULL || ed->video == NULL || ed->instance == NULL)
+		return;
+
+	/* Note-to-sample map is shown in the right side of the instrument editor */
+	/* For now, just draw a placeholder */
+	ft2_video_t *video = ed->video;
+	
+	drawFramework(video, 400, 189, 232, 67, FRAMEWORK_TYPE2);
+	
+	if (bmp != NULL)
+		textOutShadow(video, bmp, 404, 193, PAL_FORGRND, PAL_DSKTOP2, "Note-Sample Map");
+
+	/* Get instrument */
+	if (ed->currInstr <= 0 || ed->currInstr >= 128)
+		return;
+
+	ft2_instr_t *ins = ed->instance->replayer.instr[ed->currInstr];
+	if (ins == NULL)
+		return;
+
+	/* Draw a simplified note-sample indicator */
+	/* Real FT2 shows a bar graph of sample assignments */
+}
+
+void ft2_instr_ed_draw_piano(ft2_instrument_editor_t *ed, const ft2_bmp_t *bmp)
+{
+	if (ed == NULL || ed->video == NULL)
+		return;
+
+	/* Clear piano key status */
+	memset(ed->pianoKeyStatus, 0, sizeof(ed->pianoKeyStatus));
+
+	/* Draw all 96 keys - exact match to standalone redrawPiano() */
+	for (uint8_t i = 0; i < 96; i++)
+	{
+		const uint8_t key = noteTab1[i];
+		const uint8_t octave = noteTab2[i];
+
+		if (keyIsBlackTab[key])
+			drawBlackPianoKey(ed, key, octave, false, bmp);
+		else
+			drawWhitePianoKey(ed, key, octave, false, bmp);
+
+		writePianoNumber(ed, bmp, i, key, octave);
+	}
+}
+
+/* Update instrument editor - draw values and set widget states */
+void updateInstEditor(ft2_instrument_editor_t *editor, const ft2_bmp_t *bmp)
+{
+	if (editor == NULL || editor->video == NULL || editor->instance == NULL)
+		return;
+
+	ft2_video_t *video = editor->video;
+	ft2_instance_t *inst = editor->instance;
+
+	/* Get current instrument and sample */
+	ft2_instr_t *ins = NULL;
+	ft2_sample_t *s = NULL;
+
+	if (editor->currInstr > 0 && editor->currInstr < 128)
+	{
+		ins = inst->replayer.instr[editor->currInstr];
+	}
+
+	if (ins != NULL && editor->currSmp >= 0 && editor->currSmp < FT2_MAX_SMP_PER_INST)
+	{
+		s = &ins->smp[editor->currSmp];
+	}
+
+	/* Draw Volume (hex at 505, 177) */
+	if (s != NULL)
+	{
+		hexOutBg(video, bmp, 505, 177, PAL_FORGRND, PAL_DESKTOP, s->volume, 2);
+	}
+	else
+	{
+		hexOutBg(video, bmp, 505, 177, PAL_FORGRND, PAL_DESKTOP, 0, 2);
+	}
+
+	/* Draw Panning (hex at 505, 191) */
+	if (s != NULL)
+	{
+		hexOutBg(video, bmp, 505, 191, PAL_FORGRND, PAL_DESKTOP, s->panning, 2);
+	}
+	else
+	{
+		hexOutBg(video, bmp, 505, 191, PAL_FORGRND, PAL_DESKTOP, 128, 2);
+	}
+
+	/* Draw Fine-tune (at 491, 205) */
+	fillRect(video, 491, 205, 27, 8, PAL_DESKTOP);
+	if (s != NULL)
+			{
+		int16_t ftune = s->finetune;
+		if (ftune == 0)
+		{
+			charOut(video, bmp, 512, 205, PAL_FORGRND, '0');
+		}
+		else if (ftune > 0)
+		{
+			charOut(video, bmp, 491, 205, PAL_FORGRND, '+');
+			hexOutBg(video, bmp, 498, 205, PAL_FORGRND, PAL_DESKTOP, ftune, 2);
+		}
+		else
+		{
+			charOut(video, bmp, 491, 205, PAL_FORGRND, '-');
+			hexOutBg(video, bmp, 498, 205, PAL_FORGRND, PAL_DESKTOP, -ftune, 2);
+		}
+	}
+	else
+	{
+		charOut(video, bmp, 512, 205, PAL_FORGRND, '0');
+	}
+
+	/* Draw Fadeout (hex at 498, 222) */
+	if (ins != NULL)
+	{
+		hexOutBg(video, bmp, 498, 222, PAL_FORGRND, PAL_DESKTOP, ins->fadeout, 3);
+	}
+	else
+	{
+		hexOutBg(video, bmp, 498, 222, PAL_FORGRND, PAL_DESKTOP, 0, 3);
+	}
+
+	/* Draw Vib.speed (hex at 505, 236) */
+	if (ins != NULL)
+	{
+		hexOutBg(video, bmp, 505, 236, PAL_FORGRND, PAL_DESKTOP, ins->autoVibRate, 2);
+	}
+	else
+	{
+		hexOutBg(video, bmp, 505, 236, PAL_FORGRND, PAL_DESKTOP, 0, 2);
+	}
+
+	/* Draw Vib.depth (hex at 512, 250) */
+	if (ins != NULL)
+	{
+		hexOutBg(video, bmp, 512, 250, PAL_FORGRND, PAL_DESKTOP, ins->autoVibDepth, 1);
+	}
+	else
+	{
+		hexOutBg(video, bmp, 512, 250, PAL_FORGRND, PAL_DESKTOP, 0, 1);
+	}
+
+	/* Draw Vib.sweep (hex at 505, 264) */
+	if (ins != NULL)
+	{
+		hexOutBg(video, bmp, 505, 264, PAL_FORGRND, PAL_DESKTOP, ins->autoVibSweep, 2);
+	}
+	else
+	{
+		hexOutBg(video, bmp, 505, 264, PAL_FORGRND, PAL_DESKTOP, 0, 2);
+	}
+
+	/* Draw C-4 rate (at 472, 299) */
+	fillRect(video, 472, 299, 64, 8, PAL_DESKTOP);
+	if (s != NULL)
+	{
+		/* Calculate C-4 frequency based on relative note and finetune */
+		double dC4Hz = 8363.0;
+		if (s->relativeNote != 0 || s->finetune != 0)
+		{
+			double dNote = s->relativeNote + (s->finetune / 128.0);
+			dC4Hz = dC4Hz * pow(2.0, dNote / 12.0);
+		}
+		char freqStr[16];
+		snprintf(freqStr, sizeof(freqStr), "%.0fHz", dC4Hz);
+		textOut(video, bmp, 472, 299, PAL_FORGRND, freqStr);
+			}
+	else
+	{
+		textOut(video, bmp, 472, 299, PAL_FORGRND, "8363Hz");
+		}
+
+	/* Draw Relative note (at 600, 299) - exact match to standalone drawRelativeNote() */
+	fillRect(video, 600, 299, 8 * 3, 8, PAL_BCKGRND);
+	if (s != NULL)
+	{
+		int8_t note2 = 48 + s->relativeNote;
+		uint8_t note = note2 % 12;
+		char octaChar = '0' + (note2 / 12);
+		
+		/* Use sharp note names - matches standalone when config.ptnAcc == 0 */
+		static const char sharpNote1Char[12] = { 'C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B' };
+		static const char sharpNote2Char[12] = { '-', '#', '-', '#', '-', '-', '#', '-', '#', '-', '#', '-' };
+		
+		charOutBg(video, bmp, 600, 299, PAL_FORGRND, PAL_BCKGRND, sharpNote1Char[note]);
+		charOutBg(video, bmp, 608, 299, PAL_FORGRND, PAL_BCKGRND, sharpNote2Char[note]);
+		charOutBg(video, bmp, 616, 299, PAL_FORGRND, PAL_BCKGRND, octaChar);
+	}
+	else
+	{
+		charOutBg(video, bmp, 600, 299, PAL_FORGRND, PAL_BCKGRND, 'C');
+		charOutBg(video, bmp, 608, 299, PAL_FORGRND, PAL_BCKGRND, '-');
+		charOutBg(video, bmp, 616, 299, PAL_FORGRND, PAL_BCKGRND, '4');
+	}
+
+	/* Draw volume envelope sustain point (at 382, 206) - decimal, matches standalone */
+	{
+		char str[4];
+		uint8_t val = (ins != NULL) ? ins->volEnvSustain : 0;
+		if (val > 99) val = 99;
+		snprintf(str, sizeof(str), "%02d", val);
+		textOutFixed(video, bmp, 382, 206, PAL_FORGRND, PAL_DESKTOP, str);
+	}
+
+	/* Draw volume envelope loop start (at 382, 233) - decimal, matches standalone */
+	{
+		char str[4];
+		uint8_t val = (ins != NULL) ? ins->volEnvLoopStart : 0;
+		if (val > 99) val = 99;
+		snprintf(str, sizeof(str), "%02d", val);
+		textOutFixed(video, bmp, 382, 233, PAL_FORGRND, PAL_DESKTOP, str);
+	}
+
+	/* Draw volume envelope loop end (at 382, 247) - decimal, matches standalone */
+	{
+		char str[4];
+		uint8_t val = (ins != NULL) ? ins->volEnvLoopEnd : 0;
+		if (val > 99) val = 99;
+		snprintf(str, sizeof(str), "%02d", val);
+		textOutFixed(video, bmp, 382, 247, PAL_FORGRND, PAL_DESKTOP, str);
+	}
+
+	/* Draw pan envelope sustain point (at 382, 293) - decimal, matches standalone */
+	{
+		char str[4];
+		uint8_t val = (ins != NULL) ? ins->panEnvSustain : 0;
+		if (val > 99) val = 99;
+		snprintf(str, sizeof(str), "%02d", val);
+		textOutFixed(video, bmp, 382, 293, PAL_FORGRND, PAL_DESKTOP, str);
+	}
+
+	/* Draw pan envelope loop start (at 382, 320) - decimal, matches standalone */
+	{
+		char str[4];
+		uint8_t val = (ins != NULL) ? ins->panEnvLoopStart : 0;
+		if (val > 99) val = 99;
+		snprintf(str, sizeof(str), "%02d", val);
+		textOutFixed(video, bmp, 382, 320, PAL_FORGRND, PAL_DESKTOP, str);
+	}
+
+	/* Draw pan envelope loop end (at 382, 334) - decimal, matches standalone */
+	{
+		char str[4];
+		uint8_t val = (ins != NULL) ? ins->panEnvLoopEnd : 0;
+		if (val > 99) val = 99;
+		snprintf(str, sizeof(str), "%02d", val);
+		textOutFixed(video, bmp, 382, 334, PAL_FORGRND, PAL_DESKTOP, str);
+	}
+
+	/* Update scrollbar positions */
+	if (s != NULL)
+	{
+		setScrollBarPos(inst, video, SB_INST_VOL, s->volume, false);
+		setScrollBarPos(inst, video, SB_INST_PAN, s->panning, false);
+		setScrollBarPos(inst, video, SB_INST_FTUNE, 128 + s->finetune, false);
+	}
+
+	if (ins != NULL)
+	{
+		setScrollBarPos(inst, video, SB_INST_FADEOUT, ins->fadeout, false);
+		setScrollBarPos(inst, video, SB_INST_VIBSPEED, ins->autoVibRate, false);
+		setScrollBarPos(inst, video, SB_INST_VIBDEPTH, ins->autoVibDepth, false);
+		setScrollBarPos(inst, video, SB_INST_VIBSWEEP, ins->autoVibSweep, false);
+
+		/* Update radio buttons for vibrato type */
+		uncheckRadioButtonGroup(RB_GROUP_INST_WAVEFORM);
+		uint16_t rbID;
+		switch (ins->autoVibType)
+		{
+			default:
+			case 0: rbID = RB_INST_WAVE_SINE;   break;
+			case 1: rbID = RB_INST_WAVE_SQUARE; break;
+			case 2: rbID = RB_INST_WAVE_RAMPDN; break;
+			case 3: rbID = RB_INST_WAVE_RAMPUP; break;
+		}
+		radioButtons[rbID].state = RADIOBUTTON_CHECKED;
+
+		/* Update checkboxes for envelope enable */
+		checkBoxes[CB_INST_VENV].checked = (ins->volEnvFlags & ENV_ENABLED) ? true : false;
+		checkBoxes[CB_INST_VENV_SUS].checked = (ins->volEnvFlags & ENV_SUSTAIN) ? true : false;
+		checkBoxes[CB_INST_VENV_LOOP].checked = (ins->volEnvFlags & ENV_LOOP) ? true : false;
+		checkBoxes[CB_INST_PENV].checked = (ins->panEnvFlags & ENV_ENABLED) ? true : false;
+		checkBoxes[CB_INST_PENV_SUS].checked = (ins->panEnvFlags & ENV_SUSTAIN) ? true : false;
+		checkBoxes[CB_INST_PENV_LOOP].checked = (ins->panEnvFlags & ENV_LOOP) ? true : false;
+	}
+}
+
+void ft2_instr_ed_draw(ft2_instrument_editor_t *editor, const ft2_bmp_t *bmp)
+{
+	if (editor == NULL || editor->video == NULL)
+		return;
+
+	ft2_video_t *video = editor->video;
+	ft2_instance_t *inst = editor->instance;
+
+	/* Sync with global current instrument and sample */
+	if (inst != NULL)
+	{
+		editor->currInstr = inst->editor.curInstr;
+		editor->currSmp = inst->editor.curSmp;
+
+		/* Allocate instrument if needed (user selected an empty slot) */
+		if (editor->currInstr > 0 && editor->currInstr <= 128)
+		{
+			if (inst->replayer.instr[editor->currInstr] == NULL)
+				ft2_instance_alloc_instr(inst, editor->currInstr);
+		}
+	}
+
+	/* Draw frameworks - exact match to standalone showInstEditor() */
+	drawFramework(video, 0,   173, 438,  87, FRAMEWORK_TYPE1);
+	drawFramework(video, 0,   260, 438,  87, FRAMEWORK_TYPE1);
+	drawFramework(video, 0,   347, 632,  53, FRAMEWORK_TYPE1);
+	drawFramework(video, 438, 173, 194,  45, FRAMEWORK_TYPE1);
+	drawFramework(video, 438, 218, 194,  76, FRAMEWORK_TYPE1);
+	drawFramework(video, 438, 294, 194,  53, FRAMEWORK_TYPE1);
+	drawFramework(video, 2,   188, 337,  70, FRAMEWORK_TYPE2);
+	drawFramework(video, 2,   275, 337,  70, FRAMEWORK_TYPE2);
+	drawFramework(video, 2,   349, 628,  49, FRAMEWORK_TYPE2);
+	drawFramework(video, 593, 296,  36,  15, FRAMEWORK_TYPE2);
+
+	/* Draw text labels - exact match to standalone showInstEditor() */
+	if (bmp != NULL)
+	{
+		textOutShadow(video, bmp, 20,  176, PAL_FORGRND, PAL_DSKTOP2, "Volume envelope:");
+		textOutShadow(video, bmp, 153, 176, PAL_FORGRND, PAL_DSKTOP2, "Predef.");
+		textOutShadow(video, bmp, 358, 194, PAL_FORGRND, PAL_DSKTOP2, "Sustain:");
+		textOutShadow(video, bmp, 342, 206, PAL_FORGRND, PAL_DSKTOP2, "Point");
+		textOutShadow(video, bmp, 358, 219, PAL_FORGRND, PAL_DSKTOP2, "Env.loop:");
+		textOutShadow(video, bmp, 342, 233, PAL_FORGRND, PAL_DSKTOP2, "Start");
+		textOutShadow(video, bmp, 342, 247, PAL_FORGRND, PAL_DSKTOP2, "End");
+		textOutShadow(video, bmp, 20,  263, PAL_FORGRND, PAL_DSKTOP2, "Panning envelope:");
+		textOutShadow(video, bmp, 152, 263, PAL_FORGRND, PAL_DSKTOP2, "Predef.");
+		textOutShadow(video, bmp, 358, 281, PAL_FORGRND, PAL_DSKTOP2, "Sustain:");
+		textOutShadow(video, bmp, 342, 293, PAL_FORGRND, PAL_DSKTOP2, "Point");
+		textOutShadow(video, bmp, 358, 306, PAL_FORGRND, PAL_DSKTOP2, "Env.loop:");
+		textOutShadow(video, bmp, 342, 320, PAL_FORGRND, PAL_DSKTOP2, "Start");
+		textOutShadow(video, bmp, 342, 334, PAL_FORGRND, PAL_DSKTOP2, "End");
+		textOutShadow(video, bmp, 443, 177, PAL_FORGRND, PAL_DSKTOP2, "Volume");
+		textOutShadow(video, bmp, 443, 191, PAL_FORGRND, PAL_DSKTOP2, "Panning");
+		textOutShadow(video, bmp, 443, 205, PAL_FORGRND, PAL_DSKTOP2, "F.tune");
+		textOutShadow(video, bmp, 442, 222, PAL_FORGRND, PAL_DSKTOP2, "Fadeout");
+		textOutShadow(video, bmp, 442, 236, PAL_FORGRND, PAL_DSKTOP2, "Vib.speed");
+		textOutShadow(video, bmp, 442, 250, PAL_FORGRND, PAL_DSKTOP2, "Vib.depth");
+		textOutShadow(video, bmp, 442, 264, PAL_FORGRND, PAL_DSKTOP2, "Vib.sweep");
+		textOutShadow(video, bmp, 442, 299, PAL_FORGRND, PAL_DSKTOP2, "C-4=");
+		textOutShadow(video, bmp, 537, 299, PAL_FORGRND, PAL_DSKTOP2, "Rel. note");
+
+		/* Draw vibrato waveforms */
+		if (bmp->vibratoWaveforms != NULL)
+		{
+			blitFast(video, 455, 279, &bmp->vibratoWaveforms[0*(12*10)], 12, 10);
+			blitFast(video, 485, 279, &bmp->vibratoWaveforms[1*(12*10)], 12, 10);
+			blitFast(video, 515, 279, &bmp->vibratoWaveforms[2*(12*10)], 12, 10);
+			blitFast(video, 545, 279, &bmp->vibratoWaveforms[3*(12*10)], 12, 10);
+		}
+	}
+
+	/* Draw envelopes */
+	ft2_instr_ed_draw_vol_env(editor);
+	ft2_instr_ed_draw_pan_env(editor);
+
+	/* Draw envelope coordinates (tick/value display) */
+	{
+		ft2_instr_t *ins = NULL;
+		if (editor->currInstr > 0 && editor->currInstr < 128)
+			ins = editor->instance->replayer.instr[editor->currInstr];
+
+		int16_t volTick = 0, volVal = 0;
+		int16_t panTick = 0, panVal = 32;
+
+		if (ins != NULL && ins->volEnvLength > 0)
+			{
+			volTick = ins->volEnvPoints[editor->currVolEnvPoint][0];
+			volVal = ins->volEnvPoints[editor->currVolEnvPoint][1];
+		}
+
+		if (ins != NULL && ins->panEnvLength > 0)
+		{
+			panTick = ins->panEnvPoints[editor->currPanEnvPoint][0];
+			panVal = ins->panEnvPoints[editor->currPanEnvPoint][1];
+		}
+
+		drawVolEnvCoords(video, bmp, volTick, volVal);
+		drawPanEnvCoords(video, bmp, panTick, panVal);
+	}
+
+	/* Draw piano */
+	ft2_instr_ed_draw_piano(editor, bmp);
+
+	/* Call update to draw value displays */
+	updateInstEditor(editor, bmp);
+}
+
+void ft2_instr_ed_mouse_click(ft2_instrument_editor_t *editor, int x, int y, int button)
+{
+	if (editor == NULL)
+		return;
+
+	editor->lastMouseX = x;
+	editor->lastMouseY = y;
+
+	/* Check if click is in volume envelope area - exact match to standalone */
+	if (y >= VOL_ENV_Y && y <= VOL_ENV_Y + ENV_HEIGHT && x >= 7 && x <= 334)
+	{
+		ft2_instance_t *inst = editor->instance;
+		if (inst == NULL || editor->currInstr == 0)
+			return;
+		
+		ft2_instr_t *ins = getInstrForInst(inst);
+		if (ins == NULL || ins->volEnvLength == 0)
+			return;
+		
+		uint8_t ant = ins->volEnvLength;
+		if (ant > 12)
+			ant = 12;
+		
+		/* Search for a point within ±2 pixels of the click */
+		for (uint8_t i = 0; i < ant; i++)
+		{
+			const int32_t px = 8 + ins->volEnvPoints[i][0];
+			const int32_t py = VOL_ENV_Y + 1 + (64 - ins->volEnvPoints[i][1]);
+			
+			if (x >= px - 2 && x <= px + 2 && y >= py - 2 && y <= py + 2)
+	{
+				editor->currVolEnvPoint = i;
+				editor->saveMouseX = 8 + (editor->lastMouseX - px);
+				editor->saveMouseY = (VOL_ENV_Y + 1) + (editor->lastMouseY - py);
+		editor->draggingVolEnv = true;
+				inst->uiState.updateInstEditor = true;
+				return;
+			}
+		}
+		return;
+	}
+
+	/* Check if click is in panning envelope area - exact match to standalone */
+	if (y >= PAN_ENV_Y && y <= PAN_ENV_Y + ENV_HEIGHT && x >= 7 && x <= 334)
+	{
+		ft2_instance_t *inst = editor->instance;
+		if (inst == NULL || editor->currInstr == 0)
+			return;
+		
+		ft2_instr_t *ins = getInstrForInst(inst);
+		if (ins == NULL || ins->panEnvLength == 0)
+			return;
+		
+		uint8_t ant = ins->panEnvLength;
+		if (ant > 12)
+			ant = 12;
+		
+		/* Search for a point within ±2 pixels of the click */
+		for (uint8_t i = 0; i < ant; i++)
+		{
+			const int32_t px = 8 + ins->panEnvPoints[i][0];
+			const int32_t py = PAN_ENV_Y + 1 + (63 - ins->panEnvPoints[i][1]);
+			
+			if (x >= px - 2 && x <= px + 2 && y >= py - 2 && y <= py + 2)
+	{
+				editor->currPanEnvPoint = i;
+				editor->saveMouseX = editor->lastMouseX - px + 8;
+				editor->saveMouseY = editor->lastMouseY - py + (PAN_ENV_Y + 1);
+		editor->draggingPanEnv = true;
+				inst->uiState.updateInstEditor = true;
+				return;
+			}
+		}
+		return;
+	}
+
+	/* Check if click is on piano - assign current sample to the clicked key */
+	if (y >= PIANO_Y && y < PIANO_Y + PIANOKEY_WHITE_H && x >= PIANO_X && x < PIANO_X + (77 * PIANO_OCTAVES))
+	{
+		ft2_instance_t *inst = editor->instance;
+		if (inst == NULL || editor->currInstr == 0)
+			return;
+		
+		ft2_instr_t *ins = getInstrForInst(inst);
+		if (ins == NULL)
+			return;
+		
+		int32_t mx = x - PIANO_X;
+		int32_t my = y;
+		
+		const int32_t quotient = mx / 77;
+		const int32_t remainder = mx % 77;
+		
+		uint8_t octave, key;
+		
+		/* Black keys threshold: y < 378 (PIANO_Y + 27) for black key area */
+		if (my < PIANO_Y + PIANOKEY_BLACK_H)
+		{
+			/* White keys and black keys (top part) */
+			octave = (uint8_t)quotient;
+			key = mx2PianoKey[remainder];
+		}
+		else
+		{
+			/* White keys only (bottom part) */
+			const int32_t whiteKeyWidth = 11;
+			octave = (uint8_t)quotient;
+			key = whiteKeyIndex[remainder / whiteKeyWidth];
+		}
+		
+		/* Calculate note (0-95 range) and assign current sample to it */
+		const uint8_t note = (octave * 12) + key;
+		if (note < 96 && ins->note2SampleLUT[note] != inst->editor.curSmp)
+		{
+			ins->note2SampleLUT[note] = inst->editor.curSmp;
+			/* Mark piano for redraw to show the new sample number */
+			inst->uiState.updateInstEditor = true;
+		}
+		
+		editor->draggingPiano = true;
+		return;
+	}
+
+	(void)button;
+}
+
+void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y)
+{
+	if (editor == NULL)
+		return;
+
+	/* Handle piano dragging - assign samples to keys */
+	if (editor->draggingPiano)
+	{
+		ft2_instance_t *inst = editor->instance;
+		if (inst == NULL || editor->currInstr == 0)
+			return;
+		
+		ft2_instr_t *ins = getInstrForInst(inst);
+		if (ins == NULL)
+			return;
+		
+		/* Clamp mouse coordinates to piano area */
+		int32_t mx = x - PIANO_X;
+		int32_t my = y;
+		
+		mx = (mx < 0) ? 0 : ((mx >= 77 * PIANO_OCTAVES) ? (77 * PIANO_OCTAVES - 1) : mx);
+		my = (my < PIANO_Y) ? PIANO_Y : ((my >= PIANO_Y + PIANOKEY_WHITE_H) ? (PIANO_Y + PIANOKEY_WHITE_H - 1) : my);
+		
+		const int32_t quotient = mx / 77;
+		const int32_t remainder = mx % 77;
+		
+		uint8_t octave, key;
+		
+		if (my < PIANO_Y + PIANOKEY_BLACK_H)
+		{
+			octave = (uint8_t)quotient;
+			key = mx2PianoKey[remainder];
+		}
+		else
+		{
+			const int32_t whiteKeyWidth = 11;
+			octave = (uint8_t)quotient;
+			key = whiteKeyIndex[remainder / whiteKeyWidth];
+		}
+		
+		const uint8_t note = (octave * 12) + key;
+		if (note < 96 && ins->note2SampleLUT[note] != inst->editor.curSmp)
+		{
+			ins->note2SampleLUT[note] = inst->editor.curSmp;
+			/* Mark piano for redraw */
+			inst->uiState.updateInstEditor = true;
+		}
+		return;
+	}
+
+	/* Handle volume envelope point dragging - exact match to standalone */
+	if (editor->draggingVolEnv)
+	{
+		ft2_instance_t *inst = editor->instance;
+		if (inst == NULL || editor->currInstr == 0)
+			return;
+		
+		ft2_instr_t *ins = getInstrForInst(inst);
+		if (ins == NULL || ins->volEnvLength == 0)
+			return;
+		
+		uint8_t ant = ins->volEnvLength;
+		if (ant > 12)
+			ant = 12;
+		
+		int32_t mx = x;
+		int32_t my = y;
+		
+		/* Handle X movement - constrain between adjacent points */
+		if (mx != editor->lastMouseX)
+		{
+			editor->lastMouseX = mx;
+			
+			if (ant > 1 && editor->currVolEnvPoint > 0)
+			{
+				mx -= editor->saveMouseX;
+				if (mx < 0) mx = 0;
+				if (mx > 324) mx = 324;
+				
+				int32_t minX, maxX;
+				if (editor->currVolEnvPoint == ant - 1)
+				{
+					minX = ins->volEnvPoints[editor->currVolEnvPoint - 1][0] + 1;
+					maxX = 324;
+				}
+				else
+				{
+					minX = ins->volEnvPoints[editor->currVolEnvPoint - 1][0] + 1;
+					maxX = ins->volEnvPoints[editor->currVolEnvPoint + 1][0] - 1;
+				}
+				
+				if (minX < 0) minX = 0;
+				if (minX > 324) minX = 324;
+				if (maxX < 0) maxX = 0;
+				if (maxX > 324) maxX = 324;
+				
+				if (mx < minX) mx = minX;
+				if (mx > maxX) mx = maxX;
+				
+				ins->volEnvPoints[editor->currVolEnvPoint][0] = (int16_t)mx;
+				inst->uiState.updateInstEditor = true;
+			}
+		}
+		
+		/* Handle Y movement - clamp to 0-64 */
+		if (my != editor->lastMouseY)
+		{
+			editor->lastMouseY = my;
+			
+			my -= editor->saveMouseY;
+			if (my < 0) my = 0;
+			if (my > 64) my = 64;
+			my = 64 - my;
+			
+			ins->volEnvPoints[editor->currVolEnvPoint][1] = (int16_t)my;
+			inst->uiState.updateInstEditor = true;
+		}
+		return;
+	}
+
+	/* Handle panning envelope point dragging - exact match to standalone */
+	if (editor->draggingPanEnv)
+	{
+		ft2_instance_t *inst = editor->instance;
+		if (inst == NULL || editor->currInstr == 0)
+			return;
+		
+		ft2_instr_t *ins = getInstrForInst(inst);
+		if (ins == NULL || ins->panEnvLength == 0)
+			return;
+		
+		uint8_t ant = ins->panEnvLength;
+		if (ant > 12)
+			ant = 12;
+		
+		int32_t mx = x;
+		int32_t my = y;
+		
+		/* Handle X movement - constrain between adjacent points */
+		if (mx != editor->lastMouseX)
+		{
+			editor->lastMouseX = mx;
+			
+			if (ant > 1 && editor->currPanEnvPoint > 0)
+			{
+				mx -= editor->saveMouseX;
+				if (mx < 0) mx = 0;
+				if (mx > 324) mx = 324;
+				
+				int32_t minX, maxX;
+				if (editor->currPanEnvPoint == ant - 1)
+				{
+					minX = ins->panEnvPoints[editor->currPanEnvPoint - 1][0] + 1;
+					maxX = 324;
+				}
+				else
+				{
+					minX = ins->panEnvPoints[editor->currPanEnvPoint - 1][0] + 1;
+					maxX = ins->panEnvPoints[editor->currPanEnvPoint + 1][0] - 1;
+				}
+				
+				if (minX < 0) minX = 0;
+				if (minX > 324) minX = 324;
+				if (maxX < 0) maxX = 0;
+				if (maxX > 324) maxX = 324;
+				
+				if (mx < minX) mx = minX;
+				if (mx > maxX) mx = maxX;
+				
+				ins->panEnvPoints[editor->currPanEnvPoint][0] = (int16_t)mx;
+				inst->uiState.updateInstEditor = true;
+			}
+		}
+		
+		/* Handle Y movement - clamp to 0-63 */
+		if (my != editor->lastMouseY)
+		{
+			editor->lastMouseY = my;
+			
+			my -= editor->saveMouseY;
+			if (my < 0) my = 0;
+			if (my > 63) my = 63;
+			my = 63 - my;
+			
+			ins->panEnvPoints[editor->currPanEnvPoint][1] = (int16_t)my;
+			inst->uiState.updateInstEditor = true;
+		}
+		return;
+	}
+}
+
+void ft2_instr_ed_mouse_up(ft2_instrument_editor_t *editor)
+{
+	if (editor == NULL)
+		return;
+
+	editor->draggingVolEnv = false;
+	editor->draggingPanEnv = false;
+	editor->draggingPiano = false;
+}
+
+static ft2_instr_t *getCurrentInstr(ft2_instrument_editor_t *editor)
+{
+	if (editor == NULL || editor->instance == NULL)
+		return NULL;
+	
+	if (editor->currInstr <= 0 || editor->currInstr >= 128)
+		return NULL;
+	
+	return editor->instance->replayer.instr[editor->currInstr];
+}
+
+void ft2_instr_ed_add_env_point(ft2_instrument_editor_t *editor, bool volEnv)
+{
+	ft2_instr_t *ins = getCurrentInstr(editor);
+	if (ins == NULL)
+		return;
+	
+	uint8_t *length = volEnv ? &ins->volEnvLength : &ins->panEnvLength;
+	int16_t (*points)[2] = volEnv ? ins->volEnvPoints : ins->panEnvPoints;
+	
+	if (*length >= 12)
+		return;
+	
+	/* Add point at the end */
+	int16_t lastX = (*length > 0) ? points[*length - 1][0] : 0;
+	int16_t lastY = (*length > 0) ? points[*length - 1][1] : (volEnv ? 64 : 32);
+	
+	points[*length][0] = lastX + 16;
+	points[*length][1] = lastY;
+	(*length)++;
+}
+
+void ft2_instr_ed_del_env_point(ft2_instrument_editor_t *editor, bool volEnv)
+{
+	ft2_instr_t *ins = getCurrentInstr(editor);
+	if (ins == NULL)
+		return;
+	
+	uint8_t *length = volEnv ? &ins->volEnvLength : &ins->panEnvLength;
+	
+	if (*length > 2)
+		(*length)--;
+}
+
+void ft2_instr_ed_set_sustain(ft2_instrument_editor_t *editor, bool volEnv, int point)
+{
+	ft2_instr_t *ins = getCurrentInstr(editor);
+	if (ins == NULL || point < 0)
+		return;
+	
+	uint8_t *sustain = volEnv ? &ins->volEnvSustain : &ins->panEnvSustain;
+	uint8_t length = volEnv ? ins->volEnvLength : ins->panEnvLength;
+	
+	if (point < length)
+		*sustain = (uint8_t)point;
+}
+
+void ft2_instr_ed_set_loop_start(ft2_instrument_editor_t *editor, bool volEnv, int point)
+{
+	ft2_instr_t *ins = getCurrentInstr(editor);
+	if (ins == NULL || point < 0)
+		return;
+	
+	uint8_t *loopStart = volEnv ? &ins->volEnvLoopStart : &ins->panEnvLoopStart;
+	uint8_t *loopEnd = volEnv ? &ins->volEnvLoopEnd : &ins->panEnvLoopEnd;
+	uint8_t length = volEnv ? ins->volEnvLength : ins->panEnvLength;
+	
+	if (point < length)
+	{
+		*loopStart = (uint8_t)point;
+		if (*loopEnd < *loopStart)
+			*loopEnd = *loopStart;
+	}
+}
+
+void ft2_instr_ed_set_loop_end(ft2_instrument_editor_t *editor, bool volEnv, int point)
+{
+	ft2_instr_t *ins = getCurrentInstr(editor);
+	if (ins == NULL || point < 0)
+		return;
+	
+	uint8_t *loopStart = volEnv ? &ins->volEnvLoopStart : &ins->panEnvLoopStart;
+	uint8_t *loopEnd = volEnv ? &ins->volEnvLoopEnd : &ins->panEnvLoopEnd;
+	uint8_t length = volEnv ? ins->volEnvLength : ins->panEnvLength;
+	
+	if (point < length)
+	{
+		*loopEnd = (uint8_t)point;
+		if (*loopStart > *loopEnd)
+			*loopStart = *loopEnd;
+	}
+}
+
+/* Instrument clipboard */
+static ft2_instr_t instrClipboard;
+static bool clipboardValid = false;
+
+void ft2_instr_ed_copy(ft2_instrument_editor_t *editor)
+{
+	ft2_instr_t *ins = getCurrentInstr(editor);
+	if (ins == NULL)
+		return;
+	
+	memcpy(&instrClipboard, ins, sizeof(ft2_instr_t));
+	
+	/* Don't copy sample pointers */
+	for (int i = 0; i < 16; i++)
+	{
+		instrClipboard.smp[i].dataPtr = NULL;
+		instrClipboard.smp[i].origDataPtr = NULL;
+	}
+	
+	clipboardValid = true;
+}
+
+void ft2_instr_ed_paste(ft2_instrument_editor_t *editor)
+{
+	if (!clipboardValid)
+		return;
+	
+	ft2_instr_t *ins = getCurrentInstr(editor);
+	if (ins == NULL)
+		return;
+	
+	/* Copy envelope data only */
+	ins->volEnvLength = instrClipboard.volEnvLength;
+	ins->panEnvLength = instrClipboard.panEnvLength;
+	ins->volEnvSustain = instrClipboard.volEnvSustain;
+	ins->volEnvLoopStart = instrClipboard.volEnvLoopStart;
+	ins->volEnvLoopEnd = instrClipboard.volEnvLoopEnd;
+	ins->panEnvSustain = instrClipboard.panEnvSustain;
+	ins->panEnvLoopStart = instrClipboard.panEnvLoopStart;
+	ins->panEnvLoopEnd = instrClipboard.panEnvLoopEnd;
+	ins->volEnvFlags = instrClipboard.volEnvFlags;
+	ins->panEnvFlags = instrClipboard.panEnvFlags;
+	
+	memcpy(ins->volEnvPoints, instrClipboard.volEnvPoints, sizeof(ins->volEnvPoints));
+	memcpy(ins->panEnvPoints, instrClipboard.panEnvPoints, sizeof(ins->panEnvPoints));
+	
+	ins->autoVibType = instrClipboard.autoVibType;
+	ins->autoVibSweep = instrClipboard.autoVibSweep;
+	ins->autoVibDepth = instrClipboard.autoVibDepth;
+	ins->autoVibRate = instrClipboard.autoVibRate;
+	ins->fadeout = instrClipboard.fadeout;
+}
+
+void ft2_instr_ed_clear(ft2_instrument_editor_t *editor)
+{
+	ft2_instr_t *ins = getCurrentInstr(editor);
+	if (ins == NULL)
+		return;
+	
+	/* Clear envelope data */
+	ins->volEnvLength = 0;
+	ins->panEnvLength = 0;
+	ins->volEnvSustain = 0;
+	ins->volEnvLoopStart = 0;
+	ins->volEnvLoopEnd = 0;
+	ins->panEnvSustain = 0;
+	ins->panEnvLoopStart = 0;
+	ins->panEnvLoopEnd = 0;
+	ins->volEnvFlags = 0;
+	ins->panEnvFlags = 0;
+	
+	memset(ins->volEnvPoints, 0, sizeof(ins->volEnvPoints));
+	memset(ins->panEnvPoints, 0, sizeof(ins->panEnvPoints));
+	
+	ins->autoVibType = 0;
+	ins->autoVibSweep = 0;
+	ins->autoVibDepth = 0;
+	ins->autoVibRate = 0;
+	ins->fadeout = 0;
+}
+
+/* ============ VISIBILITY FUNCTIONS ============ */
+
+void showInstEditor(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+{
+	if (inst == NULL)
+		return;
+
+	/* Hide other bottom screens (matching standalone) */
+	if (inst->uiState.extendedPatternEditor)
+	{
+		inst->uiState.extendedPatternEditor = false;
+	}
+	if (inst->uiState.sampleEditorShown)
+	{
+	inst->uiState.sampleEditorShown = false;
+	}
+	if (inst->uiState.sampleEditorExtShown)
+	{
+		inst->uiState.sampleEditorExtShown = false;
+	}
+	
+	/* Hide pattern editor (including channel scrollbar) */
+	hidePatternEditor(inst);
+	inst->uiState.instEditorShown = true;
+
+	/* Show scrollbars */
+	showScrollBar(video, SB_INST_VOL);
+	showScrollBar(video, SB_INST_PAN);
+	showScrollBar(video, SB_INST_FTUNE);
+	showScrollBar(video, SB_INST_FADEOUT);
+	showScrollBar(video, SB_INST_VIBSPEED);
+	showScrollBar(video, SB_INST_VIBDEPTH);
+	showScrollBar(video, SB_INST_VIBSWEEP);
+
+	/* Show predef buttons (volume) */
+	showPushButton(video, bmp, PB_INST_VDEF1);
+	showPushButton(video, bmp, PB_INST_VDEF2);
+	showPushButton(video, bmp, PB_INST_VDEF3);
+	showPushButton(video, bmp, PB_INST_VDEF4);
+	showPushButton(video, bmp, PB_INST_VDEF5);
+	showPushButton(video, bmp, PB_INST_VDEF6);
+
+	/* Show predef buttons (panning) */
+	showPushButton(video, bmp, PB_INST_PDEF1);
+	showPushButton(video, bmp, PB_INST_PDEF2);
+	showPushButton(video, bmp, PB_INST_PDEF3);
+	showPushButton(video, bmp, PB_INST_PDEF4);
+	showPushButton(video, bmp, PB_INST_PDEF5);
+	showPushButton(video, bmp, PB_INST_PDEF6);
+
+	/* Show volume envelope buttons */
+	showPushButton(video, bmp, PB_INST_VP_ADD);
+	showPushButton(video, bmp, PB_INST_VP_DEL);
+	showPushButton(video, bmp, PB_INST_VS_UP);
+	showPushButton(video, bmp, PB_INST_VS_DOWN);
+	showPushButton(video, bmp, PB_INST_VREPS_UP);
+	showPushButton(video, bmp, PB_INST_VREPS_DOWN);
+	showPushButton(video, bmp, PB_INST_VREPE_UP);
+	showPushButton(video, bmp, PB_INST_VREPE_DOWN);
+
+	/* Show panning envelope buttons */
+	showPushButton(video, bmp, PB_INST_PP_ADD);
+	showPushButton(video, bmp, PB_INST_PP_DEL);
+	showPushButton(video, bmp, PB_INST_PS_UP);
+	showPushButton(video, bmp, PB_INST_PS_DOWN);
+	showPushButton(video, bmp, PB_INST_PREPS_UP);
+	showPushButton(video, bmp, PB_INST_PREPS_DOWN);
+	showPushButton(video, bmp, PB_INST_PREPE_UP);
+	showPushButton(video, bmp, PB_INST_PREPE_DOWN);
+
+	/* Show value adjust buttons */
+	showPushButton(video, bmp, PB_INST_VOL_DOWN);
+	showPushButton(video, bmp, PB_INST_VOL_UP);
+	showPushButton(video, bmp, PB_INST_PAN_DOWN);
+	showPushButton(video, bmp, PB_INST_PAN_UP);
+	showPushButton(video, bmp, PB_INST_FTUNE_DOWN);
+	showPushButton(video, bmp, PB_INST_FTUNE_UP);
+	showPushButton(video, bmp, PB_INST_FADEOUT_DOWN);
+	showPushButton(video, bmp, PB_INST_FADEOUT_UP);
+	showPushButton(video, bmp, PB_INST_VIBSPEED_DOWN);
+	showPushButton(video, bmp, PB_INST_VIBSPEED_UP);
+	showPushButton(video, bmp, PB_INST_VIBDEPTH_DOWN);
+	showPushButton(video, bmp, PB_INST_VIBDEPTH_UP);
+	showPushButton(video, bmp, PB_INST_VIBSWEEP_DOWN);
+	showPushButton(video, bmp, PB_INST_VIBSWEEP_UP);
+
+	/* Show control buttons */
+	showPushButton(video, bmp, PB_INST_EXIT);
+	showPushButton(video, bmp, PB_INST_OCT_UP);
+	showPushButton(video, bmp, PB_INST_HALFTONE_UP);
+	showPushButton(video, bmp, PB_INST_OCT_DOWN);
+	showPushButton(video, bmp, PB_INST_HALFTONE_DOWN);
+
+	/* Show envelope checkboxes */
+	showCheckBox(video, bmp, CB_INST_VENV);
+	showCheckBox(video, bmp, CB_INST_VENV_SUS);
+	showCheckBox(video, bmp, CB_INST_VENV_LOOP);
+	showCheckBox(video, bmp, CB_INST_PENV);
+	showCheckBox(video, bmp, CB_INST_PENV_SUS);
+	showCheckBox(video, bmp, CB_INST_PENV_LOOP);
+
+	/* Show vibrato waveform radio buttons */
+	showRadioButtonGroup(video, bmp, RB_GROUP_INST_WAVEFORM);
+
+	inst->uiState.updateInstEditor = true;
+}
+
+void hideInstEditor(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	inst->uiState.instEditorShown = false;
+
+	/* Hide scrollbars */
+	hideScrollBar(SB_INST_VOL);
+	hideScrollBar(SB_INST_PAN);
+	hideScrollBar(SB_INST_FTUNE);
+	hideScrollBar(SB_INST_FADEOUT);
+	hideScrollBar(SB_INST_VIBSPEED);
+	hideScrollBar(SB_INST_VIBDEPTH);
+	hideScrollBar(SB_INST_VIBSWEEP);
+
+	/* Hide predef buttons (volume) */
+	hidePushButton(PB_INST_VDEF1);
+	hidePushButton(PB_INST_VDEF2);
+	hidePushButton(PB_INST_VDEF3);
+	hidePushButton(PB_INST_VDEF4);
+	hidePushButton(PB_INST_VDEF5);
+	hidePushButton(PB_INST_VDEF6);
+
+	/* Hide predef buttons (panning) */
+	hidePushButton(PB_INST_PDEF1);
+	hidePushButton(PB_INST_PDEF2);
+	hidePushButton(PB_INST_PDEF3);
+	hidePushButton(PB_INST_PDEF4);
+	hidePushButton(PB_INST_PDEF5);
+	hidePushButton(PB_INST_PDEF6);
+
+	/* Hide volume envelope buttons */
+	hidePushButton(PB_INST_VP_ADD);
+	hidePushButton(PB_INST_VP_DEL);
+	hidePushButton(PB_INST_VS_UP);
+	hidePushButton(PB_INST_VS_DOWN);
+	hidePushButton(PB_INST_VREPS_UP);
+	hidePushButton(PB_INST_VREPS_DOWN);
+	hidePushButton(PB_INST_VREPE_UP);
+	hidePushButton(PB_INST_VREPE_DOWN);
+
+	/* Hide panning envelope buttons */
+	hidePushButton(PB_INST_PP_ADD);
+	hidePushButton(PB_INST_PP_DEL);
+	hidePushButton(PB_INST_PS_UP);
+	hidePushButton(PB_INST_PS_DOWN);
+	hidePushButton(PB_INST_PREPS_UP);
+	hidePushButton(PB_INST_PREPS_DOWN);
+	hidePushButton(PB_INST_PREPE_UP);
+	hidePushButton(PB_INST_PREPE_DOWN);
+
+	/* Hide value adjust buttons */
+	hidePushButton(PB_INST_VOL_DOWN);
+	hidePushButton(PB_INST_VOL_UP);
+	hidePushButton(PB_INST_PAN_DOWN);
+	hidePushButton(PB_INST_PAN_UP);
+	hidePushButton(PB_INST_FTUNE_DOWN);
+	hidePushButton(PB_INST_FTUNE_UP);
+	hidePushButton(PB_INST_FADEOUT_DOWN);
+	hidePushButton(PB_INST_FADEOUT_UP);
+	hidePushButton(PB_INST_VIBSPEED_DOWN);
+	hidePushButton(PB_INST_VIBSPEED_UP);
+	hidePushButton(PB_INST_VIBDEPTH_DOWN);
+	hidePushButton(PB_INST_VIBDEPTH_UP);
+	hidePushButton(PB_INST_VIBSWEEP_DOWN);
+	hidePushButton(PB_INST_VIBSWEEP_UP);
+
+	/* Hide control buttons */
+	hidePushButton(PB_INST_EXIT);
+	hidePushButton(PB_INST_OCT_UP);
+	hidePushButton(PB_INST_HALFTONE_UP);
+	hidePushButton(PB_INST_OCT_DOWN);
+	hidePushButton(PB_INST_HALFTONE_DOWN);
+
+	/* Hide envelope checkboxes */
+	hideCheckBox(CB_INST_VENV);
+	hideCheckBox(CB_INST_VENV_SUS);
+	hideCheckBox(CB_INST_VENV_LOOP);
+	hideCheckBox(CB_INST_PENV);
+	hideCheckBox(CB_INST_PENV_SUS);
+	hideCheckBox(CB_INST_PENV_LOOP);
+
+	/* Hide vibrato waveform radio buttons */
+	hideRadioButtonGroup(RB_GROUP_INST_WAVEFORM);
+}
+
+void toggleInstEditor(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+{
+	if (inst == NULL)
+		return;
+
+	/* Hide sample editor if shown (must call hideSampleEditor to hide buttons) */
+	if (inst->uiState.sampleEditorShown)
+	{
+		hideSampleEditor(inst);
+	}
+
+	if (inst->uiState.instEditorShown)
+	{
+		exitInstEditor(inst);
+	}
+	else
+	{
+		inst->uiState.patternEditorShown = false;
+		showInstEditor(inst, video, bmp);
+	}
+}
+
+void exitInstEditor(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	hideInstEditor(inst);
+	inst->uiState.patternEditorShown = true;
+}
+
+/* ============ EXTENDED INSTRUMENT EDITOR ============ */
+
+void showInstEditorExt(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	inst->uiState.instEditorExtShown = true;
+}
+
+void hideInstEditorExt(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	inst->uiState.instEditorExtShown = false;
+}
+
+void toggleInstEditorExt(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	if (inst->uiState.instEditorExtShown)
+		hideInstEditorExt(inst);
+	else
+		showInstEditorExt(inst);
+}
+
+void drawInstEditorExt(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+{
+	if (inst == NULL || video == NULL)
+		return;
+
+	(void)bmp;
+
+	/* Draw extended instrument editor framework */
+	drawFramework(video, 0, 351, 291, 49, FRAMEWORK_TYPE1);
+	drawFramework(video, 291, 351, 341, 49, FRAMEWORK_TYPE1);
+}
+
+/* ============ MIDI CONTROLS ============ */
+
+static ft2_instr_t *getInstrForInst(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return NULL;
+	
+	uint8_t curInstr = inst->editor.curInstr;
+	if (curInstr == 0 || curInstr > 128)
+		return NULL;
+	
+	return inst->replayer.instr[curInstr];
+}
+
+void midiChDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->midiChannel > 0)
+		ins->midiChannel--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void midiChUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->midiChannel < 15)
+		ins->midiChannel++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void midiPrgDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->midiProgram > 0)
+		ins->midiProgram--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void midiPrgUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->midiProgram < 127)
+		ins->midiProgram++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void midiBendDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->midiBend > 0)
+		ins->midiBend--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void midiBendUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->midiBend < 36)
+		ins->midiBend++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+/* ============ VOLUME ENVELOPE PRESETS ============ */
+
+void volPreDef1(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 1: Flat volume */
+	ins->volEnvLength = 2;
+	ins->volEnvPoints[0][0] = 0;  ins->volEnvPoints[0][1] = 64;
+	ins->volEnvPoints[1][0] = 324; ins->volEnvPoints[1][1] = 64;
+	ins->volEnvFlags |= ENV_ENABLED;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void volPreDef2(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 2: Decay */
+	ins->volEnvLength = 2;
+	ins->volEnvPoints[0][0] = 0;  ins->volEnvPoints[0][1] = 64;
+	ins->volEnvPoints[1][0] = 324; ins->volEnvPoints[1][1] = 0;
+	ins->volEnvFlags |= ENV_ENABLED;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void volPreDef3(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 3: Attack-Decay */
+	ins->volEnvLength = 3;
+	ins->volEnvPoints[0][0] = 0;   ins->volEnvPoints[0][1] = 0;
+	ins->volEnvPoints[1][0] = 16;  ins->volEnvPoints[1][1] = 64;
+	ins->volEnvPoints[2][0] = 324; ins->volEnvPoints[2][1] = 0;
+	ins->volEnvFlags |= ENV_ENABLED;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void volPreDef4(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 4: ADSR */
+	ins->volEnvLength = 4;
+	ins->volEnvPoints[0][0] = 0;   ins->volEnvPoints[0][1] = 0;
+	ins->volEnvPoints[1][0] = 16;  ins->volEnvPoints[1][1] = 64;
+	ins->volEnvPoints[2][0] = 64;  ins->volEnvPoints[2][1] = 32;
+	ins->volEnvPoints[3][0] = 324; ins->volEnvPoints[3][1] = 0;
+	ins->volEnvFlags |= ENV_ENABLED;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void volPreDef5(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 5: With sustain */
+	ins->volEnvLength = 3;
+	ins->volEnvPoints[0][0] = 0;   ins->volEnvPoints[0][1] = 0;
+	ins->volEnvPoints[1][0] = 16;  ins->volEnvPoints[1][1] = 64;
+	ins->volEnvPoints[2][0] = 324; ins->volEnvPoints[2][1] = 64;
+	ins->volEnvSustain = 1;
+	ins->volEnvFlags |= ENV_ENABLED | ENV_SUSTAIN;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void volPreDef6(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 6: Triangle loop */
+	ins->volEnvLength = 3;
+	ins->volEnvPoints[0][0] = 0;  ins->volEnvPoints[0][1] = 64;
+	ins->volEnvPoints[1][0] = 64; ins->volEnvPoints[1][1] = 0;
+	ins->volEnvPoints[2][0] = 128; ins->volEnvPoints[2][1] = 64;
+	ins->volEnvLoopStart = 0;
+	ins->volEnvLoopEnd = 2;
+	ins->volEnvFlags |= ENV_ENABLED | ENV_LOOP;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+/* ============ PAN ENVELOPE PRESETS ============ */
+
+void panPreDef1(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 1: Center */
+	ins->panEnvLength = 2;
+	ins->panEnvPoints[0][0] = 0;   ins->panEnvPoints[0][1] = 32;
+	ins->panEnvPoints[1][0] = 324; ins->panEnvPoints[1][1] = 32;
+	ins->panEnvFlags |= ENV_ENABLED;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panPreDef2(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 2: Sweep right */
+	ins->panEnvLength = 2;
+	ins->panEnvPoints[0][0] = 0;   ins->panEnvPoints[0][1] = 0;
+	ins->panEnvPoints[1][0] = 324; ins->panEnvPoints[1][1] = 64;
+	ins->panEnvFlags |= ENV_ENABLED;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panPreDef3(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 3: Sweep left */
+	ins->panEnvLength = 2;
+	ins->panEnvPoints[0][0] = 0;   ins->panEnvPoints[0][1] = 64;
+	ins->panEnvPoints[1][0] = 324; ins->panEnvPoints[1][1] = 0;
+	ins->panEnvFlags |= ENV_ENABLED;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panPreDef4(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 4: Ping pong */
+	ins->panEnvLength = 3;
+	ins->panEnvPoints[0][0] = 0;   ins->panEnvPoints[0][1] = 0;
+	ins->panEnvPoints[1][0] = 64;  ins->panEnvPoints[1][1] = 64;
+	ins->panEnvPoints[2][0] = 128; ins->panEnvPoints[2][1] = 0;
+	ins->panEnvLoopStart = 0;
+	ins->panEnvLoopEnd = 2;
+	ins->panEnvFlags |= ENV_ENABLED | ENV_LOOP;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panPreDef5(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 5: Fast sweep */
+	ins->panEnvLength = 2;
+	ins->panEnvPoints[0][0] = 0;  ins->panEnvPoints[0][1] = 0;
+	ins->panEnvPoints[1][0] = 32; ins->panEnvPoints[1][1] = 64;
+	ins->panEnvFlags |= ENV_ENABLED;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panPreDef6(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	/* Preset 6: Tremolo */
+	ins->panEnvLength = 4;
+	ins->panEnvPoints[0][0] = 0;  ins->panEnvPoints[0][1] = 32;
+	ins->panEnvPoints[1][0] = 16; ins->panEnvPoints[1][1] = 64;
+	ins->panEnvPoints[2][0] = 32; ins->panEnvPoints[2][1] = 32;
+	ins->panEnvPoints[3][0] = 48; ins->panEnvPoints[3][1] = 0;
+	ins->panEnvLoopStart = 0;
+	ins->panEnvLoopEnd = 3;
+	ins->panEnvFlags |= ENV_ENABLED | ENV_LOOP;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+/* ============ RELATIVE NOTE CONTROLS ============ */
+
+static ft2_sample_t *getCurrentSample(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return NULL;
+	
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return NULL;
+	
+	uint8_t curSmp = inst->editor.curSmp;
+	if (curSmp >= 16)
+		return NULL;
+	
+	return &ins->smp[curSmp];
+}
+
+void relativeNoteOctUp(ft2_instance_t *inst)
+{
+	ft2_sample_t *s = getCurrentSample(inst);
+	if (s == NULL)
+		return;
+	
+	if (s->relativeNote <= 71 - 12)
+		s->relativeNote += 12;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void relativeNoteOctDown(ft2_instance_t *inst)
+{
+	ft2_sample_t *s = getCurrentSample(inst);
+	if (s == NULL)
+		return;
+	
+	if (s->relativeNote >= -48 + 12)
+		s->relativeNote -= 12;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void relativeNoteUp(ft2_instance_t *inst)
+{
+	ft2_sample_t *s = getCurrentSample(inst);
+	if (s == NULL)
+		return;
+	
+	if (s->relativeNote < 71)
+		s->relativeNote++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void relativeNoteDown(ft2_instance_t *inst)
+{
+	ft2_sample_t *s = getCurrentSample(inst);
+	if (s == NULL)
+		return;
+	
+	if (s->relativeNote > -48)
+		s->relativeNote--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+/* ============ VOLUME ENVELOPE CONTROLS ============ */
+
+void volEnvAdd(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL || ins->volEnvLength >= 12)
+		return;
+	
+	ins->volEnvLength++;
+	inst->uiState.updateInstEditor = true;
+}
+
+void volEnvDel(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL || ins->volEnvLength <= 2)
+		return;
+	
+	ins->volEnvLength--;
+	inst->uiState.updateInstEditor = true;
+}
+
+void volEnvSusUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->volEnvSustain < ins->volEnvLength - 1)
+		ins->volEnvSustain++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void volEnvSusDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->volEnvSustain > 0)
+		ins->volEnvSustain--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void volEnvRepSUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->volEnvLoopStart < ins->volEnvLoopEnd)
+		ins->volEnvLoopStart++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void volEnvRepSDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->volEnvLoopStart > 0)
+		ins->volEnvLoopStart--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void volEnvRepEUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->volEnvLoopEnd < ins->volEnvLength - 1)
+		ins->volEnvLoopEnd++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void volEnvRepEDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->volEnvLoopEnd > ins->volEnvLoopStart)
+		ins->volEnvLoopEnd--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+/* ============ PAN ENVELOPE CONTROLS ============ */
+
+void panEnvAdd(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL || ins->panEnvLength >= 12)
+		return;
+	
+	ins->panEnvLength++;
+	inst->uiState.updateInstEditor = true;
+}
+
+void panEnvDel(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL || ins->panEnvLength <= 2)
+		return;
+	
+	ins->panEnvLength--;
+	inst->uiState.updateInstEditor = true;
+}
+
+void panEnvSusUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->panEnvSustain < ins->panEnvLength - 1)
+		ins->panEnvSustain++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panEnvSusDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->panEnvSustain > 0)
+		ins->panEnvSustain--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panEnvRepSUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->panEnvLoopStart < ins->panEnvLoopEnd)
+		ins->panEnvLoopStart++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panEnvRepSDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->panEnvLoopStart > 0)
+		ins->panEnvLoopStart--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panEnvRepEUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->panEnvLoopEnd < ins->panEnvLength - 1)
+		ins->panEnvLoopEnd++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panEnvRepEDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->panEnvLoopEnd > ins->panEnvLoopStart)
+		ins->panEnvLoopEnd--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+/* ============ SAMPLE PARAMETER CONTROLS ============ */
+
+void volDown(ft2_instance_t *inst)
+{
+	ft2_sample_t *s = getCurrentSample(inst);
+	if (s == NULL)
+		return;
+	
+	if (s->volume > 0)
+		s->volume--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void volUp(ft2_instance_t *inst)
+{
+	ft2_sample_t *s = getCurrentSample(inst);
+	if (s == NULL)
+		return;
+	
+	if (s->volume < 64)
+		s->volume++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panDown(ft2_instance_t *inst)
+{
+	ft2_sample_t *s = getCurrentSample(inst);
+	if (s == NULL)
+		return;
+	
+	if (s->panning > 0)
+		s->panning--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void panUp(ft2_instance_t *inst)
+{
+	ft2_sample_t *s = getCurrentSample(inst);
+	if (s == NULL)
+		return;
+	
+	if (s->panning < 255)
+		s->panning++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void ftuneDown(ft2_instance_t *inst)
+{
+	ft2_sample_t *s = getCurrentSample(inst);
+	if (s == NULL)
+		return;
+	
+	if (s->finetune > -128)
+		s->finetune--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void ftuneUp(ft2_instance_t *inst)
+{
+	ft2_sample_t *s = getCurrentSample(inst);
+	if (s == NULL)
+		return;
+	
+	if (s->finetune < 127)
+		s->finetune++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void fadeoutDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->fadeout > 0)
+		ins->fadeout--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void fadeoutUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->fadeout < 0xFFF)
+		ins->fadeout++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void vibSpeedDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->autoVibRate > 0)
+		ins->autoVibRate--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void vibSpeedUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->autoVibRate < 255)
+		ins->autoVibRate++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void vibDepthDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->autoVibDepth > 0)
+		ins->autoVibDepth--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void vibDepthUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->autoVibDepth < 15)
+		ins->autoVibDepth++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void vibSweepDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->autoVibSweep > 0)
+		ins->autoVibSweep--;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+void vibSweepUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	if (ins->autoVibSweep < 255)
+		ins->autoVibSweep++;
+	
+	inst->uiState.updateInstEditor = true;
+}
+
+/* ============ VIBRATO TYPE ============ */
+
+void rbVibWaveSine(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->autoVibType = 0;
+	inst->uiState.updateInstEditor = true;
+}
+
+void rbVibWaveSquare(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->autoVibType = 1;
+	inst->uiState.updateInstEditor = true;
+}
+
+void rbVibWaveRampDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->autoVibType = 2;
+	inst->uiState.updateInstEditor = true;
+}
+
+void rbVibWaveRampUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->autoVibType = 3;
+	inst->uiState.updateInstEditor = true;
+}
+
+/* ============ ENVELOPE ENABLE CHECKBOXES ============ */
+
+void cbVEnv(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->volEnvFlags ^= ENV_ENABLED;
+	inst->uiState.updateInstEditor = true;
+}
+
+void cbVEnvSus(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->volEnvFlags ^= ENV_SUSTAIN;
+	inst->uiState.updateInstEditor = true;
+}
+
+void cbVEnvLoop(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->volEnvFlags ^= ENV_LOOP;
+	inst->uiState.updateInstEditor = true;
+}
+
+void cbPEnv(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->panEnvFlags ^= ENV_ENABLED;
+	inst->uiState.updateInstEditor = true;
+}
+
+void cbPEnvSus(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->panEnvFlags ^= ENV_SUSTAIN;
+	inst->uiState.updateInstEditor = true;
+}
+
+void cbPEnvLoop(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->panEnvFlags ^= ENV_LOOP;
+	inst->uiState.updateInstEditor = true;
+}
+
+/* ============ MIDI CHECKBOXES ============ */
+
+void cbInstMidiEnable(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->midiOn = !ins->midiOn;
+	inst->uiState.updateInstEditor = true;
+}
+
+void cbInstMuteComputer(ft2_instance_t *inst)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+	
+	ins->mute = !ins->mute;
+	inst->uiState.updateInstEditor = true;
+}
