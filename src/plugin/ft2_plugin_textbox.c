@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 #include "ft2_plugin_textbox.h"
 #include "ft2_plugin_video.h"
@@ -16,6 +17,120 @@ static int16_t activeTextBox = -1;
 static bool textEditActive = false;
 static int16_t textBoxNeedsRedraw = -1;  /* Textbox that needs redraw after editing exits */
 
+/**
+ * Render text directly to a buffer (not to screen).
+ * This is used for textbox rendering where we need clipping.
+ * Port of standalone ft2_textboxes.c:textOutBuf()
+ */
+static void textOutBuf(const ft2_bmp_t *bmp, uint8_t *dstBuffer, uint32_t dstWidth, 
+                       uint8_t paletteIndex, const char *text, uint32_t maxTextLen)
+{
+	if (text == NULL || *text == '\0' || bmp == NULL || bmp->font1 == NULL)
+		return;
+	
+	uint16_t currX = 0;
+	for (uint32_t i = 0; i < maxTextLen; i++)
+	{
+		const char chr = *text++ & 0x7F;
+		if (chr == '\0')
+			break;
+		
+		if (chr != ' ')
+		{
+			const uint8_t *srcPtr = &bmp->font1[chr * FONT1_CHAR_W];
+			uint8_t *dstPtr = &dstBuffer[currX];
+			
+			for (uint32_t y = 0; y < FONT1_CHAR_H; y++)
+			{
+				for (uint32_t x = 0; x < FONT1_CHAR_W; x++)
+				{
+					if (srcPtr[x])
+						dstPtr[x] = paletteIndex;
+				}
+				
+				srcPtr += FONT1_WIDTH;
+				dstPtr += dstWidth;
+			}
+		}
+		
+		currX += charWidth(chr);
+	}
+}
+
+/**
+ * Get cursor X position relative to buffer offset.
+ * Returns the on-screen X offset where cursor should be drawn.
+ */
+static int16_t cursorPosToX(textBox_t *t)
+{
+	if (t->textPtr == NULL)
+		return -1;
+	
+	int32_t x = -1;  /* Cursor starts one pixel before character */
+	for (int16_t i = 0; i < t->cursorPos; i++)
+		x += charWidth(t->textPtr[i]);
+	
+	x -= t->bufOffset;  /* Subtract buffer offset to get visible X position */
+	return (int16_t)x;
+}
+
+/**
+ * Scroll text buffer to the left by TEXT_SCROLL_VALUE pixels.
+ */
+static void scrollTextBufferLeft(textBox_t *t)
+{
+	t->bufOffset -= TEXT_SCROLL_VALUE;
+	if (t->bufOffset < 0)
+		t->bufOffset = 0;
+}
+
+/**
+ * Scroll text buffer to the right by TEXT_SCROLL_VALUE pixels.
+ * Clamps to prevent scrolling past end of text.
+ */
+static void scrollTextBufferRight(textBox_t *t, uint16_t numCharsInText)
+{
+	if (t->textPtr == NULL)
+		return;
+	
+	/* Get end of text position in pixels */
+	int32_t textEnd = 0;
+	for (uint16_t j = 0; j < numCharsInText; j++)
+		textEnd += charWidth(t->textPtr[j]);
+	
+	/* Maximum scroll offset is (textEnd - renderW), clamped to 0 */
+	textEnd -= t->renderW;
+	if (textEnd < 0)
+		textEnd = 0;
+	
+	/* Scroll and clamp */
+	t->bufOffset += TEXT_SCROLL_VALUE;
+	if (t->bufOffset > textEnd)
+		t->bufOffset = textEnd;
+}
+
+/**
+ * Get the length of text in a textbox (number of characters).
+ */
+static int16_t getTextLength(textBox_t *t)
+{
+	if (t->textPtr == NULL)
+		return 0;
+	return (int16_t)strlen(t->textPtr);
+}
+
+/* Allocate render buffer for a textbox. Call after setting x, y, w, h, tx, ty, maxChars. */
+static void allocTextBoxRenderBuf(textBox_t *t)
+{
+	t->renderBufW = (9 + 1) * t->maxChars;  /* 9 = max glyph width + 1 for kerning */
+	t->renderBufH = 10;                      /* Max glyph height */
+	t->renderW = t->w - (t->tx * 2);         /* Visible area */
+	t->bufOffset = 0;
+	
+	t->renderBuf = (uint8_t *)malloc(t->renderBufW * t->renderBufH);
+	/* If allocation fails, renderBuf will be NULL and drawing will be skipped */
+}
+
 void ft2_textbox_init(void)
 {
 	memset(textBoxes, 0, sizeof(textBoxes));
@@ -25,15 +140,17 @@ void ft2_textbox_init(void)
 	static const uint16_t instY[8] = { 5, 16, 27, 38, 49, 60, 71, 82 };
 	for (int i = 0; i < 8; i++)
 	{
-		textBoxes[TB_INST1 + i].x = 446;
-		textBoxes[TB_INST1 + i].y = instY[i];
-		textBoxes[TB_INST1 + i].w = 140;
-		textBoxes[TB_INST1 + i].h = 10;
-		textBoxes[TB_INST1 + i].tx = 1;
-		textBoxes[TB_INST1 + i].ty = 0;
-		textBoxes[TB_INST1 + i].maxChars = 22;
-		textBoxes[TB_INST1 + i].rightMouseButton = true;
-		textBoxes[TB_INST1 + i].visible = true;
+		textBox_t *t = &textBoxes[TB_INST1 + i];
+		t->x = 446;
+		t->y = instY[i];
+		t->w = 140;
+		t->h = 10;
+		t->tx = 1;
+		t->ty = 0;
+		t->maxChars = 22;
+		t->rightMouseButton = true;
+		t->visible = true;
+		allocTextBoxRenderBuf(t);
 	}
 	
 	/* Sample name textboxes (5 visible at once) */
@@ -41,52 +158,66 @@ void ft2_textbox_init(void)
 	static const uint16_t sampY[5] = { 99, 110, 121, 132, 143 };
 	for (int i = 0; i < 5; i++)
 	{
-		textBoxes[TB_SAMP1 + i].x = 446;
-		textBoxes[TB_SAMP1 + i].y = sampY[i];
-		textBoxes[TB_SAMP1 + i].w = 116;
-		textBoxes[TB_SAMP1 + i].h = 10;
-		textBoxes[TB_SAMP1 + i].tx = 1;
-		textBoxes[TB_SAMP1 + i].ty = 0;
-		textBoxes[TB_SAMP1 + i].maxChars = 22;
-		textBoxes[TB_SAMP1 + i].rightMouseButton = true;
-		textBoxes[TB_SAMP1 + i].visible = true;
+		textBox_t *t = &textBoxes[TB_SAMP1 + i];
+		t->x = 446;
+		t->y = sampY[i];
+		t->w = 116;
+		t->h = 10;
+		t->tx = 1;
+		t->ty = 0;
+		t->maxChars = 22;
+		t->rightMouseButton = true;
+		t->visible = true;
+		allocTextBoxRenderBuf(t);
 	}
 	
 	/* Song name textbox */
 	/* {  424, 158, 160,  12, 2, 1, 20, false, true  } */
-	textBoxes[TB_SONG_NAME].x = 424;
-	textBoxes[TB_SONG_NAME].y = 158;
-	textBoxes[TB_SONG_NAME].w = 160;
-	textBoxes[TB_SONG_NAME].h = 12;
-	textBoxes[TB_SONG_NAME].tx = 2;
-	textBoxes[TB_SONG_NAME].ty = 1;
-	textBoxes[TB_SONG_NAME].maxChars = 20;
-	textBoxes[TB_SONG_NAME].rightMouseButton = false;
-	textBoxes[TB_SONG_NAME].visible = true;
+	{
+		textBox_t *t = &textBoxes[TB_SONG_NAME];
+		t->x = 424;
+		t->y = 158;
+		t->w = 160;
+		t->h = 12;
+		t->tx = 2;
+		t->ty = 1;
+		t->maxChars = 20;
+		t->rightMouseButton = false;
+		t->visible = true;
+		allocTextBoxRenderBuf(t);
+	}
 
 	/* Disk op filename textbox */
 	/* {  31, 158, 134, 12, 2, 1, PATH_MAX, false, true } */
-	textBoxes[TB_DISKOP_FILENAME].x = 31;
-	textBoxes[TB_DISKOP_FILENAME].y = 158;
-	textBoxes[TB_DISKOP_FILENAME].w = 134;
-	textBoxes[TB_DISKOP_FILENAME].h = 12;
-	textBoxes[TB_DISKOP_FILENAME].tx = 2;
-	textBoxes[TB_DISKOP_FILENAME].ty = 1;
-	textBoxes[TB_DISKOP_FILENAME].maxChars = 255;
-	textBoxes[TB_DISKOP_FILENAME].rightMouseButton = false;
-	textBoxes[TB_DISKOP_FILENAME].visible = false;
+	{
+		textBox_t *t = &textBoxes[TB_DISKOP_FILENAME];
+		t->x = 31;
+		t->y = 158;
+		t->w = 134;
+		t->h = 12;
+		t->tx = 2;
+		t->ty = 1;
+		t->maxChars = 255;
+		t->rightMouseButton = false;
+		t->visible = false;
+		allocTextBoxRenderBuf(t);
+	}
 
 	/* Dialog input textbox - position/size set dynamically */
-	textBoxes[TB_DIALOG_INPUT].x = 0;
-	textBoxes[TB_DIALOG_INPUT].y = 0;
-	textBoxes[TB_DIALOG_INPUT].w = 250;
-	textBoxes[TB_DIALOG_INPUT].h = 12;
-	textBoxes[TB_DIALOG_INPUT].tx = 2;
-	textBoxes[TB_DIALOG_INPUT].ty = 1;
-	textBoxes[TB_DIALOG_INPUT].maxChars = 255;
-	textBoxes[TB_DIALOG_INPUT].rightMouseButton = false;
-	textBoxes[TB_DIALOG_INPUT].visible = false;
-	textBoxes[TB_DIALOG_INPUT].textPtr = NULL;
+	{
+		textBox_t *t = &textBoxes[TB_DIALOG_INPUT];
+		t->x = 0;
+		t->y = 0;
+		t->w = 250;
+		t->h = 12;
+		t->tx = 2;
+		t->ty = 1;
+		t->maxChars = 255;
+		t->rightMouseButton = false;
+		t->visible = false;
+		t->textPtr = NULL;
+		allocTextBoxRenderBuf(t);
+	}
 	
 	activeTextBox = -1;
 	textEditActive = false;
@@ -136,6 +267,64 @@ void ft2_textbox_update_pointers(ft2_instance_t *inst)
 	textBoxes[TB_DISKOP_FILENAME].textPtr = inst->diskop.filename;
 }
 
+/**
+ * Move cursor to the character at mouse X position, accounting for buffer offset.
+ */
+static void moveTextCursorToMouseX(textBox_t *t, int32_t mouseX)
+{
+	if (t->textPtr == NULL || t->textPtr[0] == '\0')
+	{
+		t->cursorPos = 0;
+		return;
+	}
+	
+	/* Early exit if clicking at start with no scroll */
+	if (mouseX == t->x && t->bufOffset == 0)
+	{
+		t->cursorPos = 0;
+		return;
+	}
+	
+	int16_t numChars = getTextLength(t);
+	
+	/* Calculate the X position in the full (unscrolled) text buffer.
+	 * mx = bufOffset + (mouseX - textStartX) */
+	const int32_t mx = t->bufOffset + mouseX;
+	int32_t tx = (t->x + t->tx) - 1;  /* Text starts at this X, cursor is 1px before first char */
+	int32_t cw = -1;
+	int16_t i;
+	
+	/* Find which character we're clicking on */
+	for (i = 0; i < numChars; i++)
+	{
+		cw = charWidth(t->textPtr[i]);
+		const int32_t tx2 = tx + cw;
+		
+		if (mx >= tx && mx < tx2)
+		{
+			t->cursorPos = i;
+			break;
+		}
+		
+		tx += cw;
+	}
+	
+	/* Set to last character if we clicked past the end of text */
+	if (i == numChars && mx >= tx)
+		t->cursorPos = numChars;
+	
+	/* Scroll buffer if cursor is now out of visible area */
+	if (cw != -1)
+	{
+		const int16_t cursorX = cursorPosToX(t);
+		
+		if (cursorX + cw > t->renderW)
+			scrollTextBufferRight(t, (uint16_t)numChars);
+		else if (cursorX < -1)
+			scrollTextBufferLeft(t);
+	}
+}
+
 int16_t ft2_textbox_test_mouse_down(int32_t x, int32_t y, bool rightButton)
 {
 	for (int i = 0; i < NUM_TEXTBOXES; i++)
@@ -160,7 +349,10 @@ int16_t ft2_textbox_test_mouse_down(int32_t x, int32_t y, bool rightButton)
 			activeTextBox = (int16_t)i;
 			textEditActive = true;
 			t->active = true;
-			t->cursorPos = (int16_t)strlen(t->textPtr);
+			
+			/* Move cursor to click position, accounting for buffer offset */
+			moveTextCursorToMouseX(t, x);
+			
 			return (int16_t)i;
 		}
 	}
@@ -183,7 +375,7 @@ void ft2_textbox_input_char(char c)
 	if (t->textPtr == NULL)
 		return;
 	
-	int16_t len = (int16_t)strlen(t->textPtr);
+	int16_t len = getTextLength(t);
 	
 	/* Check if we can add more characters */
 	if (len >= t->maxChars - 1)
@@ -208,6 +400,10 @@ void ft2_textbox_input_char(char c)
 		t->textPtr[t->cursorPos] = c;
 		t->cursorPos++;
 	}
+	
+	/* Scroll buffer if cursor moved out of visible area */
+	if (cursorPosToX(t) >= t->renderW)
+		scrollTextBufferRight(t, (uint16_t)getTextLength(t));
 }
 
 void ft2_textbox_handle_key(int32_t keyCode, int32_t modifiers)
@@ -219,7 +415,7 @@ void ft2_textbox_handle_key(int32_t keyCode, int32_t modifiers)
 	if (t->textPtr == NULL)
 		return;
 	
-	int16_t len = (int16_t)strlen(t->textPtr);
+	int16_t len = getTextLength(t);
 	
 	(void)modifiers;
 	
@@ -228,34 +424,77 @@ void ft2_textbox_handle_key(int32_t keyCode, int32_t modifiers)
 		case 8: /* Backspace */
 			if (t->cursorPos > 0)
 			{
+				/* Scroll buffer offset if we are scrolled */
+				if (t->bufOffset > 0)
+				{
+					t->bufOffset -= charWidth(t->textPtr[t->cursorPos - 1]);
+					if (t->bufOffset < 0)
+						t->bufOffset = 0;
+				}
+				
 				memmove(&t->textPtr[t->cursorPos - 1], &t->textPtr[t->cursorPos], len - t->cursorPos + 1);
 				t->cursorPos--;
+				
+				/* Scroll if cursor moved out of view */
+				if (cursorPosToX(t) < -1)
+					scrollTextBufferLeft(t);
 			}
 			break;
 		
 		case 127: /* Delete */
 			if (t->cursorPos < len)
 			{
+				/* Scroll buffer offset if we are scrolled */
+				if (t->bufOffset > 0)
+				{
+					t->bufOffset -= charWidth(t->textPtr[t->cursorPos]);
+					if (t->bufOffset < 0)
+						t->bufOffset = 0;
+				}
+				
 				memmove(&t->textPtr[t->cursorPos], &t->textPtr[t->cursorPos + 1], len - t->cursorPos);
 			}
 			break;
 		
 		case 0x1000: /* Left */
 			if (t->cursorPos > 0)
+			{
 				t->cursorPos--;
+				/* Scroll buffer if cursor moved out of visible area */
+				if (cursorPosToX(t) < -1)
+					scrollTextBufferLeft(t);
+			}
 			break;
 		
 		case 0x1001: /* Right */
 			if (t->cursorPos < len)
+			{
 				t->cursorPos++;
+				/* Scroll buffer if cursor moved out of visible area */
+				if (cursorPosToX(t) >= t->renderW)
+					scrollTextBufferRight(t, (uint16_t)len);
+			}
 			break;
 		
 		case 0x1006: /* Home */
 			t->cursorPos = 0;
+			t->bufOffset = 0;
 			break;
 		
 		case 0x1007: /* End */
+		{
+			/* Count number of chars and get full text width */
+			uint32_t textWidth = 0;
+			for (int16_t i = 0; i < len; i++)
+				textWidth += charWidth(t->textPtr[i]);
+			
 			t->cursorPos = len;
+			
+			/* Scroll to show end of text */
+			t->bufOffset = 0;
+			if (textWidth > t->renderW)
+				t->bufOffset = textWidth - t->renderW;
+		}
 			break;
 		
 		case '\r': /* Enter */
@@ -273,6 +512,7 @@ void ft2_textbox_exit_editing(void)
 	if (activeTextBox >= 0 && activeTextBox < NUM_TEXTBOXES)
 	{
 		textBoxes[activeTextBox].active = false;
+		textBoxes[activeTextBox].bufOffset = 0;  /* Reset scroll to start */
 		textBoxNeedsRedraw = activeTextBox;  /* Mark for redraw to clear cursor */
 	}
 	
@@ -357,29 +597,41 @@ void ft2_textbox_draw_with_cursor(ft2_video_t *video, const ft2_bmp_t *bmp,
 		return;
 	
 	textBox_t *t = &textBoxes[textBoxID];
-	if (!t->visible || t->textPtr == NULL)
+	if (!t->visible)
 		return;
 	
-	uint16_t renderW = t->w - t->tx;
+	/* Skip if no render buffer allocated */
+	if (t->renderBuf == NULL)
+		return;
+	
 	uint8_t bgPal = getTextBoxBackgroundPal(textBoxID, inst);
 	
-	/* Fill area extended to cover cursor:
-	 * - Cursor starts 1 pixel left (at t->x + t->tx - 1)
-	 * - Cursor starts 1 pixel up (at t->y + t->ty - 1)  
-	 * - Cursor is 12 pixels tall (vs 10 for text)
-	 * So we extend fill by 1 left, 1 up, and use height 12 */
-	fillRect(video, t->x + t->tx - 1, t->y + t->ty - 1, renderW + 1, 12, bgPal);
+	/* Fill render buffer with transparency key */
+	memset(t->renderBuf, PAL_TRANSPR, t->renderBufW * t->renderBufH);
 	
-	if (bmp != NULL)
-		textOut(video, bmp, t->x + t->tx, t->y + t->ty, PAL_FORGRND, t->textPtr);
+	/* Render text to buffer if we have text */
+	if (t->textPtr != NULL && bmp != NULL)
+		textOutBuf(bmp, t->renderBuf, t->renderBufW, PAL_FORGRND, t->textPtr, t->maxChars);
 	
-	if (t->active && showCursor)
+	/* Fill screen rect with background color (10 pixels, matching instrument switcher highlight) */
+	fillRect(video, t->x + t->tx - 1, t->y + t->ty, t->renderW + 1, 10, bgPal);
+	
+	/* Clear the 1 pixel rows above and below that cursor may have extended into.
+	 * This ensures consistent background size and cleans up after cursor exits. */
+	hLine(video, t->x + t->tx - 1, t->y + t->ty - 1, t->renderW + 1, PAL_BCKGRND);
+	hLine(video, t->x + t->tx - 1, t->y + t->ty + 10, t->renderW + 1, PAL_BCKGRND);
+	
+	/* Blit visible portion of render buffer to screen (with clipping) */
+	blitClipX(video, t->x + t->tx, t->y + t->ty, &t->renderBuf[t->bufOffset], t->renderBufW, t->renderBufH, t->renderW);
+	
+	/* Draw cursor if active */
+	if (t->active && showCursor && t->textPtr != NULL)
 	{
-		int16_t cursorX = t->x + t->tx - 1;
-		for (int16_t i = 0; i < t->cursorPos && t->textPtr[i] != '\0'; i++)
-			cursorX += charWidth(t->textPtr[i]);
+		int16_t cursorX = t->x + t->tx + cursorPosToX(t);
 		
-		vLine(video, cursorX, t->y + t->ty - 1, 12, PAL_FORGRND);
+		/* Only draw cursor if it's within visible area */
+		if (cursorX >= t->x + t->tx - 1 && cursorX < t->x + t->tx + t->renderW)
+			vLine(video, cursorX, t->y + t->ty - 1, 12, PAL_FORGRND);
 	}
 }
 
@@ -444,24 +696,18 @@ void ft2_textbox_mouse_drag(int32_t x, int32_t y)
 	
 	(void)y;
 	
-	/* Calculate cursor position from mouse X */
-	int32_t relX = x - t->x - 1;
-	if (relX < 0)
-		relX = 0;
-	
-	int16_t newPos = (int16_t)(relX / FONT1_CHAR_W);
-	int16_t len = (int16_t)strlen(t->textPtr);
-	
-	if (newPos > len)
-		newPos = len;
-	
-	t->cursorPos = newPos;
+	/* Use the same logic as mouse down to properly handle buffer offset */
+	moveTextCursorToMouseX(t, x);
 }
 
 void ft2_textbox_configure_dialog(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                                   char *textPtr, uint16_t maxChars)
 {
 	textBox_t *t = &textBoxes[TB_DIALOG_INPUT];
+	
+	/* Check if we need to reallocate the buffer (maxChars changed) */
+	bool needRealloc = (maxChars != t->maxChars);
+	
 	t->x = x;
 	t->y = y;
 	t->w = w;
@@ -473,6 +719,19 @@ void ft2_textbox_configure_dialog(uint16_t x, uint16_t y, uint16_t w, uint16_t h
 	t->cursorPos = (textPtr != NULL) ? (int16_t)strlen(textPtr) : 0;
 	t->visible = true;
 	t->active = false;
+	t->bufOffset = 0;
+	
+	if (needRealloc)
+	{
+		if (t->renderBuf != NULL)
+			free(t->renderBuf);
+		allocTextBoxRenderBuf(t);
+	}
+	else
+	{
+		/* Just recalculate renderW since w might have changed */
+		t->renderW = t->w - (t->tx * 2);
+	}
 }
 
 void ft2_textbox_activate_dialog(void)
@@ -504,5 +763,17 @@ void ft2_textbox_deactivate_dialog(void)
 	t->active = false;
 	t->visible = false;
 	t->textPtr = NULL;
+}
+
+void ft2_textbox_free(void)
+{
+	for (int i = 0; i < NUM_TEXTBOXES; i++)
+	{
+		if (textBoxes[i].renderBuf != NULL)
+		{
+			free(textBoxes[i].renderBuf);
+			textBoxes[i].renderBuf = NULL;
+		}
+	}
 }
 

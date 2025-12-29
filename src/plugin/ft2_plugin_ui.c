@@ -98,6 +98,7 @@ void ft2_ui_shutdown(ft2_ui_t *ui)
 	}
 
 	ft2_video_free(&ui->video);
+	ft2_textbox_free();
 }
 
 void ft2_ui_set_screen(ft2_ui_t *ui, ft2_ui_screen screen)

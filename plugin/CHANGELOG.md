@@ -1,5 +1,10 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.11 (Dec 29, 2025)
+
+- Fix: Better config buttons placement.
+- Fix: MIDI in note off works correctly.
+
 ## 1.0.10 (Dec 29, 2025)
 
 - Feat: Enable Extend GUI mode.

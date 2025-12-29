@@ -40,6 +40,9 @@ enum
 	NUM_TEXTBOXES
 };
 
+/* Scroll amount when cursor moves beyond visible area */
+#define TEXT_SCROLL_VALUE 30
+
 typedef struct textBox_t
 {
 	uint16_t x, y, w, h;
@@ -50,6 +53,13 @@ typedef struct textBox_t
 	bool visible;
 	bool active;
 	int16_t cursorPos;
+	
+	/* Render buffer for clipped text rendering */
+	uint8_t *renderBuf;
+	uint16_t renderW;      /* Visible render width */
+	uint16_t renderBufW;   /* Total buffer width */
+	uint16_t renderBufH;   /* Buffer height (10 = max glyph height) */
+	int32_t bufOffset;     /* Scroll offset into buffer */
 } textBox_t;
 
 /**
@@ -188,6 +198,11 @@ void ft2_textbox_activate_dialog(void);
  * Deactivate the dialog textbox.
  */
 void ft2_textbox_deactivate_dialog(void);
+
+/**
+ * Free textbox render buffers. Call during plugin shutdown.
+ */
+void ft2_textbox_free(void);
 
 #ifdef __cplusplus
 }
