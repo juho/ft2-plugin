@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.8 (Dec 29, 2025)
+
+- Fix: unify mod/s3m/xm loading code.
+
 ## 1.0.7 (Dec 29, 2025)
 
 - Feat: Support multiple outputs coming into the DAW.
