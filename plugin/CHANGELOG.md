@@ -4,6 +4,7 @@
 
 - Fix: Radio button flicker when clicking on them.
 - Sync: Timemap calculates song infinite loops correctly.
+- Sync: Timemap invalidates when the "Allow Fxx speed changes" option is changed.
 
 ## 1.0.1 (Dec 29, 2025)
 

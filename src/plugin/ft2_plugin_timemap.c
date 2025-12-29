@@ -119,8 +119,12 @@ void ft2_timemap_build(ft2_instance_t *inst)
 	if (!timemap_ensure_capacity(timemap, TIMEMAP_INITIAL_CAPACITY))
 		return;
 
-	/* Initialize speed (Fxx speed effects are honored if config allows) */
-	uint16_t speed = song->initialSpeed > 0 ? song->initialSpeed : 6;
+	/* Initialize speed (locked to 6 if Fxx changes disabled, else use song's initial speed) */
+	uint16_t speed;
+	if (!inst->config.allowFxxSpeedChanges)
+		speed = 6;
+	else
+		speed = song->initialSpeed > 0 ? song->initialSpeed : 6;
 
 	double currentPpq = 0.0;
 	uint16_t nextRowStart = 0;  /* For pattern break (Dxx) */
