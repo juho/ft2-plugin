@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.3 (Dec 29, 2025)
+
+- Fix: Saving modules now works correctly.
+
 ## 1.0.2 (Dec 29, 2025)
 
 - Fix: Radio button flicker when clicking on them.

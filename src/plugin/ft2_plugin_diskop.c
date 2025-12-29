@@ -23,6 +23,7 @@
 #include "ft2_plugin_dialog.h"
 #include "ft2_plugin_textbox.h"
 #include "ft2_plugin_ui.h"
+#include "ft2_plugin_pattern_ed.h"
 
 /* File list display constants */
 #define FILENAME_TEXT_X 170
@@ -998,45 +999,287 @@ bool ft2_load_module(ft2_instance_t *inst, const uint8_t *data, uint32_t dataSiz
 	}
 }
 
+/**
+ * Helper: Count used samples in an instrument (ported from getUsedSamples).
+ */
+static int16_t countUsedSamples(ft2_instr_t *ins)
+{
+	if (ins == NULL)
+		return 0;
+
+	int16_t i = 16 - 1;
+	while (i >= 0 && ins->smp[i].dataPtr == NULL && ins->smp[i].name[0] == '\0')
+		i--;
+
+	/* Check note2SampleLUT for higher sample indices */
+	for (int16_t j = 0; j < 96; j++)
+	{
+		if (ins->note2SampleLUT[j] > i)
+			i = ins->note2SampleLUT[j];
+	}
+
+	return i + 1;
+}
+
+/* XM instrument header size */
+#define XM_INSTR_HEADER_SIZE 263
+
+/* XM pattern header structure */
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
+typedef struct xm_patt_hdr_t
+{
+	int32_t headerSize;
+	uint8_t type;
+	int16_t numRows;
+	uint16_t dataSize;
+}
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+xm_patt_hdr_t;
+
+/* XM sample header structure (40 bytes) */
+typedef struct xm_smp_hdr_t
+{
+	uint32_t length, loopStart, loopLength;
+	uint8_t volume;
+	int8_t finetune;
+	uint8_t flags, panning;
+	int8_t relativeNote;
+	uint8_t nameLength;
+	char name[22];
+}
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+xm_smp_hdr_t;
+
+/* XM instrument header structure (263 bytes + sample headers) */
+typedef struct xm_ins_hdr_t
+{
+	uint32_t instrSize;
+	char name[22];
+	uint8_t type;
+	int16_t numSamples;
+	int32_t sampleSize;
+	uint8_t note2SampleLUT[96];
+	int16_t volEnvPoints[12][2];
+	int16_t panEnvPoints[12][2];
+	uint8_t volEnvLength, panEnvLength;
+	uint8_t volEnvSustain, volEnvLoopStart, volEnvLoopEnd;
+	uint8_t panEnvSustain, panEnvLoopStart, panEnvLoopEnd;
+	uint8_t volEnvFlags, panEnvFlags;
+	uint8_t vibType, vibSweep, vibDepth, vibRate;
+	uint16_t fadeout;
+	uint8_t midiOn, midiChannel;
+	int16_t midiProgram, midiBend;
+	int8_t mute;
+	uint8_t reserved[15];
+	xm_smp_hdr_t smp[16];
+}
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+xm_ins_hdr_t;
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
+
+/**
+ * Convert sample data to delta encoding for XM/XI file saving.
+ * Ported from standalone samp2Delta().
+ */
+static void sample_to_delta(int8_t *p, int32_t length, uint8_t smpFlags)
+{
+	if (smpFlags & FT2_SAMPLE_16BIT)
+	{
+		int16_t *p16 = (int16_t *)p;
+		int16_t newS16 = 0;
+		for (int32_t i = 0; i < length; i++)
+		{
+			const int16_t oldS16 = p16[i];
+			p16[i] -= newS16;
+			newS16 = oldS16;
+		}
+	}
+	else
+	{
+		int8_t newS8 = 0;
+		for (int32_t i = 0; i < length; i++)
+		{
+			const int8_t oldS8 = p[i];
+			p[i] -= newS8;
+			newS8 = oldS8;
+		}
+	}
+}
+
+/**
+ * Convert delta-encoded sample data back to normal.
+ * Ported from standalone delta2Samp() - mono-only version for save/restore.
+ */
+static void delta_to_sample(int8_t *p, int32_t length, uint8_t smpFlags)
+{
+	if (smpFlags & FT2_SAMPLE_16BIT)
+	{
+		int16_t *p16 = (int16_t *)p;
+		int16_t olds16 = 0;
+		for (int32_t i = 0; i < length; i++)
+		{
+			const int16_t news16 = p16[i] + olds16;
+			p16[i] = news16;
+			olds16 = news16;
+		}
+	}
+	else
+	{
+		int8_t olds8 = 0;
+		for (int32_t i = 0; i < length; i++)
+		{
+			const int8_t news8 = p[i] + olds8;
+			p[i] = news8;
+			olds8 = news8;
+		}
+	}
+}
+
+/**
+ * Pack pattern data for XM file saving.
+ * Ported from standalone packPatt().
+ * @param writePtr Output buffer (must be large enough for packed data)
+ * @param pattPtr Pattern data (32 channels * 5 bytes per note)
+ * @param numRows Number of rows in pattern
+ * @param numChannels Number of channels to pack
+ * @return Number of bytes written
+ */
+static uint16_t packPatt(uint8_t *writePtr, uint8_t *pattPtr, uint16_t numRows, uint16_t numChannels)
+{
+	uint8_t bytes[5];
+
+	if (pattPtr == NULL)
+		return 0;
+
+	uint16_t totalPackLen = 0;
+
+	/* Pitch = bytes to skip per row for unused channels (32 - numChannels) */
+	const int32_t pitch = 5 * (FT2_MAX_CHANNELS - numChannels);
+	for (int32_t row = 0; row < numRows; row++)
+	{
+		for (int32_t chn = 0; chn < numChannels; chn++)
+		{
+			bytes[0] = *pattPtr++;  /* note */
+			bytes[1] = *pattPtr++;  /* instrument */
+			bytes[2] = *pattPtr++;  /* volume column */
+			bytes[3] = *pattPtr++;  /* effect */
+			bytes[4] = *pattPtr++;  /* effect parameter */
+
+			uint8_t *firstBytePtr = writePtr++;
+
+			uint8_t packBits = 0;
+			if (bytes[0] > 0) { packBits |= 1; *writePtr++ = bytes[0]; }
+			if (bytes[1] > 0) { packBits |= 2; *writePtr++ = bytes[1]; }
+			if (bytes[2] > 0) { packBits |= 4; *writePtr++ = bytes[2]; }
+			if (bytes[3] > 0) { packBits |= 8; *writePtr++ = bytes[3]; }
+
+			if (packBits == 15)
+			{
+				/* All 4 fields set - no packing needed, write as-is */
+				writePtr = firstBytePtr;
+
+				*writePtr++ = bytes[0];
+				*writePtr++ = bytes[1];
+				*writePtr++ = bytes[2];
+				*writePtr++ = bytes[3];
+				*writePtr++ = bytes[4];
+
+				totalPackLen += 5;
+				continue;
+			}
+
+			if (bytes[4] > 0) { packBits |= 16; *writePtr++ = bytes[4]; }
+
+			*firstBytePtr = packBits | 128;  /* Write pack bits byte with high bit set */
+			totalPackLen += (uint16_t)(writePtr - firstBytePtr);
+		}
+
+		/* Skip unused channels (unpacked patterns always have 32 channels) */
+		pattPtr += pitch;
+	}
+
+	return totalPackLen;
+}
+
 bool ft2_save_module(ft2_instance_t *inst, uint8_t **outData, uint32_t *outSize)
 {
 	if (inst == NULL || outData == NULL || outSize == NULL)
 		return false;
 
-	/* Calculate required size */
-	uint32_t headerSize = 336;  /* XM header */
+	ft2_replayer_state_t *rep = &inst->replayer;
+
+	/* Count patterns - same as standalone: find last non-empty pattern */
+	int32_t numPatterns = FT2_MAX_PATTERNS;
+	do
+	{
+		if (patternEmpty(inst, numPatterns - 1))
+			numPatterns--;
+		else
+			break;
+	}
+	while (numPatterns > 0);
+
+	/* Count instruments - same as standalone: find last with samples or name */
+	int32_t numInstruments = FT2_MAX_INST;
+	while (numInstruments > 0 &&
+	       countUsedSamples(rep->instr[numInstruments]) == 0 &&
+	       rep->song.instrName[numInstruments][0] == '\0')
+	{
+		numInstruments--;
+	}
+
+	/* Allocate temporary buffer for packed pattern data */
+	uint8_t *packedPattData = (uint8_t *)malloc(65536);
+	if (packedPattData == NULL)
+		return false;
+
+	/* Calculate required size (estimate high, then shrink) */
+	uint32_t headerSize = 336;  /* XM header (60 + 276) */
 	uint32_t patternSize = 0;
 	uint32_t instrumentSize = 0;
 
-	ft2_replayer_state_t *rep = &inst->replayer;
-
-	/* Calculate pattern sizes */
-	for (int32_t i = 0; i < FT2_MAX_PATTERNS; i++)
+	/* Pattern sizes: 9-byte header each + worst case packed data */
+	for (int32_t i = 0; i < numPatterns; i++)
 	{
-		if (rep->pattern[i] != NULL)
-		{
-			int16_t numRows = rep->patternNumRows[i];
-			if (numRows < 1) numRows = 64;
-			
-			/* Pattern header (9 bytes) + packed pattern data */
-			patternSize += 9 + numRows * rep->song.numChannels * 5;
-		}
+		int16_t numRows = rep->patternNumRows[i];
+		if (numRows < 1) numRows = 64;
+		patternSize += 9 + numRows * rep->song.numChannels * 5;
 	}
 
-	/* Calculate instrument sizes (simplified) */
-	for (int32_t i = 1; i <= FT2_MAX_INST; i++)
+	/* Instrument sizes: header + sample headers + sample data */
+	for (int32_t i = 1; i <= numInstruments; i++)
 	{
 		ft2_instr_t *instr = rep->instr[i];
-		if (instr != NULL)
+		int16_t numSamples = (instr != NULL) ? countUsedSamples(instr) : 0;
+
+		if (numSamples > 0)
 		{
-			instrumentSize += 263;  /* Instrument header */
-			
-			for (int32_t s = 0; s < instr->numSamples; s++)
+			instrumentSize += XM_INSTR_HEADER_SIZE + (numSamples * sizeof(xm_smp_hdr_t));
+			for (int32_t s = 0; s < numSamples; s++)
 			{
 				ft2_sample_t *smp = &instr->smp[s];
-				instrumentSize += 40;  /* Sample header */
-				instrumentSize += smp->length * ((smp->flags & FT2_SAMPLE_16BIT) ? 2 : 1);
+				if (smp->dataPtr != NULL && smp->length > 0)
+				{
+					int32_t smpBytes = smp->length;
+					if (smp->flags & FT2_SAMPLE_16BIT)
+						smpBytes *= 2;
+					instrumentSize += smpBytes;
+				}
 			}
+		}
+		else
+		{
+			instrumentSize += 22 + 11;  /* Empty instrument: name (22) + minimal header (11) */
 		}
 	}
 
@@ -1045,93 +1288,233 @@ bool ft2_save_module(ft2_instance_t *inst, uint8_t **outData, uint32_t *outSize)
 	/* Allocate buffer */
 	*outData = (uint8_t *)malloc(totalSize);
 	if (*outData == NULL)
+	{
+		free(packedPattData);
 		return false;
+	}
 
 	memset(*outData, 0, totalSize);
 	uint8_t *p = *outData;
 
-	/* Write XM header */
+	/* ===== XM HEADER (60 bytes) ===== */
 	memcpy(p, "Extended Module: ", 17);
 	p += 17;
 
-	/* Module name (20 chars) */
-	strncpy((char *)p, rep->song.name, 20);
+	/* Module name (20 chars, space-padded like FT2) */
+	int32_t nameLen = (int32_t)strlen(rep->song.name);
+	if (nameLen > 20) nameLen = 20;
+	memset(p, ' ', 20);
+	if (nameLen > 0) memcpy(p, rep->song.name, nameLen);
 	p += 20;
 
-	/* 0x1A marker */
 	*p++ = 0x1A;
 
 	/* Tracker name (20 chars) */
 	memcpy(p, "FT2Clone Plugin     ", 20);
 	p += 20;
 
-	/* Version (1.04) */
+	/* Version 1.04 (little-endian) */
 	*p++ = 0x04;
 	*p++ = 0x01;
 
-	/* Header size (from this point) */
-	uint32_t hdrSize = 276;
+	/* ===== XM HEADER DATA (276 bytes) ===== */
+	uint32_t hdrSize = 20 + 256;  /* 276 bytes after this field */
 	memcpy(p, &hdrSize, 4);
 	p += 4;
 
-	/* Song length */
 	uint16_t songLen = rep->song.songLength;
 	memcpy(p, &songLen, 2);
 	p += 2;
 
-	/* Restart position */
 	uint16_t restartPos = rep->song.songLoopStart;
 	memcpy(p, &restartPos, 2);
 	p += 2;
 
-	/* Number of channels */
 	uint16_t numCh = rep->song.numChannels;
 	memcpy(p, &numCh, 2);
 	p += 2;
 
-	/* Number of patterns (TODO: count actual patterns) */
-	uint16_t numPatt = 0;
-	for (int32_t i = 0; i < FT2_MAX_PATTERNS; i++)
-	{
-		if (rep->pattern[i] != NULL)
-			numPatt = i + 1;
-	}
-	memcpy(p, &numPatt, 2);
+	memcpy(p, &numPatterns, 2);
 	p += 2;
 
-	/* Number of instruments (TODO: count actual instruments) */
-	uint16_t numInstr = 0;
-	for (int32_t i = 1; i <= FT2_MAX_INST; i++)
-	{
-		if (rep->instr[i] != NULL)
-			numInstr = i;
-	}
-	memcpy(p, &numInstr, 2);
+	memcpy(p, &numInstruments, 2);
 	p += 2;
 
-	/* Flags (linear frequency table) */
 	uint16_t flags = inst->audio.linearPeriodsFlag ? 1 : 0;
 	memcpy(p, &flags, 2);
 	p += 2;
 
-	/* Default tempo */
 	uint16_t tempo = rep->song.speed;
 	memcpy(p, &tempo, 2);
 	p += 2;
 
-	/* Default BPM */
 	uint16_t bpm = rep->song.BPM;
 	memcpy(p, &bpm, 2);
 	p += 2;
 
-	/* Pattern order table (256 bytes) */
 	memcpy(p, rep->song.orders, 256);
 	p += 256;
 
-	/* TODO: Write patterns and instruments */
-	/* This is a simplified implementation - full XM saving is more complex */
+	/* ===== PATTERNS ===== */
+	for (int32_t i = 0; i < numPatterns; i++)
+	{
+		/* Free empty patterns and reset to 64 rows (matches standalone) */
+		if (patternEmpty(inst, i))
+		{
+			if (rep->pattern[i] != NULL)
+			{
+				free(rep->pattern[i]);
+				rep->pattern[i] = NULL;
+			}
+			rep->patternNumRows[i] = 64;
+		}
 
-	*outSize = totalSize;
+		xm_patt_hdr_t ph;
+		memset(&ph, 0, sizeof(ph));
+		ph.headerSize = sizeof(xm_patt_hdr_t);
+		ph.type = 0;
+		ph.numRows = rep->patternNumRows[i];
+
+		if (rep->pattern[i] == NULL)
+		{
+			ph.dataSize = 0;
+			memcpy(p, &ph, sizeof(ph));
+			p += sizeof(ph);
+		}
+		else
+		{
+			ph.dataSize = packPatt(packedPattData, (uint8_t *)rep->pattern[i],
+			                        ph.numRows, rep->song.numChannels);
+
+			memcpy(p, &ph, sizeof(ph));
+			p += sizeof(ph);
+
+			memcpy(p, packedPattData, ph.dataSize);
+			p += ph.dataSize;
+		}
+	}
+
+	free(packedPattData);
+
+	/* ===== INSTRUMENTS ===== */
+	for (int32_t i = 1; i <= numInstruments; i++)
+	{
+		ft2_instr_t *instr = rep->instr[i];
+		int16_t numSamples = (instr != NULL) ? countUsedSamples(instr) : 0;
+
+		xm_ins_hdr_t ih;
+		memset(&ih, 0, sizeof(ih));
+
+		/* Instrument name */
+		nameLen = (int32_t)strlen(rep->song.instrName[i]);
+		if (nameLen > 22) nameLen = 22;
+		memset(ih.name, 0, 22);
+		if (nameLen > 0) memcpy(ih.name, rep->song.instrName[i], nameLen);
+
+		ih.type = 0;
+		ih.numSamples = numSamples;
+		ih.sampleSize = sizeof(xm_smp_hdr_t);
+
+		if (numSamples > 0)
+		{
+			/* Copy instrument parameters */
+			memcpy(ih.note2SampleLUT, instr->note2SampleLUT, 96);
+			memcpy(ih.volEnvPoints, instr->volEnvPoints, sizeof(ih.volEnvPoints));
+			memcpy(ih.panEnvPoints, instr->panEnvPoints, sizeof(ih.panEnvPoints));
+			ih.volEnvLength = instr->volEnvLength;
+			ih.panEnvLength = instr->panEnvLength;
+			ih.volEnvSustain = instr->volEnvSustain;
+			ih.volEnvLoopStart = instr->volEnvLoopStart;
+			ih.volEnvLoopEnd = instr->volEnvLoopEnd;
+			ih.panEnvSustain = instr->panEnvSustain;
+			ih.panEnvLoopStart = instr->panEnvLoopStart;
+			ih.panEnvLoopEnd = instr->panEnvLoopEnd;
+			ih.volEnvFlags = instr->volEnvFlags;
+			ih.panEnvFlags = instr->panEnvFlags;
+			ih.vibType = instr->autoVibType;
+			ih.vibSweep = instr->autoVibSweep;
+			ih.vibDepth = instr->autoVibDepth;
+			ih.vibRate = instr->autoVibRate;
+			ih.fadeout = instr->fadeout;
+			ih.midiOn = instr->midiOn ? 1 : 0;
+			ih.midiChannel = instr->midiChannel;
+			ih.midiProgram = instr->midiProgram;
+			ih.midiBend = instr->midiBend;
+			ih.mute = instr->mute ? 1 : 0;
+			ih.instrSize = XM_INSTR_HEADER_SIZE;
+
+			/* Build sample headers */
+			for (int32_t s = 0; s < numSamples; s++)
+			{
+				ft2_sample_t *smp = &instr->smp[s];
+				xm_smp_hdr_t *dst = &ih.smp[s];
+
+				bool sample16Bit = !!(smp->flags & FT2_SAMPLE_16BIT);
+
+				dst->length = smp->length;
+				dst->loopStart = smp->loopStart;
+				dst->loopLength = smp->loopLength;
+
+				if (sample16Bit)
+				{
+					dst->length *= 2;
+					dst->loopStart *= 2;
+					dst->loopLength *= 2;
+				}
+
+				dst->volume = smp->volume;
+				dst->finetune = smp->finetune;
+				dst->flags = smp->flags;
+				dst->panning = smp->panning;
+				dst->relativeNote = smp->relativeNote;
+
+				nameLen = (int32_t)strlen(smp->name);
+				if (nameLen > 22) nameLen = 22;
+				dst->nameLength = (uint8_t)nameLen;
+				memset(dst->name, ' ', 22);
+				if (nameLen > 0) memcpy(dst->name, smp->name, nameLen);
+
+				if (smp->dataPtr == NULL)
+					dst->length = 0;
+			}
+
+			/* Write instrument header + sample headers */
+			memcpy(p, &ih, XM_INSTR_HEADER_SIZE + (numSamples * sizeof(xm_smp_hdr_t)));
+			p += XM_INSTR_HEADER_SIZE + (numSamples * sizeof(xm_smp_hdr_t));
+
+			/* Write sample data (delta-encoded) */
+			for (int32_t s = 0; s < numSamples; s++)
+			{
+				ft2_sample_t *smp = &instr->smp[s];
+				if (smp->dataPtr != NULL && smp->length > 0)
+				{
+					int32_t smpBytes = smp->length;
+					if (smp->flags & FT2_SAMPLE_16BIT)
+						smpBytes *= 2;
+
+					/* Unfix, delta encode, copy, undo */
+					ft2_unfix_sample(smp);
+					sample_to_delta(smp->dataPtr, smp->length, smp->flags);
+
+					memcpy(p, smp->dataPtr, smpBytes);
+					p += smpBytes;
+
+					/* Restore sample for playback */
+					delta_to_sample(smp->dataPtr, smp->length, smp->flags);
+					ft2_fix_sample(smp);
+				}
+			}
+		}
+		else
+		{
+			/* Empty instrument: minimal header */
+			ih.instrSize = 22 + 11;
+			memcpy(p, &ih, ih.instrSize);
+			p += ih.instrSize;
+		}
+	}
+
+	*outSize = (uint32_t)(p - *outData);
 	return true;
 }
 
@@ -1432,8 +1815,148 @@ bool ft2_save_instrument(ft2_instance_t *inst, int16_t instrNum,
 	if (instr == NULL)
 		return false;
 
-	/* TODO: Implement full XI saving */
-	return false;
+	int16_t numSamples = countUsedSamples(instr);
+	if (numSamples == 0)
+		return false;  /* Empty instrument */
+
+	/* Calculate required size */
+	uint32_t totalSize = XI_HEADER_SIZE + (numSamples * sizeof(xi_sample_header_t));
+
+	for (int32_t i = 0; i < numSamples; i++)
+	{
+		ft2_sample_t *smp = &instr->smp[i];
+		if (smp->dataPtr != NULL && smp->length > 0)
+		{
+			int32_t smpBytes = smp->length;
+			if (smp->flags & FT2_SAMPLE_16BIT)
+				smpBytes *= 2;
+			totalSize += smpBytes;
+		}
+	}
+
+	/* Allocate buffer */
+	*outData = (uint8_t *)malloc(totalSize);
+	if (*outData == NULL)
+		return false;
+
+	memset(*outData, 0, totalSize);
+
+	/* Build XI header */
+	xi_header_t ih;
+	memset(&ih, 0, sizeof(ih));
+
+	memcpy(ih.id, "Extended Instrument: ", 21);
+	ih.version = 0x0102;
+
+	/* Instrument name (22 chars, space-padded, with 0x1A terminator at pos 22) */
+	int32_t nameLen = (int32_t)strlen(inst->replayer.song.instrName[instrNum]);
+	if (nameLen > 22) nameLen = 22;
+	memset(ih.name, ' ', 22);
+	if (nameLen > 0)
+		memcpy(ih.name, inst->replayer.song.instrName[instrNum], nameLen);
+	ih.name[22] = 0x1A;
+
+	/* Tracker name */
+	memcpy(ih.progName, "FT2Clone Plugin     ", 20);
+
+	/* Copy instrument parameters */
+	memcpy(ih.note2SampleLUT, instr->note2SampleLUT, 96);
+	memcpy(ih.volEnvPoints, instr->volEnvPoints, sizeof(ih.volEnvPoints));
+	memcpy(ih.panEnvPoints, instr->panEnvPoints, sizeof(ih.panEnvPoints));
+	ih.volEnvLength = instr->volEnvLength;
+	ih.panEnvLength = instr->panEnvLength;
+	ih.volEnvSustain = instr->volEnvSustain;
+	ih.volEnvLoopStart = instr->volEnvLoopStart;
+	ih.volEnvLoopEnd = instr->volEnvLoopEnd;
+	ih.panEnvSustain = instr->panEnvSustain;
+	ih.panEnvLoopStart = instr->panEnvLoopStart;
+	ih.panEnvLoopEnd = instr->panEnvLoopEnd;
+	ih.volEnvFlags = instr->volEnvFlags;
+	ih.panEnvFlags = instr->panEnvFlags;
+	ih.vibType = instr->autoVibType;
+	ih.vibSweep = instr->autoVibSweep;
+	ih.vibDepth = instr->autoVibDepth;
+	ih.vibRate = instr->autoVibRate;
+	ih.fadeout = instr->fadeout;
+	ih.midiOn = instr->midiOn ? 1 : 0;
+	ih.midiChannel = instr->midiChannel;
+	ih.midiProgram = instr->midiProgram;
+	ih.midiBend = instr->midiBend;
+	ih.mute = instr->mute ? 1 : 0;
+	ih.numSamples = numSamples;
+
+	/* Build sample headers and write to buffer */
+	uint8_t *p = *outData;
+
+	/* Write XI header first */
+	memcpy(p, &ih, XI_HEADER_SIZE);
+	p += XI_HEADER_SIZE;
+
+	/* Write sample headers */
+	for (int32_t i = 0; i < numSamples; i++)
+	{
+		ft2_sample_t *smp = &instr->smp[i];
+		xi_sample_header_t sh;
+		memset(&sh, 0, sizeof(sh));
+
+		bool sample16Bit = !!(smp->flags & FT2_SAMPLE_16BIT);
+
+		sh.length = smp->length;
+		sh.loopStart = smp->loopStart;
+		sh.loopLength = smp->loopLength;
+
+		if (sample16Bit)
+		{
+			sh.length *= 2;
+			sh.loopStart *= 2;
+			sh.loopLength *= 2;
+		}
+
+		sh.volume = smp->volume;
+		sh.finetune = smp->finetune;
+		sh.flags = smp->flags;
+		sh.panning = smp->panning;
+		sh.relativeNote = smp->relativeNote;
+
+		nameLen = (int32_t)strlen(smp->name);
+		if (nameLen > 22) nameLen = 22;
+		sh.nameLength = (uint8_t)nameLen;
+		memset(sh.name, 0, 22);
+		if (nameLen > 0)
+			memcpy(sh.name, smp->name, nameLen);
+
+		if (smp->dataPtr == NULL)
+			sh.length = 0;
+
+		memcpy(p, &sh, sizeof(sh));
+		p += sizeof(sh);
+	}
+
+	/* Write sample data (delta-encoded) */
+	for (int32_t i = 0; i < numSamples; i++)
+	{
+		ft2_sample_t *smp = &instr->smp[i];
+		if (smp->dataPtr != NULL && smp->length > 0)
+		{
+			int32_t smpBytes = smp->length;
+			if (smp->flags & FT2_SAMPLE_16BIT)
+				smpBytes *= 2;
+
+			/* Unfix, delta encode, copy, restore */
+			ft2_unfix_sample(smp);
+			sample_to_delta(smp->dataPtr, smp->length, smp->flags);
+
+			memcpy(p, smp->dataPtr, smpBytes);
+			p += smpBytes;
+
+			/* Restore sample for playback */
+			delta_to_sample(smp->dataPtr, smp->length, smp->flags);
+			ft2_fix_sample(smp);
+		}
+	}
+
+	*outSize = (uint32_t)(p - *outData);
+	return true;
 }
 
 bool ft2_load_sample(ft2_instance_t *inst, int16_t instrNum, int16_t sampleNum,
@@ -1639,26 +2162,136 @@ bool ft2_save_sample(ft2_instance_t *inst, int16_t instrNum, int16_t sampleNum,
 	                       outData, outSize);
 }
 
+/* XP pattern file header */
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
+typedef struct xp_header_t
+{
+	uint16_t version;
+	uint16_t numRows;
+}
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+xp_header_t;
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
+
+/* TRACK_WIDTH = 5 bytes per note * 32 channels */
+#define XP_TRACK_WIDTH (5 * FT2_MAX_CHANNELS)
+
 bool ft2_load_pattern(ft2_instance_t *inst, int16_t pattNum,
                        const uint8_t *data, uint32_t dataSize)
 {
-	(void)inst;
-	(void)pattNum;
-	(void)data;
-	(void)dataSize;
-	/* TODO: Implement pattern loading */
-	return false;
+	if (inst == NULL || data == NULL)
+		return false;
+
+	if (pattNum < 0 || pattNum >= FT2_MAX_PATTERNS)
+		return false;
+
+	/* Check minimum size for header */
+	if (dataSize < sizeof(xp_header_t))
+		return false;
+
+	/* Read header */
+	xp_header_t hdr;
+	memcpy(&hdr, data, sizeof(hdr));
+
+	/* Validate version */
+	if (hdr.version != 1)
+		return false;
+
+	/* Clamp numRows */
+	if (hdr.numRows > FT2_MAX_PATT_LEN)
+		hdr.numRows = FT2_MAX_PATT_LEN;
+
+	/* Check data size */
+	uint32_t expectedSize = sizeof(xp_header_t) + (hdr.numRows * XP_TRACK_WIDTH);
+	if (dataSize < expectedSize)
+		return false;
+
+	/* Allocate pattern if needed */
+	if (inst->replayer.pattern[pattNum] == NULL)
+	{
+		if (!allocatePattern(inst, pattNum))
+			return false;
+	}
+
+	ft2_note_t *patt = inst->replayer.pattern[pattNum];
+
+	/* Copy pattern data */
+	memcpy(patt, data + sizeof(xp_header_t), hdr.numRows * XP_TRACK_WIDTH);
+
+	/* Sanitize data */
+	for (int32_t row = 0; row < hdr.numRows; row++)
+	{
+		for (int32_t ch = 0; ch < FT2_MAX_CHANNELS; ch++)
+		{
+			ft2_note_t *note = &patt[(row * FT2_MAX_CHANNELS) + ch];
+
+			if (note->note > 97)
+				note->note = 0;
+
+			if (note->instr > 128)
+				note->instr = 128;
+
+			if (note->efx > 35)
+			{
+				note->efx = 0;
+				note->efxData = 0;
+			}
+		}
+	}
+
+	/* Set pattern length */
+	inst->replayer.patternNumRows[pattNum] = hdr.numRows;
+
+	/* Update current song if this is the active pattern */
+	if (inst->replayer.song.pattNum == pattNum)
+		inst->replayer.song.currNumRows = hdr.numRows;
+
+	return true;
 }
 
 bool ft2_save_pattern(ft2_instance_t *inst, int16_t pattNum,
                        uint8_t **outData, uint32_t *outSize)
 {
-	(void)inst;
-	(void)pattNum;
-	(void)outData;
-	(void)outSize;
-	/* TODO: Implement pattern saving */
-	return false;
+	if (inst == NULL || outData == NULL || outSize == NULL)
+		return false;
+
+	if (pattNum < 0 || pattNum >= FT2_MAX_PATTERNS)
+		return false;
+
+	ft2_note_t *patt = inst->replayer.pattern[pattNum];
+	if (patt == NULL)
+		return false;
+
+	int16_t numRows = inst->replayer.patternNumRows[pattNum];
+	if (numRows < 1)
+		numRows = 64;
+
+	/* Calculate size: header + pattern data */
+	uint32_t totalSize = sizeof(xp_header_t) + (numRows * XP_TRACK_WIDTH);
+
+	/* Allocate buffer */
+	*outData = (uint8_t *)malloc(totalSize);
+	if (*outData == NULL)
+		return false;
+
+	/* Write header */
+	xp_header_t hdr;
+	hdr.version = 1;
+	hdr.numRows = numRows;
+
+	memcpy(*outData, &hdr, sizeof(hdr));
+
+	/* Write pattern data */
+	memcpy(*outData + sizeof(hdr), patt, numRows * XP_TRACK_WIDTH);
+
+	*outSize = totalSize;
+	return true;
 }
 
 bool ft2_parse_wav(const uint8_t *data, uint32_t dataSize,
