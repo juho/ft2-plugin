@@ -8,6 +8,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "ft2_plugin_timemap.h"
 #include "ft2_instance.h"
 
@@ -315,6 +316,10 @@ bool ft2_timemap_lookup(ft2_instance_t *inst, double ppqPosition,
 	/* Clamp PPQ to valid range */
 	if (ppqPosition < 0.0)
 		ppqPosition = 0.0;
+
+	/* Handle song looping via modulo - wraps position to within one song iteration */
+	if (timemap->totalPpq > 0.0 && ppqPosition >= timemap->totalPpq)
+		ppqPosition = fmod(ppqPosition, timemap->totalPpq);
 
 	/* Binary search for the entry */
 	uint32_t left = 0;
