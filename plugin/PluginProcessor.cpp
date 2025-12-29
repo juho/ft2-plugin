@@ -283,36 +283,49 @@ void FT2PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
         /* Render with per-channel outputs */
         if (instance->replayer.songPlaying)
+        {
             ft2_instance_render_multiout(instance, mainL, mainR, static_cast<uint32_t>(numSamples));
+
+            /* Copy 16 output buffers to enabled DAW output buses
+             * (Tracker channels are already routed to these 16 buffers via config) */
+            int bufferChannelOffset = 2; // Start after Main (channels 0-1)
+            for (int out = 0; out < 16; ++out)
+            {
+                const int busIdx = out + 1; // Bus 0=Main, Bus 1=Out1, Bus 2=Out2, etc.
+                auto* bus = getBus(false, busIdx);
+                
+                if (bus == nullptr || !bus->isEnabled())
+                    continue; // Skip disabled buses
+                
+                /* This bus is enabled - copy its data to the buffer */
+                if (bufferChannelOffset + 1 < totalChannels)
+                {
+                    float* outL = buffer.getWritePointer(bufferChannelOffset);
+                    float* outR = buffer.getWritePointer(bufferChannelOffset + 1);
+
+                    if (outL != nullptr && instance->audio.fChannelBufferL[out] != nullptr)
+                        std::memcpy(outL, instance->audio.fChannelBufferL[out], 
+                                    static_cast<size_t>(numSamples) * sizeof(float));
+                    if (outR != nullptr && instance->audio.fChannelBufferR[out] != nullptr)
+                        std::memcpy(outR, instance->audio.fChannelBufferR[out], 
+                                    static_cast<size_t>(numSamples) * sizeof(float));
+                }
+                
+                bufferChannelOffset += 2; // Move to next stereo pair
+            }
+        }
         else
+        {
+            /* Not playing - mix keyjazz voices to main only and silence multi-outs */
             ft2_mix_voices_only(instance, mainL, mainR, static_cast<uint32_t>(numSamples));
 
-        /* Copy 16 output buffers to enabled DAW output buses
-         * (Tracker channels are already routed to these 16 buffers via config) */
-        int bufferChannelOffset = 2; // Start after Main (channels 0-1)
-        for (int out = 0; out < 16; ++out)
-        {
-            const int busIdx = out + 1; // Bus 0=Main, Bus 1=Out1, Bus 2=Out2, etc.
-            auto* bus = getBus(false, busIdx);
-            
-            if (bus == nullptr || !bus->isEnabled())
-                continue; // Skip disabled buses
-            
-            /* This bus is enabled - copy its data to the buffer */
-            if (bufferChannelOffset + 1 < totalChannels)
+            /* Clear all multi-out channels (bus channels 2+) to silence */
+            for (int ch = 2; ch < totalChannels; ++ch)
             {
-                float* outL = buffer.getWritePointer(bufferChannelOffset);
-                float* outR = buffer.getWritePointer(bufferChannelOffset + 1);
-
-                if (outL != nullptr && instance->audio.fChannelBufferL[out] != nullptr)
-                    std::memcpy(outL, instance->audio.fChannelBufferL[out], 
-                                static_cast<size_t>(numSamples) * sizeof(float));
-                if (outR != nullptr && instance->audio.fChannelBufferR[out] != nullptr)
-                    std::memcpy(outR, instance->audio.fChannelBufferR[out], 
-                                static_cast<size_t>(numSamples) * sizeof(float));
+                float* chPtr = buffer.getWritePointer(ch);
+                if (chPtr != nullptr)
+                    std::memset(chPtr, 0, static_cast<size_t>(numSamples) * sizeof(float));
             }
-            
-            bufferChannelOffset += 2; // Move to next stereo pair
         }
     }
     else
