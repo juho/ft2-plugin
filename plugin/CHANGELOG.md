@@ -3,6 +3,7 @@
 ## 1.0.10 (Dec 29, 2025)
 
 - Feat: Enable Extend GUI mode.
+- Fix: Drag-drop module in extended mode goes back to normal pattern editor.
 
 ## 1.0.9 (Dec 29, 2025)
 

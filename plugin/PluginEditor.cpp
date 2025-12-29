@@ -7,6 +7,7 @@ extern "C" {
 #include "ft2_plugin_gui.h"
 #include "ft2_plugin_sample_ed.h"
 #include "ft2_plugin_instr_ed.h"
+#include "ft2_plugin_pattern_ed.h"
 }
 
 // Use JUCE's OpenGL namespace
@@ -193,8 +194,13 @@ void FT2PluginEditor::processDiskOpRequests()
                 {
                     inst->replayer.song.isModified = false;
                     
+                    // Exit extended mode first if active (restores widget positions)
+                    if (inst->uiState.extendedPatternEditor)
+                        exitPatternEditorExtended(inst);
+                    
                     // Reset UI state - close all overlays and return to pattern editor
                     hideTopScreen(inst);
+                    hideAllTopLeftPanelOverlays(inst);
                     hideSampleEditor(inst);
                     hideInstEditor(inst);
                     inst->uiState.aboutScreenShown = false;
@@ -625,6 +631,10 @@ void FT2PluginEditor::loadDiskOpFile(const juce::File& file)
             if (success)
             {
                 inst->replayer.song.isModified = false;
+                
+                // Exit extended mode first if active (restores widget positions)
+                if (inst->uiState.extendedPatternEditor)
+                    exitPatternEditorExtended(inst);
                 
                 // Reset UI state - close disk op and all overlays, return to pattern editor
                 hideDiskOpScreen(inst);
