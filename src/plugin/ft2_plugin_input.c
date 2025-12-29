@@ -817,6 +817,7 @@ static void handlePatternInsertDelete(ft2_instance_t *inst, int keyCode, int mod
 					}
 					memset(&pattern[curRow * numCh + inst->cursor.ch], 0, sizeof(ft2_note_t));
 				}
+				ft2_song_mark_modified(inst);
 				inst->uiState.updatePatternEditor = true;
 			}
 			break;
@@ -860,6 +861,7 @@ static void handlePatternInsertDelete(ft2_instance_t *inst, int keyCode, int mod
 					}
 					memset(&pattern[(numRows - 1) * numCh + inst->cursor.ch], 0, sizeof(ft2_note_t));
 				}
+				ft2_song_mark_modified(inst);
 				inst->uiState.updatePatternEditor = true;
 			}
 			break;
@@ -909,6 +911,7 @@ static void handlePatternInsertDelete(ft2_instance_t *inst, int keyCode, int mod
 						inst->editor.row = (uint8_t)inst->replayer.song.row;
 				}
 				
+				ft2_song_mark_modified(inst);
 				inst->uiState.updatePatternEditor = true;
 			}
 			break;
@@ -1111,6 +1114,7 @@ static void handleNoteInput(ft2_instance_t *inst, ft2_input_state_t *input, int 
 						inst->editor.row = (uint8_t)inst->replayer.song.row;
 				}
 				
+				ft2_song_mark_modified(inst);
 				inst->uiState.updatePatternEditor = true;
 		}
 	}
@@ -1284,6 +1288,7 @@ static void handleEffectInput(ft2_instance_t *inst, ft2_input_state_t *input, in
 			inst->editor.row = (uint8_t)inst->replayer.song.row;
 	}
 	
+	ft2_song_mark_modified(inst);
 	inst->uiState.updatePatternEditor = true;
 }
 

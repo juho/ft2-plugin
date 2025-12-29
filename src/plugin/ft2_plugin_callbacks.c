@@ -106,6 +106,7 @@ void pbPosEdIns(ft2_instance_t *inst)
 	
 	inst->replayer.song.orders[pos] = patt;
 	inst->replayer.song.songLength++;
+	ft2_song_mark_modified(inst);
 	inst->uiState.updatePosSections = true;
 	inst->uiState.updatePosEdScrollBar = true;
 }
@@ -126,6 +127,7 @@ void pbPosEdDel(ft2_instance_t *inst)
 	if (inst->replayer.song.songPos >= inst->replayer.song.songLength)
 		inst->replayer.song.songPos = inst->replayer.song.songLength - 1;
 	
+	ft2_song_mark_modified(inst);
 	inst->uiState.updatePosSections = true;
 	inst->uiState.updatePosEdScrollBar = true;
 }
@@ -152,6 +154,7 @@ void pbPosEdPattUp(ft2_instance_t *inst)
 	if (!inst->replayer.songPlaying)
 		inst->editor.editPattern = (uint8_t)inst->replayer.song.pattNum;
 	
+	ft2_song_mark_modified(inst);
 	inst->uiState.updatePatternEditor = true;
 	inst->uiState.updatePosSections = true;
 }
@@ -178,6 +181,7 @@ void pbPosEdPattDown(ft2_instance_t *inst)
 	if (!inst->replayer.songPlaying)
 		inst->editor.editPattern = (uint8_t)inst->replayer.song.pattNum;
 	
+	ft2_song_mark_modified(inst);
 	inst->uiState.updatePatternEditor = true;
 	inst->uiState.updatePosSections = true;
 }
@@ -189,6 +193,7 @@ void pbPosEdLenUp(ft2_instance_t *inst)
 	if (inst->replayer.song.songLength < 255)
 	{
 		inst->replayer.song.songLength++;
+		ft2_song_mark_modified(inst);
 		inst->uiState.updatePosSections = true;
 		inst->uiState.updatePosEdScrollBar = true;
 	}
@@ -203,6 +208,7 @@ void pbPosEdLenDown(ft2_instance_t *inst)
 		inst->replayer.song.songLength--;
 		if (inst->replayer.song.songPos >= inst->replayer.song.songLength)
 			inst->replayer.song.songPos = inst->replayer.song.songLength - 1;
+		ft2_song_mark_modified(inst);
 		inst->uiState.updatePosSections = true;
 		inst->uiState.updatePosEdScrollBar = true;
 	}
@@ -373,6 +379,7 @@ void pbPattLenUp(ft2_instance_t *inst)
 	if (inst->replayer.song.pattNum == inst->editor.editPattern)
 		inst->replayer.song.currNumRows = len + 1;
 	
+	ft2_song_mark_modified(inst);
 	inst->uiState.updatePatternEditor = true;
 	inst->uiState.updatePosSections = true;
 }
@@ -398,6 +405,7 @@ void pbPattLenDown(ft2_instance_t *inst)
 			inst->editor.row = (uint8_t)inst->replayer.song.row;
 	}
 	
+	ft2_song_mark_modified(inst);
 	inst->uiState.updatePatternEditor = true;
 	inst->uiState.updatePosSections = true;
 }
@@ -439,6 +447,7 @@ void pbPattExpand(ft2_instance_t *inst)
 	
 	inst->editor.row = (uint8_t)inst->replayer.song.row;
 	
+	ft2_song_mark_modified(inst);
 	inst->uiState.updatePatternEditor = true;
 	inst->uiState.updatePosSections = true;
 }
@@ -475,6 +484,7 @@ void pbPattShrink(ft2_instance_t *inst)
 	
 	inst->editor.row = (uint8_t)inst->replayer.song.row;
 	
+	ft2_song_mark_modified(inst);
 	inst->uiState.updatePatternEditor = true;
 	inst->uiState.updatePosSections = true;
 }
