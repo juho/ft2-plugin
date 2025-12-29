@@ -132,6 +132,7 @@ void drawSampleEditorExt(struct ft2_instance_t *inst, struct ft2_video_t *video,
 bool allocateSmpData(struct ft2_instance_t *inst, int instrNum, int smpNum, int32_t length, bool sample16Bit);
 void freeSmpData(struct ft2_instance_t *inst, int instrNum, int smpNum);
 void clearSample(struct ft2_instance_t *inst);
+void clearInstr(struct ft2_instance_t *inst);
 void clearCopyBuffer(struct ft2_instance_t *inst);
 
 /* Copy/Exchange operations */

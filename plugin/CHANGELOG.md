@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.4 (Dec 29, 2025)
+
+- Fix: Implement instrument/sample clearing (with numpad period key).
+
 ## 1.0.3 (Dec 29, 2025)
 
 - Fix: Saving modules now works correctly.

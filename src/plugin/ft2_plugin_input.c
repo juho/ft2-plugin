@@ -9,6 +9,7 @@
 #include "ft2_plugin_pattern_ed.h"
 #include "ft2_plugin_ui.h"
 #include "ft2_plugin_nibbles.h"
+#include "ft2_plugin_sample_ed.h"
 #include "ft2_instance.h"
 
 /* FT2 keyboard layout mapping for notes.
@@ -462,7 +463,13 @@ static bool handleNumpadInstrumentKeys(ft2_instance_t *inst, ft2_input_state_t *
 			return true;
 		
 		case FT2_KEY_NUMPAD_PERIOD:
-			/* Clear instrument/sample - TODO: Implement clear instrument dialog */
+			if (inst->editor.curInstr > 0)
+			{
+				if (input->modifiers & FT2_MOD_SHIFT)
+					clearSample(inst);
+				else
+					clearInstr(inst);
+			}
 			return true;
 		
 		case FT2_KEY_NUMPAD0:

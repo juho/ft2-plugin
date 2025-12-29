@@ -3210,37 +3210,3 @@ void doTranspose(ft2_instance_t *inst, uint8_t mode, int8_t addValue, bool allIn
 
 	inst->uiState.updatePatternEditor = true;
 }
-
-/* ============ TRACK/PATTERN FILE I/O ============ */
-
-bool loadTrack(ft2_instance_t *inst, const char *filename)
-{
-	(void)inst;
-	(void)filename;
-	/* TODO: Implement track loading */
-	return false;
-}
-
-bool saveTrack(ft2_instance_t *inst, const char *filename)
-{
-	(void)inst;
-	(void)filename;
-	/* TODO: Implement track saving */
-	return false;
-}
-
-bool loadPattern(ft2_instance_t *inst, const char *filename)
-{
-	(void)inst;
-	(void)filename;
-	/* TODO: Implement pattern loading */
-	return false;
-}
-
-bool savePattern(ft2_instance_t *inst, const char *filename)
-{
-	(void)inst;
-	(void)filename;
-	/* TODO: Implement pattern saving */
-	return false;
-}

@@ -66,11 +66,13 @@ static const uint8_t starColConv[24] = { 2,2,2,2,2,2,2,2, 2,2,2,1,1,1,3,3, 3,3,3
 static char *customText0 = "Original FT2 by Magnus \"Vogue\" H\224gdahl & Fredrik \"Mr.H\" Huss";
 static char *customText1 = "Clone by Olav \"8bitbubsy\" S\233rensen (16-bits.org)";
 static char *customText2 = "Plugin by Blamstrain/TPOLM (blamstrain.com)";
-static char *customText3 = "https://oceanloader.com";
+static char *customText3 = "";
 static char customText4[256];
 
-/* Plugin version string */
-#define FT2_PLUGIN_VER_STR "1.0"
+/* Plugin version string - defined by CMake, fallback for IDE parsing */
+#ifndef FT2_PLUGIN_VERSION
+#define FT2_PLUGIN_VERSION "0.0.0"
+#endif
 
 /* Static state */
 static int16_t customText0X, customText0Y, customText1Y, customText2Y, customText3Y;
@@ -335,7 +337,7 @@ void ft2_about_init(void)
 	rotateStarfieldMatrix();
 
 	/* Format version string - matching original style */
-	sprintf(customText4, "v%s (%s)", FT2_PLUGIN_VER_STR, __DATE__);
+	sprintf(customText4, "v%s (%s)", FT2_PLUGIN_VERSION, __DATE__);
 
 	/* Calculate text positions - using proper textWidth() for variable-width font */
 	/* Line 1: Original FT2 authors (centered) */

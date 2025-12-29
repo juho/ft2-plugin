@@ -2622,6 +2622,52 @@ void clearSample(ft2_instance_t *inst)
 	}
 }
 
+/* Callback for clear instrument confirmation dialog */
+static void onClearInstrResult(ft2_instance_t *inst, ft2_dialog_result_t result,
+                               const char *inputText, void *userData)
+{
+	(void)inputText;
+	(void)userData;
+
+	if (inst == NULL || result != DIALOG_RESULT_YES)
+		return;
+
+	uint8_t curInstr = inst->editor.curInstr;
+	if (curInstr == 0)
+		return;
+
+	/* Stop voices playing this instrument before clearing */
+	ft2_stop_all_voices(inst);
+
+	ft2_instance_free_instr(inst, curInstr);
+	memset(inst->replayer.song.instrName[curInstr], 0, 23);
+
+	inst->editor.currVolEnvPoint = 0;
+	inst->editor.currPanEnvPoint = 0;
+	inst->uiState.updateInstrSwitcher = true;
+	inst->uiState.updateSampleEditor = true;
+
+	ft2_song_mark_modified(inst);
+}
+
+void clearInstr(ft2_instance_t *inst)
+{
+	if (inst == NULL || inst->editor.curInstr == 0)
+		return;
+
+	if (inst->replayer.instr[inst->editor.curInstr] == NULL)
+		return;
+
+	/* Show confirmation dialog */
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (ui != NULL)
+	{
+		ft2_dialog_show_yesno_cb(&ui->dialog,
+			"System request", "Clear instrument?",
+			inst, onClearInstrResult, NULL);
+	}
+}
+
 void clearCopyBuffer(ft2_instance_t *inst)
 {
 	(void)inst;

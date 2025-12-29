@@ -227,12 +227,6 @@ void updatePatternWidth(struct ft2_instance_t *inst);
 uint8_t getMaxVisibleChannels(struct ft2_instance_t *inst);
 void updateChanNums(struct ft2_instance_t *inst);
 
-/* Track/Pattern file I/O */
-bool loadTrack(struct ft2_instance_t *inst, const char *filename);
-bool saveTrack(struct ft2_instance_t *inst, const char *filename);
-bool loadPattern(struct ft2_instance_t *inst, const char *filename);
-bool savePattern(struct ft2_instance_t *inst, const char *filename);
-
 #ifdef __cplusplus
 }
 #endif
