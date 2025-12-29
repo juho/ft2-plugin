@@ -5,6 +5,8 @@ extern "C" {
 #include "../src/plugin/ft2_plugin_config.h"
 #include "../src/plugin/ft2_plugin_replayer.h"
 #include "../src/plugin/ft2_plugin_timemap.h"
+#include "../src/plugin/ft2_plugin_diskop.h"
+#include "../src/plugin/ft2_plugin_loader.h"
 }
 
 FT2PluginProcessor::FT2PluginProcessor()
@@ -269,12 +271,36 @@ void FT2PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     const juce::ScopedLock lock(processLock);
     
-    if (instance != nullptr)
+    if (instance == nullptr)
+        return;
+    
+    uint32_t version = 1;
+    destData.append(&version, sizeof(version));
+    
+    // Config
+    destData.append(&instance->config, sizeof(ft2_plugin_config_t));
+    
+    // Editor state
+    destData.append(&instance->editor.curInstr, 1);
+    destData.append(&instance->editor.curSmp, 1);
+    destData.append(&instance->editor.editPattern, 1);
+    destData.append(&instance->editor.curOctave, 1);
+    int16_t songPos = instance->editor.songPos;
+    destData.append(&songPos, sizeof(songPos));
+    
+    // Module as XM
+    uint8_t *moduleData = nullptr;
+    uint32_t moduleSize = 0;
+    if (ft2_save_module(instance, &moduleData, &moduleSize) && moduleData != nullptr)
     {
-        // Version header for future compatibility
-        uint32_t version = 1;
-        destData.append(&version, sizeof(version));
-        destData.append(&instance->config, sizeof(ft2_plugin_config_t));
+        destData.append(&moduleSize, sizeof(moduleSize));
+        destData.append(moduleData, moduleSize);
+        free(moduleData);
+    }
+    else
+    {
+        uint32_t zero = 0;
+        destData.append(&zero, sizeof(zero));
     }
 }
 
@@ -282,17 +308,64 @@ void FT2PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     const juce::ScopedLock lock(processLock);
     
-    if (instance != nullptr && data != nullptr && 
-        sizeInBytes >= static_cast<int>(sizeof(uint32_t) + sizeof(ft2_plugin_config_t)))
+    if (instance == nullptr || data == nullptr || sizeInBytes < 4)
+        return;
+    
+    const uint8_t* ptr = static_cast<const uint8_t*>(data);
+    uint32_t version;
+    memcpy(&version, ptr, sizeof(version));
+    ptr += sizeof(version);
+    int remaining = sizeInBytes - static_cast<int>(sizeof(version));
+    
+    if (version != 1)
+        return;
+    
+    // Config
+    if (remaining < static_cast<int>(sizeof(ft2_plugin_config_t)))
+        return;
+    memcpy(&instance->config, ptr, sizeof(ft2_plugin_config_t));
+    ft2_config_apply(instance, &instance->config);
+    ptr += sizeof(ft2_plugin_config_t);
+    remaining -= static_cast<int>(sizeof(ft2_plugin_config_t));
+    
+    // Editor state (6 bytes)
+    if (remaining < 6)
+        return;
+    uint8_t curInstr = *ptr++;
+    uint8_t curSmp = *ptr++;
+    uint8_t editPattern = *ptr++;
+    uint8_t curOctave = *ptr++;
+    int16_t songPos;
+    memcpy(&songPos, ptr, sizeof(songPos));
+    ptr += sizeof(songPos);
+    remaining -= 6;
+    
+    // Module size
+    if (remaining < 4)
+        return;
+    uint32_t moduleSize;
+    memcpy(&moduleSize, ptr, sizeof(moduleSize));
+    ptr += sizeof(moduleSize);
+    remaining -= static_cast<int>(sizeof(moduleSize));
+    
+    // Module data
+    if (moduleSize > 0 && remaining >= static_cast<int>(moduleSize))
     {
-        const uint8_t* ptr = static_cast<const uint8_t*>(data);
-        uint32_t version = *reinterpret_cast<const uint32_t*>(ptr);
+        ft2_load_module_from_memory(instance, ptr, moduleSize);
         
-        if (version == 1)
-        {
-            memcpy(&instance->config, ptr + sizeof(uint32_t), sizeof(ft2_plugin_config_t));
-            ft2_config_apply(instance, &instance->config);
-        }
+        // Restore editor state
+        instance->editor.curInstr = curInstr;
+        instance->editor.curSmp = curSmp;
+        instance->editor.editPattern = editPattern;
+        instance->editor.curOctave = curOctave;
+        instance->editor.songPos = songPos;
+        
+        // Trigger UI refresh
+        instance->uiState.needsFullRedraw = true;
+        instance->uiState.updatePosSections = true;
+        instance->uiState.updatePatternEditor = true;
+        instance->uiState.updateInstrSwitcher = true;
+        instance->uiState.updateSampleEditor = true;
     }
 }
 
