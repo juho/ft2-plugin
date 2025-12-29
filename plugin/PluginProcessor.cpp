@@ -17,8 +17,11 @@ FT2PluginProcessor::FT2PluginProcessor()
     // It will be updated in prepareToPlay when we know the actual rate
     instance = ft2_instance_create(48000);
     
-    // Initialize persistent storage for nibbles high scores
+    // Initialize persistent storage
     initAppProperties();
+    
+    // Load global config (if exists) and nibbles high scores
+    loadGlobalConfig();
     loadNibblesHighScores();
 }
 
@@ -505,5 +508,191 @@ void FT2PluginProcessor::loadNibblesHighScores()
     instance->nibbles.surround = props->getBoolValue("nibbles_surround", false);
     instance->nibbles.grid = props->getBoolValue("nibbles_grid", true);
     instance->nibbles.wrap = props->getBoolValue("nibbles_wrap", false);
+}
+
+// Global config version - increment when adding new fields that need migration
+static constexpr int GLOBAL_CONFIG_VERSION = 1;
+
+void FT2PluginProcessor::saveGlobalConfig()
+{
+    if (instance == nullptr || appProperties == nullptr)
+        return;
+    
+    auto* props = appProperties->getUserSettings();
+    if (props == nullptr)
+        return;
+    
+    const auto& cfg = instance->config;
+    
+    // Version for future migrations
+    props->setValue("config_version", GLOBAL_CONFIG_VERSION);
+    
+    // Pattern editor settings
+    props->setValue("config_ptnStretch", cfg.ptnStretch);
+    props->setValue("config_ptnHex", cfg.ptnHex);
+    props->setValue("config_ptnInstrZero", cfg.ptnInstrZero);
+    props->setValue("config_ptnFrmWrk", cfg.ptnFrmWrk);
+    props->setValue("config_ptnLineLight", cfg.ptnLineLight);
+    props->setValue("config_ptnShowVolColumn", cfg.ptnShowVolColumn);
+    props->setValue("config_ptnChnNumbers", cfg.ptnChnNumbers);
+    props->setValue("config_ptnAcc", cfg.ptnAcc);
+    props->setValue("config_ptnFont", cfg.ptnFont);
+    props->setValue("config_ptnMaxChannels", cfg.ptnMaxChannels);
+    props->setValue("config_ptnLineLightStep", cfg.ptnLineLightStep);
+    
+    // Recording/Editing settings
+    props->setValue("config_multiRec", cfg.multiRec);
+    props->setValue("config_multiKeyJazz", cfg.multiKeyJazz);
+    props->setValue("config_multiEdit", cfg.multiEdit);
+    props->setValue("config_recRelease", cfg.recRelease);
+    props->setValue("config_recQuant", cfg.recQuant);
+    props->setValue("config_recQuantRes", cfg.recQuantRes);
+    props->setValue("config_recTrueInsert", cfg.recTrueInsert);
+    
+    // Audio/Mixer settings
+    props->setValue("config_interpolation", cfg.interpolation);
+    props->setValue("config_boostLevel", cfg.boostLevel);
+    props->setValue("config_masterVol", cfg.masterVol);
+    props->setValue("config_volumeRamp", cfg.volumeRamp);
+    
+    // Visual settings
+    props->setValue("config_linedScopes", cfg.linedScopes);
+    
+    // Sample editor settings
+    props->setValue("config_smpEdNote", cfg.smpEdNote);
+    
+    // Miscellaneous settings
+    props->setValue("config_smpCutToBuffer", cfg.smpCutToBuffer);
+    props->setValue("config_ptnCutToBuffer", cfg.ptnCutToBuffer);
+    props->setValue("config_killNotesOnStopPlay", cfg.killNotesOnStopPlay);
+    
+    // DAW sync settings
+    props->setValue("config_syncBpmFromDAW", cfg.syncBpmFromDAW);
+    props->setValue("config_syncTransportFromDAW", cfg.syncTransportFromDAW);
+    props->setValue("config_syncPositionFromDAW", cfg.syncPositionFromDAW);
+    props->setValue("config_allowFxxSpeedChanges", cfg.allowFxxSpeedChanges);
+    
+    // Palette
+    props->setValue("config_palettePreset", cfg.palettePreset);
+    
+    // Logo/Badge settings
+    props->setValue("config_id_FastLogo", cfg.id_FastLogo);
+    props->setValue("config_id_TritonProd", cfg.id_TritonProd);
+    
+    props->saveIfNeeded();
+}
+
+void FT2PluginProcessor::loadGlobalConfig()
+{
+    if (instance == nullptr || appProperties == nullptr)
+        return;
+    
+    auto* props = appProperties->getUserSettings();
+    if (props == nullptr)
+        return;
+    
+    // Check if we have saved config data (look for any config key)
+    if (!props->containsKey("config_ptnHex") && !props->containsKey("config_version"))
+        return; // No saved config, use current defaults
+    
+    // Read version (0 if not present = pre-versioning config)
+    const int version = props->getIntValue("config_version", 0);
+    
+    // Future migration hooks:
+    // if (version < 2) { /* migrate from v1 to v2 */ }
+    // if (version < 3) { /* migrate from v2 to v3 */ }
+    (void)version; // Suppress unused warning until we need migrations
+    
+    auto& cfg = instance->config;
+    
+    // Pattern editor settings
+    cfg.ptnStretch = props->getBoolValue("config_ptnStretch", cfg.ptnStretch);
+    cfg.ptnHex = props->getBoolValue("config_ptnHex", cfg.ptnHex);
+    cfg.ptnInstrZero = props->getBoolValue("config_ptnInstrZero", cfg.ptnInstrZero);
+    cfg.ptnFrmWrk = props->getBoolValue("config_ptnFrmWrk", cfg.ptnFrmWrk);
+    cfg.ptnLineLight = props->getBoolValue("config_ptnLineLight", cfg.ptnLineLight);
+    cfg.ptnShowVolColumn = props->getBoolValue("config_ptnShowVolColumn", cfg.ptnShowVolColumn);
+    cfg.ptnChnNumbers = props->getBoolValue("config_ptnChnNumbers", cfg.ptnChnNumbers);
+    cfg.ptnAcc = props->getBoolValue("config_ptnAcc", cfg.ptnAcc);
+    cfg.ptnFont = static_cast<uint8_t>(props->getIntValue("config_ptnFont", cfg.ptnFont));
+    cfg.ptnMaxChannels = static_cast<uint8_t>(props->getIntValue("config_ptnMaxChannels", cfg.ptnMaxChannels));
+    cfg.ptnLineLightStep = static_cast<uint8_t>(props->getIntValue("config_ptnLineLightStep", cfg.ptnLineLightStep));
+    
+    // Recording/Editing settings
+    cfg.multiRec = props->getBoolValue("config_multiRec", cfg.multiRec);
+    cfg.multiKeyJazz = props->getBoolValue("config_multiKeyJazz", cfg.multiKeyJazz);
+    cfg.multiEdit = props->getBoolValue("config_multiEdit", cfg.multiEdit);
+    cfg.recRelease = props->getBoolValue("config_recRelease", cfg.recRelease);
+    cfg.recQuant = props->getBoolValue("config_recQuant", cfg.recQuant);
+    cfg.recQuantRes = static_cast<uint8_t>(props->getIntValue("config_recQuantRes", cfg.recQuantRes));
+    cfg.recTrueInsert = props->getBoolValue("config_recTrueInsert", cfg.recTrueInsert);
+    
+    // Audio/Mixer settings
+    cfg.interpolation = static_cast<uint8_t>(props->getIntValue("config_interpolation", cfg.interpolation));
+    cfg.boostLevel = static_cast<uint8_t>(props->getIntValue("config_boostLevel", cfg.boostLevel));
+    cfg.masterVol = static_cast<uint16_t>(props->getIntValue("config_masterVol", cfg.masterVol));
+    cfg.volumeRamp = props->getBoolValue("config_volumeRamp", cfg.volumeRamp);
+    
+    // Visual settings
+    cfg.linedScopes = props->getBoolValue("config_linedScopes", cfg.linedScopes);
+    
+    // Sample editor settings
+    cfg.smpEdNote = static_cast<uint8_t>(props->getIntValue("config_smpEdNote", cfg.smpEdNote));
+    
+    // Miscellaneous settings
+    cfg.smpCutToBuffer = props->getBoolValue("config_smpCutToBuffer", cfg.smpCutToBuffer);
+    cfg.ptnCutToBuffer = props->getBoolValue("config_ptnCutToBuffer", cfg.ptnCutToBuffer);
+    cfg.killNotesOnStopPlay = props->getBoolValue("config_killNotesOnStopPlay", cfg.killNotesOnStopPlay);
+    
+    // DAW sync settings
+    cfg.syncBpmFromDAW = props->getBoolValue("config_syncBpmFromDAW", cfg.syncBpmFromDAW);
+    cfg.syncTransportFromDAW = props->getBoolValue("config_syncTransportFromDAW", cfg.syncTransportFromDAW);
+    cfg.syncPositionFromDAW = props->getBoolValue("config_syncPositionFromDAW", cfg.syncPositionFromDAW);
+    cfg.allowFxxSpeedChanges = props->getBoolValue("config_allowFxxSpeedChanges", cfg.allowFxxSpeedChanges);
+    
+    // Palette
+    cfg.palettePreset = static_cast<uint8_t>(props->getIntValue("config_palettePreset", cfg.palettePreset));
+    
+    // Logo/Badge settings
+    cfg.id_FastLogo = props->getBoolValue("config_id_FastLogo", cfg.id_FastLogo);
+    cfg.id_TritonProd = props->getBoolValue("config_id_TritonProd", cfg.id_TritonProd);
+    
+    // Apply the loaded config
+    ft2_config_apply(instance, &cfg);
+}
+
+void FT2PluginProcessor::resetConfig()
+{
+    if (instance == nullptr)
+        return;
+    
+    ft2_config_init(&instance->config);
+    ft2_config_apply(instance, &instance->config);
+    instance->uiState.needsFullRedraw = true;
+}
+
+void FT2PluginProcessor::pollConfigRequests()
+{
+    if (instance == nullptr)
+        return;
+    
+    if (instance->uiState.requestResetConfig)
+    {
+        instance->uiState.requestResetConfig = false;
+        resetConfig();
+    }
+    
+    if (instance->uiState.requestLoadGlobalConfig)
+    {
+        instance->uiState.requestLoadGlobalConfig = false;
+        loadGlobalConfig();
+        instance->uiState.needsFullRedraw = true;
+    }
+    
+    if (instance->uiState.requestSaveGlobalConfig)
+    {
+        instance->uiState.requestSaveGlobalConfig = false;
+        saveGlobalConfig();
+    }
 }
 

@@ -3049,6 +3049,9 @@ void initCallbacks(void)
 	pushButtons[PB_SMP_ED].callbackFuncOnUp = pbSmpEd;
 	pushButtons[PB_CONFIG].callbackFuncOnUp = pbConfig;
 	pushButtons[PB_CONFIG_EXIT].callbackFuncOnUp = pbConfigExit;
+	pushButtons[PB_CONFIG_RESET].callbackFuncOnUp = pbConfigReset;
+	pushButtons[PB_CONFIG_LOAD].callbackFuncOnUp = pbConfigLoad;
+	pushButtons[PB_CONFIG_SAVE].callbackFuncOnUp = pbConfigSave;
 	pushButtons[PB_HELP].callbackFuncOnUp = pbHelp;
 	pushButtons[PB_HELP_EXIT].callbackFuncOnUp = pbHelpExit;
 	pushButtons[PB_HELP_SCROLL_UP].callbackFuncOnDown = pbHelpScrollUp;

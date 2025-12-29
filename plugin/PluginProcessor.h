@@ -104,6 +104,18 @@ public:
     /** Load nibbles high scores from persistent storage. */
     void loadNibblesHighScores();
 
+    /** Save global config to persistent storage. */
+    void saveGlobalConfig();
+
+    /** Load global config from persistent storage. */
+    void loadGlobalConfig();
+
+    /** Reset config to factory defaults. */
+    void resetConfig();
+
+    /** Poll and handle config request flags from C code. */
+    void pollConfigRequests();
+
 private:
     ft2_instance_t* instance = nullptr;
     double currentSampleRate = 48000.0;

@@ -230,6 +230,11 @@ void cbSyncTransportFromDAW(struct ft2_instance_t *inst);
 void cbSyncPositionFromDAW(struct ft2_instance_t *inst);
 void cbAllowFxxSpeedChanges(struct ft2_instance_t *inst);
 
+/* Config button callbacks */
+void pbConfigReset(struct ft2_instance_t *inst);
+void pbConfigLoad(struct ft2_instance_t *inst);
+void pbConfigSave(struct ft2_instance_t *inst);
+
 #ifdef __cplusplus
 }
 #endif

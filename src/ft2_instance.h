@@ -371,6 +371,11 @@ typedef struct ft2_ui_state_t
 	bool nibblesExitRequested, nibblesRedrawRequested;
 	bool nibblesHelpShown, nibblesHighScoresShown; /* Track overlay screens in game area */
 
+	/* Config action request flags (set by C, handled by JUCE) */
+	bool requestResetConfig;
+	bool requestLoadGlobalConfig;
+	bool requestSaveGlobalConfig;
+
 	/* Backup flags for extended pattern editor */
 	bool _aboutScreenShown, _helpScreenShown, _configScreenShown, _diskOpShown;
 	bool _nibblesShown, _transposeShown, _instEditorShown;

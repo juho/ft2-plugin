@@ -698,9 +698,6 @@ void drawConfigScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 	setConfigRadioButtonStates(&inst->config);
 	showRadioButtonGroup(video, bmp, RB_GROUP_CONFIG_SELECT);
 
-	/* Autosave checkbox - grayed out for plugin */
-	textOutShadow(video, bmp, 20, 93, PAL_DSKTOP2, PAL_DSKTOP2, "Auto save");
-
 	/* Show push buttons */
 	showPushButton(video, bmp, PB_CONFIG_RESET);
 	showPushButton(video, bmp, PB_CONFIG_LOAD);
@@ -1282,5 +1279,85 @@ void sbMasterVolPos(ft2_instance_t *inst, uint32_t pos)
 			fillRect(&ui->video, 601, 133, 20, 8, PAL_DESKTOP);
 			textOutShadow(&ui->video, &ui->bmp, 601, 133, PAL_FORGRND, PAL_DSKTOP2, volStr);
 		}
+	}
+}
+
+/* ============ CONFIG BUTTON CALLBACKS ============ */
+
+static void onResetConfigResult(ft2_instance_t *inst, ft2_dialog_result_t result,
+                                const char *inputText, void *userData)
+{
+	(void)inputText;
+	(void)userData;
+
+	if (result != DIALOG_RESULT_YES || inst == NULL)
+		return;
+
+	inst->uiState.requestResetConfig = true;
+}
+
+void pbConfigReset(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (ui != NULL)
+	{
+		ft2_dialog_show_yesno_cb(&ui->dialog,
+			"System request", "Reset all settings to factory defaults?",
+			inst, onResetConfigResult, NULL);
+	}
+}
+
+static void onLoadGlobalConfigResult(ft2_instance_t *inst, ft2_dialog_result_t result,
+                                     const char *inputText, void *userData)
+{
+	(void)inputText;
+	(void)userData;
+
+	if (result != DIALOG_RESULT_YES || inst == NULL)
+		return;
+
+	inst->uiState.requestLoadGlobalConfig = true;
+}
+
+void pbConfigLoad(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (ui != NULL)
+	{
+		ft2_dialog_show_yesno_cb(&ui->dialog,
+			"System request", "Load your global config?",
+			inst, onLoadGlobalConfigResult, NULL);
+	}
+}
+
+static void onSaveGlobalConfigResult(ft2_instance_t *inst, ft2_dialog_result_t result,
+                                     const char *inputText, void *userData)
+{
+	(void)inputText;
+	(void)userData;
+
+	if (result != DIALOG_RESULT_YES || inst == NULL)
+		return;
+
+	inst->uiState.requestSaveGlobalConfig = true;
+}
+
+void pbConfigSave(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	ft2_ui_t *ui = ft2_ui_get_current();
+	if (ui != NULL)
+	{
+		ft2_dialog_show_yesno_cb(&ui->dialog,
+			"System request", "Overwrite global config?",
+			inst, onSaveGlobalConfigResult, NULL);
 	}
 }

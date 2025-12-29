@@ -782,6 +782,9 @@ void FT2PluginEditor::timerCallback()
     // Process disk op requests
     processDiskOpRequests();
 
+    // Poll config action requests (reset/load/save global config)
+    audioProcessor.pollConfigRequests();
+
     // Update UI
     ft2_ui_update(&ui, audioProcessor.getInstance());
     

@@ -1,5 +1,10 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.6 (Dec 29, 2025)
+
+- Feat: Persists module state.
+- Feat: Configuration story is now more coherent- there's a global versioned config which can be overridden by per-instance configs.
+
 ## 1.0.5 (Dec 29, 2025)
 
 - Feat: Support modules with odd-numbered channels properly.
