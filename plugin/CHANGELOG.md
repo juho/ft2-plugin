@@ -4,7 +4,9 @@
 
 - Fix: Radio button flicker when clicking on them.
 - Sync: Timemap calculates song infinite loops correctly.
-- Sync: Timemap invalidates when the "Allow Fxx speed changes" option is changed.
+- Sync: Timemap invalidates when the "Allow Fxx speed changes" option is changed in config.
+- Sync: Song speed is locked to 6 when "Allow Fxx speed changes" is disabled even when loading modules.
+- Sync: Restore speed/BPM if "Allow Fxx speed changes" is enabled after disabling it.
 
 ## 1.0.1 (Dec 29, 2025)
 
