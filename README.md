@@ -21,7 +21,6 @@ All credit goes to [8bitbubsy](https://16-bits.org) for his tireless work on the
 ## Changes from standalone version
 
 - General: Compiles as VST2/VST3/AU/LV2 plugin using JUCE framework.
-- General: DAW sync to BPM and transport (toggleable in config).
 - General: Only XM, MOD and S3M modules are supported.
 - General: Some config settings do not make sense in a plugin, so they have been disabled.
 - Graphics: Uses OpenGL instead of SDL.
