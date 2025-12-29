@@ -571,8 +571,7 @@ void pbSmpEd(ft2_instance_t *inst)
 		/* Also hide S.E.Ext if open */
 		if (inst->uiState.sampleEditorExtShown)
 		{
-			hideSampleEditorExtButtons(inst);
-			inst->uiState.sampleEditorExtShown = false;
+			hideSampleEditorExt(inst);
 		}
 		hideSampleEditor(inst);
 		inst->uiState.patternEditorShown = true;
