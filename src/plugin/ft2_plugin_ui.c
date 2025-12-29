@@ -313,10 +313,10 @@ static void handleRedrawing(ft2_ui_t *ui, ft2_instance_t *inst)
 					
 					/* Song name only exists in normal mode (not extended) */
 					if (!inst->uiState.extendedPatternEditor)
-						drawSongName(inst, video, bmp);
+				drawSongName(inst, video, bmp);
 
 					/* Always update scrollbar position (matches standalone behavior) */
-					setScrollBarPos(inst, &ui->widgets, video, SB_POS_ED, inst->replayer.song.songPos, false);
+						setScrollBarPos(inst, &ui->widgets, video, SB_POS_ED, inst->replayer.song.songPos, false);
 			}
 		}
 

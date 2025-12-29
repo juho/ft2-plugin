@@ -80,9 +80,11 @@ const scrollBar_t scrollBarsTemplate[NUM_SCROLLBARS] =
 	{ 536, 43, 70, 13, SCROLLBAR_HORIZONTAL, SCROLLBAR_FIXED_THUMB_SIZE },
 	{ 536, 71, 70, 13, SCROLLBAR_HORIZONTAL, SCROLLBAR_FIXED_THUMB_SIZE },
 
-	/* Config miscellaneous */
-	/*x,   y,   w,  h,  type,                 style */
-	{ 578, 158, 29, 13, SCROLLBAR_HORIZONTAL, SCROLLBAR_FIXED_THUMB_SIZE },
+	/* Config MIDI input */
+	/*x,   y,  w,  h,  type,                 style */
+	{ 225, 50, 55, 13, SCROLLBAR_HORIZONTAL, SCROLLBAR_FIXED_THUMB_SIZE },  /* SB_MIDI_CHANNEL */
+	{ 225, 66, 55, 13, SCROLLBAR_HORIZONTAL, SCROLLBAR_FIXED_THUMB_SIZE },  /* SB_MIDI_TRANSPOSE */
+	{ 225, 82, 55, 13, SCROLLBAR_HORIZONTAL, SCROLLBAR_FIXED_THUMB_SIZE },  /* SB_MIDI_SENS */
 
 	/* Disk op */
 	/*x,   y,  w,  h,   type,               style */
@@ -222,6 +224,9 @@ void initScrollBars(ft2_widgets_t *widgets)
 	widgets->scrollBars[SB_PAL_G].callbackFunc = sbPalGPos;
 	widgets->scrollBars[SB_PAL_B].callbackFunc = sbPalBPos;
 	widgets->scrollBars[SB_PAL_CONTRAST].callbackFunc = sbPalContrastPos;
+	widgets->scrollBars[SB_MIDI_CHANNEL].callbackFunc = sbMidiChannel;
+	widgets->scrollBars[SB_MIDI_TRANSPOSE].callbackFunc = sbMidiTranspose;
+	widgets->scrollBars[SB_MIDI_SENS].callbackFunc = sbMidiSens;
 
 	/* Initialize per-instance state if widgets provided */
 	if (widgets == NULL)
@@ -265,8 +270,15 @@ void initScrollBars(ft2_widgets_t *widgets)
 	widgets->scrollBarState[SB_PAL_B].end = 63;
 	widgets->scrollBarState[SB_PAL_CONTRAST].page = 1;
 	widgets->scrollBarState[SB_PAL_CONTRAST].end = 100;
+
+	/* Config MIDI input */
+	widgets->scrollBarState[SB_MIDI_CHANNEL].page = 1;
+	widgets->scrollBarState[SB_MIDI_CHANNEL].end = 15;  /* 0-15 = channels 1-16 */
+	widgets->scrollBarState[SB_MIDI_TRANSPOSE].page = 1;
+	widgets->scrollBarState[SB_MIDI_TRANSPOSE].end = 96;  /* 0-96 = -48 to +48 semitones */
 	widgets->scrollBarState[SB_MIDI_SENS].page = 1;
 	widgets->scrollBarState[SB_MIDI_SENS].end = 200;
+
 	widgets->scrollBarState[SB_AUDIO_OUTPUT_SCROLL].page = 6;
 	widgets->scrollBarState[SB_AUDIO_OUTPUT_SCROLL].end = 1;
 	widgets->scrollBarState[SB_AUDIO_INPUT_SCROLL].page = 4;

@@ -21,6 +21,10 @@ FT2PluginProcessor::FT2PluginProcessor()
             return props;
         }())
 {
+    // Initialize MIDI note tracking - all notes start with no channel assigned
+    for (int i = 0; i < MAX_MIDI_NOTES; ++i)
+        midiNoteToChannel[i] = -1;
+    
     // Create instance immediately with a default sample rate
     // It will be updated in prepareToPlay when we know the actual rate
     instance = ft2_instance_create(48000);

@@ -3464,6 +3464,26 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_CONFIG_PAL_CONT_UP].preDelay = 1;
 	widgets->pushButtons[PB_CONFIG_PAL_CONT_UP].delayFrames = 4;
 
+	/* Config MIDI input arrow buttons */
+	widgets->pushButtons[PB_CONFIG_MIDICHN_DOWN].callbackFuncOnDown = configMidiChnDown;
+	widgets->pushButtons[PB_CONFIG_MIDICHN_DOWN].preDelay = 1;
+	widgets->pushButtons[PB_CONFIG_MIDICHN_DOWN].delayFrames = 4;
+	widgets->pushButtons[PB_CONFIG_MIDICHN_UP].callbackFuncOnDown = configMidiChnUp;
+	widgets->pushButtons[PB_CONFIG_MIDICHN_UP].preDelay = 1;
+	widgets->pushButtons[PB_CONFIG_MIDICHN_UP].delayFrames = 4;
+	widgets->pushButtons[PB_CONFIG_MIDITRANS_DOWN].callbackFuncOnDown = configMidiTransDown;
+	widgets->pushButtons[PB_CONFIG_MIDITRANS_DOWN].preDelay = 1;
+	widgets->pushButtons[PB_CONFIG_MIDITRANS_DOWN].delayFrames = 4;
+	widgets->pushButtons[PB_CONFIG_MIDITRANS_UP].callbackFuncOnDown = configMidiTransUp;
+	widgets->pushButtons[PB_CONFIG_MIDITRANS_UP].preDelay = 1;
+	widgets->pushButtons[PB_CONFIG_MIDITRANS_UP].delayFrames = 4;
+	widgets->pushButtons[PB_CONFIG_MIDISENS_DOWN].callbackFuncOnDown = configMidiSensDown;
+	widgets->pushButtons[PB_CONFIG_MIDISENS_DOWN].preDelay = 1;
+	widgets->pushButtons[PB_CONFIG_MIDISENS_DOWN].delayFrames = 4;
+	widgets->pushButtons[PB_CONFIG_MIDISENS_UP].callbackFuncOnDown = configMidiSensUp;
+	widgets->pushButtons[PB_CONFIG_MIDISENS_UP].preDelay = 1;
+	widgets->pushButtons[PB_CONFIG_MIDISENS_UP].delayFrames = 4;
+
 	/* Nibbles buttons */
 	widgets->pushButtons[PB_NIBBLES_PLAY].callbackFuncOnUp = pbNibblesPlay;
 	widgets->pushButtons[PB_NIBBLES_HELP].callbackFuncOnUp = pbNibblesHelp;

@@ -125,7 +125,7 @@ private:
     
     // MIDI input state: track which FT2 channel is playing which MIDI note
     static constexpr int MAX_MIDI_NOTES = 128;
-    int8_t midiNoteToChannel[MAX_MIDI_NOTES] = {-1};  // MIDI note -> FT2 channel (-1 = not playing)
+    int8_t midiNoteToChannel[MAX_MIDI_NOTES];  // MIDI note -> FT2 channel (-1 = not playing, initialized in ctor)
     int8_t nextMidiChannel = 0;  // Round-robin channel assignment
     
     void processMidiInput(const juce::MidiMessage& msg);

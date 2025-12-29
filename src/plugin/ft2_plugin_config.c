@@ -361,6 +361,17 @@ void hideConfigScreen(ft2_instance_t *inst)
 	hidePushButton(widgets, PB_CONFIG_QUANTIZE_UP);
 	hidePushButton(widgets, PB_CONFIG_QUANTIZE_DOWN);
 
+	/* CONFIG MIDI INPUT */
+	hideScrollBar(widgets, SB_MIDI_CHANNEL);
+	hideScrollBar(widgets, SB_MIDI_TRANSPOSE);
+	hideScrollBar(widgets, SB_MIDI_SENS);
+	hidePushButton(widgets, PB_CONFIG_MIDICHN_DOWN);
+	hidePushButton(widgets, PB_CONFIG_MIDICHN_UP);
+	hidePushButton(widgets, PB_CONFIG_MIDITRANS_DOWN);
+	hidePushButton(widgets, PB_CONFIG_MIDITRANS_UP);
+	hidePushButton(widgets, PB_CONFIG_MIDISENS_DOWN);
+	hidePushButton(widgets, PB_CONFIG_MIDISENS_UP);
+
 	/* CONFIG I/O ROUTING */
 	for (int i = 0; i < 32; i++)
 	{
@@ -803,30 +814,51 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	textOutShadow(video, bmp, 116, 4, PAL_FORGRND, PAL_DSKTOP2, "MIDI Input Settings:");
 
 	/* MIDI Enable checkbox */
-	textOutShadow(video, bmp, 138, 20, PAL_FORGRND, PAL_DSKTOP2, "Enable MIDI input");
+	textOutShadow(video, bmp, 131, 20, PAL_FORGRND, PAL_DSKTOP2, "Enable MIDI input");
 	widgets->checkBoxChecked[CB_CONF_MIDI_ENABLE] = cfg->midiEnabled;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_ENABLE);
 
 	/* All channels checkbox */
-	textOutShadow(video, bmp, 138, 34, PAL_FORGRND, PAL_DSKTOP2, "Receive all channels");
+	textOutShadow(video, bmp, 131, 34, PAL_FORGRND, PAL_DSKTOP2, "Receive all channels");
 	widgets->checkBoxChecked[CB_CONF_MIDI_ALLCHN] = cfg->midiAllChannels;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_ALLCHN);
 
-	/* Channel number */
+	/* Channel number with scrollbar */
 	textOutShadow(video, bmp, 116, 52, PAL_FORGRND, PAL_DSKTOP2, "Channel:");
-	/* TODO: Add scrollbar/number display for channel */
+	setScrollBarPos(inst, widgets, video, SB_MIDI_CHANNEL, cfg->midiChannel - 1, false);
+	showScrollBar(widgets, video, SB_MIDI_CHANNEL);
+	showPushButton(widgets, video, bmp, PB_CONFIG_MIDICHN_DOWN);
+	showPushButton(widgets, video, bmp, PB_CONFIG_MIDICHN_UP);
+	char chnStr[8];
+	snprintf(chnStr, sizeof(chnStr), "%2d", cfg->midiChannel);
+	textOutShadow(video, bmp, 304, 52, PAL_FORGRND, PAL_DSKTOP2, chnStr);
 
-	/* Transpose */
+	/* Transpose with scrollbar */
 	textOutShadow(video, bmp, 116, 68, PAL_FORGRND, PAL_DSKTOP2, "Transpose:");
-	/* TODO: Add scrollbar/number display for transpose */
+	setScrollBarPos(inst, widgets, video, SB_MIDI_TRANSPOSE, cfg->midiTranspose + 48, false);
+	showScrollBar(widgets, video, SB_MIDI_TRANSPOSE);
+	showPushButton(widgets, video, bmp, PB_CONFIG_MIDITRANS_DOWN);
+	showPushButton(widgets, video, bmp, PB_CONFIG_MIDITRANS_UP);
+	char transStr[8];
+	if (cfg->midiTranspose >= 0)
+		snprintf(transStr, sizeof(transStr), "+%d", cfg->midiTranspose);
+	else
+		snprintf(transStr, sizeof(transStr), "%d", cfg->midiTranspose);
+	textOutShadow(video, bmp, 304, 68, PAL_FORGRND, PAL_DSKTOP2, transStr);
 
-	/* Velocity sensitivity */
+	/* Velocity sensitivity with scrollbar */
 	textOutShadow(video, bmp, 116, 84, PAL_FORGRND, PAL_DSKTOP2, "Velocity sens.:");
-	charOutShadow(video, bmp, 270, 84, PAL_FORGRND, PAL_DSKTOP2, '%');
-	/* TODO: Add scrollbar/number display for velocity sensitivity */
+	setScrollBarPos(inst, widgets, video, SB_MIDI_SENS, cfg->midiVelocitySens, false);
+	showScrollBar(widgets, video, SB_MIDI_SENS);
+	showPushButton(widgets, video, bmp, PB_CONFIG_MIDISENS_DOWN);
+	showPushButton(widgets, video, bmp, PB_CONFIG_MIDISENS_UP);
+	char sensStr[8];
+	snprintf(sensStr, sizeof(sensStr), "%3d", cfg->midiVelocitySens);
+	textOutShadow(video, bmp, 304, 84, PAL_FORGRND, PAL_DSKTOP2, sensStr);
+	charOutShadow(video, bmp, 328, 84, PAL_FORGRND, PAL_DSKTOP2, '%');
 
 	/* Record velocity checkbox */
-	textOutShadow(video, bmp, 138, 104, PAL_FORGRND, PAL_DSKTOP2, "Record velocity as volume");
+	textOutShadow(video, bmp, 131, 104, PAL_FORGRND, PAL_DSKTOP2, "Record velocity as volume");
 	widgets->checkBoxChecked[CB_CONF_MIDI_VELOCITY] = cfg->midiRecordVelocity;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_VELOCITY);
 
@@ -1666,5 +1698,169 @@ void cbRoutingToMain(ft2_instance_t *inst)
 		uint16_t cbId = CB_CONF_ROUTING_CH1_TOMAIN + i;
 		if (widgets->checkBoxVisible[cbId])
 			inst->config.channelToMain[i] = widgets->checkBoxChecked[cbId];
+	}
+}
+
+/* ============ MIDI INPUT CALLBACKS ============ */
+
+static void drawMidiChannelValue(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	if (ui == NULL || !inst->uiState.configScreenShown || 
+	    inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT)
+		return;
+
+	char str[8];
+	snprintf(str, sizeof(str), "%2d", inst->config.midiChannel);
+	fillRect(&ui->video, 304, 52, 16, 8, PAL_DESKTOP);
+	textOutShadow(&ui->video, &ui->bmp, 304, 52, PAL_FORGRND, PAL_DSKTOP2, str);
+}
+
+static void drawMidiTransposeValue(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	if (ui == NULL || !inst->uiState.configScreenShown || 
+	    inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT)
+		return;
+
+	char str[8];
+	int8_t val = inst->config.midiTranspose;
+	if (val >= 0)
+		snprintf(str, sizeof(str), "+%d", val);
+	else
+		snprintf(str, sizeof(str), "%d", val);
+	fillRect(&ui->video, 304, 68, 24, 8, PAL_DESKTOP);
+	textOutShadow(&ui->video, &ui->bmp, 304, 68, PAL_FORGRND, PAL_DSKTOP2, str);
+}
+
+static void drawMidiSensValue(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	if (ui == NULL || !inst->uiState.configScreenShown || 
+	    inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT)
+		return;
+
+	char str[8];
+	snprintf(str, sizeof(str), "%3d", inst->config.midiVelocitySens);
+	fillRect(&ui->video, 304, 84, 24, 8, PAL_DESKTOP);
+	textOutShadow(&ui->video, &ui->bmp, 304, 84, PAL_FORGRND, PAL_DSKTOP2, str);
+}
+
+void configMidiChnDown(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
+	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
+
+	scrollBarScrollLeft(inst, widgets, video, SB_MIDI_CHANNEL, 1);
+}
+
+void configMidiChnUp(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
+	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
+
+	scrollBarScrollRight(inst, widgets, video, SB_MIDI_CHANNEL, 1);
+}
+
+void sbMidiChannel(ft2_instance_t *inst, uint32_t pos)
+{
+	if (inst == NULL)
+		return;
+
+	uint8_t newCh = (uint8_t)(pos + 1);  /* 0-15 -> 1-16 */
+	if (newCh < 1) newCh = 1;
+	if (newCh > 16) newCh = 16;
+
+	if (inst->config.midiChannel != newCh)
+	{
+		inst->config.midiChannel = newCh;
+		drawMidiChannelValue(inst);
+	}
+}
+
+void configMidiTransDown(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
+	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
+
+	scrollBarScrollLeft(inst, widgets, video, SB_MIDI_TRANSPOSE, 1);
+}
+
+void configMidiTransUp(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
+	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
+
+	scrollBarScrollRight(inst, widgets, video, SB_MIDI_TRANSPOSE, 1);
+}
+
+void sbMidiTranspose(ft2_instance_t *inst, uint32_t pos)
+{
+	if (inst == NULL)
+		return;
+
+	int8_t newTrans = (int8_t)((int32_t)pos - 48);  /* 0-96 -> -48 to +48 */
+	if (newTrans < -48) newTrans = -48;
+	if (newTrans > 48) newTrans = 48;
+
+	if (inst->config.midiTranspose != newTrans)
+	{
+		inst->config.midiTranspose = newTrans;
+		drawMidiTransposeValue(inst);
+	}
+}
+
+void configMidiSensDown(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
+	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
+
+	scrollBarScrollLeft(inst, widgets, video, SB_MIDI_SENS, 1);
+}
+
+void configMidiSensUp(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
+	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
+
+	scrollBarScrollRight(inst, widgets, video, SB_MIDI_SENS, 1);
+}
+
+void sbMidiSens(ft2_instance_t *inst, uint32_t pos)
+{
+	if (inst == NULL)
+		return;
+
+	uint16_t newSens = (uint16_t)pos;
+	if (newSens > 200) newSens = 200;
+
+	if (inst->config.midiVelocitySens != newSens)
+	{
+		inst->config.midiVelocitySens = newSens;
+		drawMidiSensValue(inst);
 	}
 }

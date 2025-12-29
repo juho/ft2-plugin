@@ -64,7 +64,9 @@ enum
 	SB_PAL_B,
 	SB_PAL_CONTRAST,
 
-	/* Config miscellaneous */
+	/* Config MIDI input */
+	SB_MIDI_CHANNEL,
+	SB_MIDI_TRANSPOSE,
 	SB_MIDI_SENS,
 
 	/* Disk op */

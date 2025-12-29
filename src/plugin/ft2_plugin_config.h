@@ -252,6 +252,17 @@ void cbAllowFxxSpeedChanges(struct ft2_instance_t *inst);
 /* I/O Routing checkbox callback (updates channelToMain based on checkbox state) */
 void cbRoutingToMain(struct ft2_instance_t *inst);
 
+/* MIDI input callbacks */
+void configMidiChnDown(struct ft2_instance_t *inst);
+void configMidiChnUp(struct ft2_instance_t *inst);
+void sbMidiChannel(struct ft2_instance_t *inst, uint32_t pos);
+void configMidiTransDown(struct ft2_instance_t *inst);
+void configMidiTransUp(struct ft2_instance_t *inst);
+void sbMidiTranspose(struct ft2_instance_t *inst, uint32_t pos);
+void configMidiSensDown(struct ft2_instance_t *inst);
+void configMidiSensUp(struct ft2_instance_t *inst);
+void sbMidiSens(struct ft2_instance_t *inst, uint32_t pos);
+
 /* Config button callbacks */
 void pbConfigReset(struct ft2_instance_t *inst);
 void pbConfigLoad(struct ft2_instance_t *inst);
