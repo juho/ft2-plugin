@@ -19,6 +19,8 @@
 #include "ft2_plugin_input.h"
 #include "ft2_plugin_gui.h"
 #include "ft2_plugin_ui.h"
+#include "ft2_plugin_sample_ed.h"
+#include "ft2_plugin_instr_ed.h"
 #include "ft2_instance.h"
 
 #ifndef MAX_CHANNELS
@@ -2434,6 +2436,119 @@ void hidePatternEditor(ft2_instance_t *inst)
 
 /* ============ EXTENDED PATTERN EDITOR ============ */
 
+/* Instrument switcher button positions for normal mode */
+static const uint8_t iSwitchY[8] = { 2, 19, 36, 53, 73, 90, 107, 124 };
+
+/* Instrument switcher button positions for extended mode (two columns) */
+static const uint8_t iSwitchExtW[4] = { 40, 40, 40, 39 };
+static const uint8_t iSwitchExtY[8] = { 2, 2, 2, 2, 19, 19, 19, 19 };
+static const uint16_t iSwitchExtX[4] = { 221, 262, 303, 344 };
+
+void updatePatternEditorGUI(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	if (inst->uiState.extendedPatternEditor)
+	{
+		/* Extended pattern editor mode */
+
+		/* Scrollbar height */
+		scrollBars[SB_POS_ED].h = 23;
+
+		/* Position editor buttons */
+		pushButtons[PB_POSED_POS_DOWN].y = 38;
+		pushButtons[PB_POSED_PATT_UP].y = 20;
+		pushButtons[PB_POSED_PATT_DOWN].y = 20;
+		pushButtons[PB_POSED_DEL].y = 35;
+
+		/* Swap bank button - repositioned for extended mode */
+		pushButtons[PB_SWAP_BANK].caption = "Swap B.";
+		pushButtons[PB_SWAP_BANK].caption2 = NULL;
+		pushButtons[PB_SWAP_BANK].x = 162;
+		pushButtons[PB_SWAP_BANK].y = 35;
+		pushButtons[PB_SWAP_BANK].w = 53;
+		pushButtons[PB_SWAP_BANK].h = 16;
+
+		/* Song length/repeat buttons */
+		pushButtons[PB_POSED_LEN_UP].x = 180;
+		pushButtons[PB_POSED_LEN_UP].y = 3;
+		pushButtons[PB_POSED_LEN_DOWN].x = 197;
+		pushButtons[PB_POSED_LEN_DOWN].y = 3;
+		pushButtons[PB_POSED_REP_UP].x = 180;
+		pushButtons[PB_POSED_REP_UP].y = 17;
+		pushButtons[PB_POSED_REP_DOWN].x = 197;
+		pushButtons[PB_POSED_REP_DOWN].y = 17;
+
+		/* Pattern number/length buttons */
+		pushButtons[PB_PATT_UP].x = 267;
+		pushButtons[PB_PATT_UP].y = 37;
+		pushButtons[PB_PATT_DOWN].x = 284;
+		pushButtons[PB_PATT_DOWN].y = 37;
+		pushButtons[PB_PATTLEN_UP].x = 348;
+		pushButtons[PB_PATTLEN_UP].y = 37;
+		pushButtons[PB_PATTLEN_DOWN].x = 365;
+		pushButtons[PB_PATTLEN_DOWN].y = 37;
+
+		/* Instrument switcher buttons - two column layout */
+		for (int i = 0; i < 16; i++)
+		{
+			pushButtons[PB_RANGE1 + i].w = iSwitchExtW[i & 3];
+			pushButtons[PB_RANGE1 + i].x = iSwitchExtX[i & 3];
+			pushButtons[PB_RANGE1 + i].y = iSwitchExtY[i & 7];
+		}
+	}
+	else
+	{
+		/* Normal pattern editor mode */
+
+		/* Scrollbar height */
+		scrollBars[SB_POS_ED].h = 21;
+
+		/* Position editor buttons */
+		pushButtons[PB_POSED_POS_DOWN].y = 36;
+		pushButtons[PB_POSED_PATT_UP].y = 19;
+		pushButtons[PB_POSED_PATT_DOWN].y = 19;
+		pushButtons[PB_POSED_DEL].y = 33;
+
+		/* Swap bank button - normal position */
+		pushButtons[PB_SWAP_BANK].caption = "Swap";
+		pushButtons[PB_SWAP_BANK].caption2 = "Bank";
+		pushButtons[PB_SWAP_BANK].x = 590;
+		pushButtons[PB_SWAP_BANK].y = 144;
+		pushButtons[PB_SWAP_BANK].w = 39;
+		pushButtons[PB_SWAP_BANK].h = 27;
+
+		/* Song length/repeat buttons */
+		pushButtons[PB_POSED_LEN_UP].x = 74;
+		pushButtons[PB_POSED_LEN_UP].y = 50;
+		pushButtons[PB_POSED_LEN_DOWN].x = 91;
+		pushButtons[PB_POSED_LEN_DOWN].y = 50;
+		pushButtons[PB_POSED_REP_UP].x = 74;
+		pushButtons[PB_POSED_REP_UP].y = 62;
+		pushButtons[PB_POSED_REP_DOWN].x = 91;
+		pushButtons[PB_POSED_REP_DOWN].y = 62;
+
+		/* Pattern number/length buttons */
+		pushButtons[PB_PATT_UP].x = 253;
+		pushButtons[PB_PATT_UP].y = 34;
+		pushButtons[PB_PATT_DOWN].x = 270;
+		pushButtons[PB_PATT_DOWN].y = 34;
+		pushButtons[PB_PATTLEN_UP].x = 253;
+		pushButtons[PB_PATTLEN_UP].y = 48;
+		pushButtons[PB_PATTLEN_DOWN].x = 270;
+		pushButtons[PB_PATTLEN_DOWN].y = 48;
+
+		/* Instrument switcher buttons - single column */
+		for (int i = 0; i < 16; i++)
+		{
+			pushButtons[PB_RANGE1 + i].w = 39;
+			pushButtons[PB_RANGE1 + i].x = 590;
+			pushButtons[PB_RANGE1 + i].y = iSwitchY[i & 7];
+		}
+	}
+}
+
 void patternEditorExtended(ft2_instance_t *inst)
 {
 	if (inst == NULL)
@@ -2446,22 +2561,31 @@ void patternEditorExtended(ft2_instance_t *inst)
 	inst->uiState._diskOpShown = inst->uiState.diskOpShown;
 	inst->uiState._transposeShown = inst->uiState.transposeShown;
 	inst->uiState._instEditorShown = inst->uiState.instEditorShown;
+	inst->uiState._instEditorExtShown = inst->uiState.instEditorExtShown;
 	inst->uiState._sampleEditorShown = inst->uiState.sampleEditorShown;
+	inst->uiState._sampleEditorExtShown = inst->uiState.sampleEditorExtShown;
 	inst->uiState._advEditShown = inst->uiState.advEditShown;
+	inst->uiState._trimScreenShown = inst->uiState.trimScreenShown;
+	inst->uiState._nibblesShown = inst->uiState.nibblesShown;
 
-	/* Hide other screens */
-	inst->uiState.aboutScreenShown = false;
-	inst->uiState.helpScreenShown = false;
-	inst->uiState.configScreenShown = false;
-	inst->uiState.diskOpShown = false;
-	inst->uiState.transposeShown = false;
-	inst->uiState.instEditorShown = false;
-	inst->uiState.sampleEditorShown = false;
-	inst->uiState.advEditShown = false;
+	/* Hide all top screen widgets */
+	hideTopScreen(inst);
 
+	/* Hide sample and instrument editors */
+	hideSampleEditor(inst);
+	hideInstEditor(inst);
+
+	/* Set extended mode */
 	inst->uiState.extendedPatternEditor = true;
 	inst->uiState.patternEditorShown = true;
+
+	/* Reposition widgets for extended mode */
+	updatePatternEditorGUI(inst);
+
+	/* Trigger full redraw */
 	inst->uiState.updatePatternEditor = true;
+	inst->uiState.instrSwitcherShown = true;
+	inst->uiState.needsFullRedraw = true;
 }
 
 void exitPatternEditorExtended(ft2_instance_t *inst)
@@ -2471,17 +2595,34 @@ void exitPatternEditorExtended(ft2_instance_t *inst)
 
 	inst->uiState.extendedPatternEditor = false;
 
+	/* Restore widget positions for normal mode */
+	updatePatternEditorGUI(inst);
+
+	/* Hide the exit button */
+	if (inst->ui != NULL)
+	{
+		ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
+		hidePushButton(widgets, PB_EXIT_EXT_PATT);
+	}
+
 	/* Restore old screen flags */
 	inst->uiState.aboutScreenShown = inst->uiState._aboutScreenShown;
 	inst->uiState.helpScreenShown = inst->uiState._helpScreenShown;
 	inst->uiState.configScreenShown = inst->uiState._configScreenShown;
 	inst->uiState.diskOpShown = inst->uiState._diskOpShown;
+	inst->uiState.nibblesShown = inst->uiState._nibblesShown;
 	inst->uiState.transposeShown = inst->uiState._transposeShown;
 	inst->uiState.instEditorShown = inst->uiState._instEditorShown;
+	inst->uiState.instEditorExtShown = inst->uiState._instEditorExtShown;
 	inst->uiState.sampleEditorShown = inst->uiState._sampleEditorShown;
+	inst->uiState.sampleEditorExtShown = inst->uiState._sampleEditorExtShown;
 	inst->uiState.advEditShown = inst->uiState._advEditShown;
+	inst->uiState.trimScreenShown = inst->uiState._trimScreenShown;
+	inst->uiState.patternEditorShown = inst->uiState._patternEditorShown;
 
+	/* Trigger full redraw */
 	inst->uiState.updatePatternEditor = true;
+	inst->uiState.needsFullRedraw = true;
 }
 
 void togglePatternEditorExtended(ft2_instance_t *inst)

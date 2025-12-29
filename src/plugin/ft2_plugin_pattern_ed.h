@@ -138,6 +138,7 @@ void showPatternEditor(struct ft2_instance_t *inst);
 void hidePatternEditor(struct ft2_instance_t *inst);
 
 /* Extended pattern editor */
+void updatePatternEditorGUI(struct ft2_instance_t *inst);
 void patternEditorExtended(struct ft2_instance_t *inst);
 void exitPatternEditorExtended(struct ft2_instance_t *inst);
 void togglePatternEditorExtended(struct ft2_instance_t *inst);

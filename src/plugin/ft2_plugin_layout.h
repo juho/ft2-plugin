@@ -59,6 +59,17 @@ void drawTopScreen(struct ft2_instance_t *inst, struct ft2_video_t *video,
 	const struct ft2_bmp_t *bmp, bool restoreScreens);
 
 /**
+ * Draw the extended pattern editor top screen.
+ * This is a collapsed layout showing position editor, song info, and instruments.
+ * 
+ * @param inst The FT2 instance
+ * @param video Video context
+ * @param bmp Bitmap assets
+ */
+void drawTopScreenExtended(struct ft2_instance_t *inst, struct ft2_video_t *video,
+	const struct ft2_bmp_t *bmp);
+
+/**
  * Draw the bottom screen based on current state.
  * Shows pattern editor, instrument editor, or sample editor.
  * 

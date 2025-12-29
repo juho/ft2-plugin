@@ -83,6 +83,7 @@ void pbNibbles(struct ft2_instance_t *inst);
 void pbKill(struct ft2_instance_t *inst);
 void pbTrim(struct ft2_instance_t *inst);
 void pbExtendView(struct ft2_instance_t *inst);
+void pbExitExtPatt(struct ft2_instance_t *inst);
 void pbTranspose(struct ft2_instance_t *inst);
 
 /* Transpose operation callbacks */

@@ -954,7 +954,13 @@ void pbTrimDoTrimWrapper(ft2_instance_t *inst)
 void pbExtendView(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
-	inst->uiState.extendedPatternEditor = !inst->uiState.extendedPatternEditor;
+	togglePatternEditorExtended(inst);
+}
+
+void pbExitExtPatt(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	exitPatternEditorExtended(inst);
 }
 
 void pbTranspose(ft2_instance_t *inst)
@@ -3148,6 +3154,7 @@ void initCallbacks(void)
 	pushButtons[PB_TRIM_CALC].callbackFuncOnUp = pbTrimCalcWrapper;
 	pushButtons[PB_TRIM_TRIM].callbackFuncOnUp = pbTrimDoTrimWrapper;
 	pushButtons[PB_EXTEND_VIEW].callbackFuncOnUp = pbExtendView;
+	pushButtons[PB_EXIT_EXT_PATT].callbackFuncOnUp = pbExitExtPatt;
 	pushButtons[PB_TRANSPOSE].callbackFuncOnUp = pbTranspose;
 
 	/* Transpose operation buttons */

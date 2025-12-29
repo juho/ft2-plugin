@@ -61,8 +61,7 @@ pushButton_t pushButtons[NUM_PUSHBUTTONS] =
 	{ 294,  19, 59, 16, 0, 0, "Nibbles",    NULL,    NULL,       NULL },
 	{ 294,  36, 59, 16, 0, 0, "Zap",        NULL,    NULL,       NULL },
 	{ 294,  53, 59, 16, 0, 0, "Trim",       NULL,    NULL,       NULL },
-	/* TODO: Extend button disabled - pattern editor extended mode not working correctly */
-	{ 294,  70,  0,  0, 0, 0, "Extend",    NULL,    NULL,       NULL },
+	{ 294,  70, 59, 16, 0, 0, "Extend",     NULL,    NULL,       NULL },
 	{ 294,  87, 59, 16, 0, 0, "Transps.",   NULL,    NULL,       NULL },
 	{ 294, 104, 59, 16, 0, 0, "I.E.Ext.",   NULL,    NULL,       NULL },
 	{ 294, 121, 59, 16, 0, 0, "S.E.Ext.",   NULL,    NULL,       NULL },

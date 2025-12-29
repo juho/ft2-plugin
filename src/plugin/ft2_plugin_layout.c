@@ -513,6 +513,87 @@ void drawTopRightMainScreen(struct ft2_instance_t *inst, struct ft2_video_t *vid
 	drawSongName(inst, video, bmp);
 }
 
+void drawTopScreenExtended(struct ft2_instance_t *inst, struct ft2_video_t *video,
+	const struct ft2_bmp_t *bmp)
+{
+	if (inst == NULL || video == NULL || inst->ui == NULL)
+		return;
+
+	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
+
+	/* Extended pattern editor top screen layout */
+
+	/* Position editor framework (left) */
+	drawFramework(video, 0, 0, 112, 53, FRAMEWORK_TYPE1);
+	drawFramework(video, 2, 2, 51, 20, FRAMEWORK_TYPE2);
+	drawFramework(video, 2, 31, 51, 20, FRAMEWORK_TYPE2);
+
+	/* Song length/repeat framework (middle-left) */
+	drawFramework(video, 112, 0, 106, 33, FRAMEWORK_TYPE1);
+	drawFramework(video, 112, 33, 106, 20, FRAMEWORK_TYPE1);
+
+	/* Instrument names framework (middle-right) */
+	drawFramework(video, 218, 0, 168, 53, FRAMEWORK_TYPE1);
+
+	/* Instrument switcher framework (right) */
+	drawFramework(video, 386, 0, 246, 53, FRAMEWORK_TYPE1);
+	drawFramework(video, 388, 2, 118, 49, FRAMEWORK_TYPE2);
+	drawFramework(video, 509, 2, 118, 49, FRAMEWORK_TYPE2);
+
+	/* Status bar */
+	drawFramework(video, 0, 53, SCREEN_W, 15, FRAMEWORK_TYPE1);
+
+	/* Labels for extended mode */
+	textOutShadow(video, bmp, 116, 5, PAL_FORGRND, PAL_DSKTOP2, "Sng.len.");
+	textOutShadow(video, bmp, 116, 19, PAL_FORGRND, PAL_DSKTOP2, "Repst.");
+	textOutShadow(video, bmp, 222, 39, PAL_FORGRND, PAL_DSKTOP2, "Ptn.");
+	textOutShadow(video, bmp, 305, 39, PAL_FORGRND, PAL_DSKTOP2, "Ln.");
+
+	/* Status bar labels */
+	textOutShadow(video, bmp, 4, 56, PAL_FORGRND, PAL_DSKTOP2, "Global volume");
+	textOutShadow(video, bmp, 545, 56, PAL_FORGRND, PAL_DSKTOP2, "Time");
+	charOutShadow(video, bmp, 591, 56, PAL_FORGRND, PAL_DSKTOP2, ':');
+	charOutShadow(video, bmp, 611, 56, PAL_FORGRND, PAL_DSKTOP2, ':');
+
+	/* Position editor scrollbar */
+	showScrollBar(widgets, video, SB_POS_ED);
+
+	/* Position editor buttons */
+	showPushButton(widgets, video, bmp, PB_POSED_POS_UP);
+	showPushButton(widgets, video, bmp, PB_POSED_POS_DOWN);
+	showPushButton(widgets, video, bmp, PB_POSED_INS);
+	showPushButton(widgets, video, bmp, PB_POSED_PATT_UP);
+	showPushButton(widgets, video, bmp, PB_POSED_PATT_DOWN);
+	showPushButton(widgets, video, bmp, PB_POSED_DEL);
+	showPushButton(widgets, video, bmp, PB_POSED_LEN_UP);
+	showPushButton(widgets, video, bmp, PB_POSED_LEN_DOWN);
+	showPushButton(widgets, video, bmp, PB_POSED_REP_UP);
+	showPushButton(widgets, video, bmp, PB_POSED_REP_DOWN);
+	showPushButton(widgets, video, bmp, PB_SWAP_BANK);
+	showPushButton(widgets, video, bmp, PB_PATT_UP);
+	showPushButton(widgets, video, bmp, PB_PATT_DOWN);
+	showPushButton(widgets, video, bmp, PB_PATTLEN_UP);
+	showPushButton(widgets, video, bmp, PB_PATTLEN_DOWN);
+
+	/* Exit button for extended mode */
+	showPushButton(widgets, video, bmp, PB_EXIT_EXT_PATT);
+
+	/* Draw values */
+	drawPosEdNums(inst, video, bmp);
+	drawSongLength(inst, video, bmp);
+	drawSongLoopStart(inst, video, bmp);
+	drawEditPattern(inst, video, bmp);
+	drawPatternLength(inst, video, bmp);
+	drawGlobalVol(inst, video, bmp);
+	drawPlaybackTime(inst, video, bmp);
+
+	/* Instrument switcher */
+	inst->uiState.instrSwitcherShown = true;
+	showInstrumentSwitcher(inst, video, bmp);
+
+	inst->uiState.updatePosSections = true;
+}
+
 void drawTopScreen(struct ft2_instance_t *inst, struct ft2_video_t *video,
 	const struct ft2_bmp_t *bmp, bool restoreScreens)
 {
@@ -521,6 +602,13 @@ void drawTopScreen(struct ft2_instance_t *inst, struct ft2_video_t *video,
 
 	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
 	inst->uiState.scopesShown = false;
+
+	/* Extended pattern editor mode - special layout */
+	if (inst->uiState.extendedPatternEditor)
+	{
+		drawTopScreenExtended(inst, video, bmp);
+		return;
+	}
 
 	if (inst->uiState.aboutScreenShown)
 	{
