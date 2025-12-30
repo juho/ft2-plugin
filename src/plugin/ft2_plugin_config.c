@@ -371,6 +371,7 @@ void hideConfigScreen(ft2_instance_t *inst)
 	hidePushButton(widgets, PB_CONFIG_MIDITRANS_UP);
 	hidePushButton(widgets, PB_CONFIG_MIDISENS_DOWN);
 	hidePushButton(widgets, PB_CONFIG_MIDISENS_UP);
+	hideRadioButtonGroup(widgets, RB_GROUP_CONFIG_MIDI_TRIGGER);
 
 	/* CONFIG I/O ROUTING */
 	for (int i = 0; i < 32; i++)
@@ -861,6 +862,17 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	textOutShadow(video, bmp, 131, 104, PAL_FORGRND, PAL_DSKTOP2, "Record velocity as volume");
 	widgets->checkBoxChecked[CB_CONF_MIDI_VELOCITY] = cfg->midiRecordVelocity;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_VELOCITY);
+
+	/* MIDI trigger mode (Notes vs Patterns) */
+	textOutShadow(video, bmp, 116, 120, PAL_FORGRND, PAL_DSKTOP2, "Triggers:");
+	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_MIDI_TRIGGER);
+	if (cfg->midiTriggerPatterns)
+		widgets->radioButtonState[RB_CONFIG_MIDI_PATTERNS] = RADIOBUTTON_CHECKED;
+	else
+		widgets->radioButtonState[RB_CONFIG_MIDI_NOTES] = RADIOBUTTON_CHECKED;
+	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_MIDI_TRIGGER);
+	textOutShadow(video, bmp, 195, 120, PAL_FORGRND, PAL_DSKTOP2, "Notes");
+	textOutShadow(video, bmp, 258, 120, PAL_FORGRND, PAL_DSKTOP2, "Patterns");
 }
 
 /* ============ MAIN DRAW FUNCTION ============ */
@@ -972,6 +984,65 @@ void rbConfigMidiInput(ft2_instance_t *inst)
 	inst->config.currConfigScreen = CONFIG_SCREEN_MIDI_INPUT;
 	showConfigScreen(inst);
 	inst->uiState.needsFullRedraw = true;
+}
+
+/* ============ MIDI TRIGGER MODE CALLBACKS ============ */
+
+void rbConfigMidiTriggerNotes(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	inst->config.midiTriggerPatterns = false;
+	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets != NULL)
+		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_NOTES);
+}
+
+/* Callback for sync settings warning dialog */
+static void onMidiPatternSyncWarningResult(ft2_instance_t *inst,
+	ft2_dialog_result_t result, const char *inputText, void *userData)
+{
+	(void)inputText;
+	(void)userData;
+
+	if (result == DIALOG_RESULT_YES)
+	{
+		/* User wants to disable sync settings */
+		inst->config.syncTransportFromDAW = false;
+		inst->config.syncPositionFromDAW = false;
+	}
+
+	/* Enable pattern trigger mode either way */
+	inst->config.midiTriggerPatterns = true;
+	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets != NULL)
+		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PATTERNS);
+}
+
+void rbConfigMidiTriggerPatterns(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+
+	/* Check if sync settings are enabled */
+	if (inst->config.syncTransportFromDAW || inst->config.syncPositionFromDAW)
+	{
+		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+		if (ui != NULL)
+		{
+			ft2_dialog_show_yesno_cb(&ui->dialog,
+				"System request",
+				"For consistent playback, turn off \"Sync transport\" and \"Sync position\" in audio settings?",
+				inst, onMidiPatternSyncWarningResult, NULL);
+			return;
+		}
+	}
+
+	/* No sync settings enabled, just enable pattern mode */
+	inst->config.midiTriggerPatterns = true;
+	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets != NULL)
+		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PATTERNS);
 }
 
 /* ============ INTERPOLATION CALLBACKS ============ */

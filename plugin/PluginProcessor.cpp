@@ -682,6 +682,15 @@ void FT2PluginProcessor::saveGlobalConfig()
     props->setValue("config_syncPositionFromDAW", cfg.syncPositionFromDAW);
     props->setValue("config_allowFxxSpeedChanges", cfg.allowFxxSpeedChanges);
     
+    // MIDI input settings
+    props->setValue("config_midiEnabled", cfg.midiEnabled);
+    props->setValue("config_midiAllChannels", cfg.midiAllChannels);
+    props->setValue("config_midiChannel", cfg.midiChannel);
+    props->setValue("config_midiTranspose", cfg.midiTranspose);
+    props->setValue("config_midiVelocitySens", cfg.midiVelocitySens);
+    props->setValue("config_midiRecordVelocity", cfg.midiRecordVelocity);
+    props->setValue("config_midiTriggerPatterns", cfg.midiTriggerPatterns);
+    
     // Palette
     props->setValue("config_palettePreset", cfg.palettePreset);
     
@@ -777,6 +786,15 @@ void FT2PluginProcessor::loadGlobalConfig()
     cfg.syncTransportFromDAW = props->getBoolValue("config_syncTransportFromDAW", cfg.syncTransportFromDAW);
     cfg.syncPositionFromDAW = props->getBoolValue("config_syncPositionFromDAW", cfg.syncPositionFromDAW);
     cfg.allowFxxSpeedChanges = props->getBoolValue("config_allowFxxSpeedChanges", cfg.allowFxxSpeedChanges);
+    
+    // MIDI input settings
+    cfg.midiEnabled = props->getBoolValue("config_midiEnabled", cfg.midiEnabled);
+    cfg.midiAllChannels = props->getBoolValue("config_midiAllChannels", cfg.midiAllChannels);
+    cfg.midiChannel = static_cast<uint8_t>(props->getIntValue("config_midiChannel", cfg.midiChannel));
+    cfg.midiTranspose = static_cast<int8_t>(props->getIntValue("config_midiTranspose", cfg.midiTranspose));
+    cfg.midiVelocitySens = static_cast<uint8_t>(props->getIntValue("config_midiVelocitySens", cfg.midiVelocitySens));
+    cfg.midiRecordVelocity = props->getBoolValue("config_midiRecordVelocity", cfg.midiRecordVelocity);
+    cfg.midiTriggerPatterns = props->getBoolValue("config_midiTriggerPatterns", cfg.midiTriggerPatterns);
     
     // Palette
     cfg.palettePreset = static_cast<uint8_t>(props->getIntValue("config_palettePreset", cfg.palettePreset));
@@ -880,6 +898,29 @@ void FT2PluginProcessor::processMidiInput(const juce::MidiMessage& msg)
             return;
     }
     
+    /* Pattern trigger mode: MIDI notes trigger patterns instead of instrument notes */
+    if (cfg.midiTriggerPatterns)
+    {
+        if (msg.isNoteOn())
+        {
+            int midiNote = msg.getNoteNumber();  /* 0-127 maps to pattern 0-127 */
+            
+            /* Stop any currently playing pattern first */
+            if (instance->replayer.songPlaying)
+                ft2_instance_stop(instance);
+            
+            /* Play pattern corresponding to MIDI note */
+            ft2_instance_play_pattern(instance, static_cast<uint8_t>(midiNote), 0);
+        }
+        else if (msg.isNoteOff())
+        {
+            /* Stop playback when note is released */
+            ft2_instance_stop(instance);
+        }
+        return;
+    }
+    
+    /* Normal mode: trigger instrument notes */
     if (msg.isNoteOn())
     {
         int midiNote = msg.getNoteNumber();

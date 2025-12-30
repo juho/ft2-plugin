@@ -721,6 +721,16 @@ void ft2_instance_play(ft2_instance_t *instance, int8_t mode, int16_t startRow);
 void ft2_instance_stop(ft2_instance_t *instance);
 
 /**
+ * @brief Start playing a specific pattern (for MIDI pattern trigger mode).
+ * Unlike ft2_instance_play which uses the song's orders array, this sets
+ * pattNum directly to allow triggering any pattern by MIDI note number.
+ * @param instance The instance.
+ * @param patternNum Pattern number (0-255).
+ * @param startRow Starting row.
+ */
+void ft2_instance_play_pattern(ft2_instance_t *instance, uint8_t patternNum, int16_t startRow);
+
+/**
  * @brief Triggers a note on a channel.
  * @param instance The instance.
  * @param note Note number (1-96).

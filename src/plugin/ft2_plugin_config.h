@@ -136,6 +136,7 @@ typedef struct ft2_plugin_config_t
 	int8_t midiTranspose;       /* Note transposition (-48 to +48) */
 	uint8_t midiVelocitySens;   /* Velocity sensitivity (0-100%) */
 	bool midiRecordVelocity;    /* Record velocity as volume column */
+	bool midiTriggerPatterns;   /* false = trigger notes (default), true = trigger patterns */
 
 	/* Palette */
 	uint8_t palettePreset;
@@ -262,6 +263,8 @@ void sbMidiTranspose(struct ft2_instance_t *inst, uint32_t pos);
 void configMidiSensDown(struct ft2_instance_t *inst);
 void configMidiSensUp(struct ft2_instance_t *inst);
 void sbMidiSens(struct ft2_instance_t *inst, uint32_t pos);
+void rbConfigMidiTriggerNotes(struct ft2_instance_t *inst);
+void rbConfigMidiTriggerPatterns(struct ft2_instance_t *inst);
 
 /* Config button callbacks */
 void pbConfigReset(struct ft2_instance_t *inst);

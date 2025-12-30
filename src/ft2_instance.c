@@ -868,6 +868,46 @@ void ft2_instance_play(ft2_instance_t *inst, int8_t mode, int16_t startRow)
 	inst->uiState.updatePatternEditor = true;
 }
 
+void ft2_instance_play_pattern(ft2_instance_t *inst, uint8_t patternNum, int16_t startRow)
+{
+	if (inst == NULL)
+		return;
+
+	ft2_instance_stop(inst);
+
+	ft2_song_t *s = &inst->replayer.song;
+
+	/* Set pattern directly (not from orders array) */
+	s->pattNum = patternNum;
+	s->currNumRows = inst->replayer.patternNumRows[patternNum];
+	s->tick = 1;
+	s->row = startRow;
+	if (s->row >= s->currNumRows)
+		s->row = s->currNumRows - 1;
+	s->pattDelTime = 0;
+	s->pattDelTime2 = 0;
+
+	/* Update editor to show the triggered pattern in UI */
+	inst->editor.editPattern = patternNum;
+
+	/* Reset playback timer */
+	s->playbackSeconds = 0;
+	s->playbackSecondsFrac = 0;
+
+	inst->replayer.playMode = FT2_PLAYMODE_PATT;
+	inst->replayer.songPlaying = true;
+
+	ft2_instance_init_bpm_vars(inst);
+
+	/* Reset tick counters so first tick happens immediately */
+	inst->audio.tickSampleCounter = 0;
+	inst->audio.tickSampleCounterFrac = 0;
+
+	/* Update UI */
+	inst->uiState.updatePosSections = true;
+	inst->uiState.updatePatternEditor = true;
+}
+
 void ft2_instance_get_position(ft2_instance_t *inst, int16_t *outSongPos, int16_t *outRow)
 {
 	if (inst == NULL)

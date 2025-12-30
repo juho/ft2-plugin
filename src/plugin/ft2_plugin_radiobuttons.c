@@ -200,7 +200,12 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 	/* WAV render bitdepth */
 	/*x,   y,  w,  group,                        callback */
 	{ 130, 95, 52, RB_GROUP_WAV_RENDER_BITDEPTH, NULL },
-	{ 195, 95, 93, RB_GROUP_WAV_RENDER_BITDEPTH, NULL }
+	{ 195, 95, 93, RB_GROUP_WAV_RENDER_BITDEPTH, NULL },
+
+	/* Config MIDI trigger mode */
+	/*x,   y,    w,  group,                         callback */
+	{ 182, 120, 48, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL },  /* RB_CONFIG_MIDI_NOTES */
+	{ 245, 120, 65, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL }   /* RB_CONFIG_MIDI_PATTERNS */
 };
 
 void initRadioButtons(void)
@@ -267,6 +272,10 @@ void initRadioButtons(void)
 	radioButtons[RB_CONFIG_PAL_WHY_COLORS].callbackFunc = rbConfigPalWhyColors;
 	radioButtons[RB_CONFIG_PAL_JUNGLE].callbackFunc = rbConfigPalJungle;
 	radioButtons[RB_CONFIG_PAL_USER].callbackFunc = rbConfigPalUserDefined;
+
+	/* Wire up MIDI trigger mode callbacks */
+	radioButtons[RB_CONFIG_MIDI_NOTES].callbackFunc = rbConfigMidiTriggerNotes;
+	radioButtons[RB_CONFIG_MIDI_PATTERNS].callbackFunc = rbConfigMidiTriggerPatterns;
 }
 
 void drawRadioButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t radioButtonID)
