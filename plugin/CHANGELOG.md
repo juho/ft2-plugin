@@ -1,8 +1,12 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.15 (Dec 30, 2025)
+
+- Fix: Reset scrollbar position when loading modules.
+
 ## 1.0.14 (Dec 30, 2025)
 
-- Fix: Only apply BPM effect if not syncing BPM from DAW
+- Fix: Only apply BPM effect if not syncing BPM from DAW.
 
 ## 1.0.13 (Dec 30, 2025)
 

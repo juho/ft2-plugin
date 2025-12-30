@@ -889,6 +889,10 @@ bool ft2_load_module(ft2_instance_t *inst, const uint8_t *data, uint32_t dataSiz
 
 	if (loaded)
 	{
+		/* Reset pattern editor channel scroll position */
+		inst->uiState.channelOffset = 0;
+		inst->uiState.updateChanScrollPos = true;
+
 		/* Apply speed config: if Fxx changes disabled, lock to 6 */
 		if (!inst->config.allowFxxSpeedChanges)
 		{
