@@ -1,0 +1,983 @@
+;***************************************************************************
+;***************************************************************************
+@LFeatures
+
+@X040@C001Brief list of features:
+>@X060@C002
+>- 32 channels.
+>- Full MIDI support (input only in this clone!)
+>- 12-Point Volume- & Panning Envelope.
+>- Multisamples, up to 16 samples/instrument.
+>- 128 instruments.
+>- "Unlimited" sample length.
+>- 8 octaves.
+>- Variable pattern length.
+>- Built in sampler/sample editor.
+>- Up to 256 patterns.
+>- Song length up to 256.
+>- New volume/panning/vibrato column.
+>- Song editor.
+>- Full screen edit mode.
+>- Improved editing facilities.
+
+@X040@C001The FT2 clone supports the following file formats:
+
+@X040@C001Modules:
+>@X060@C002
+>- Standard modules (15/31 samples). (MOD,NST,STK)
+>- Fasttracker II modules. (XM,MOD)
+>- Fasttracker modules. (MOD/FST)
+
+@X040@C001Experimental (imperfect) module support:
+>@X060@C002
+>- Scream Tracker 3 modules. (S3M)
+>- Scream Tracker 2 modules. (STM)
+>- DIGI Booster (non-Pro) modules. (DIGI)
+>- MikMod "UN05" XM modules. (BEM)
+
+@X040@C001Abysmal (super broken) module support:
+>@X060@C002
+>- Impulse Tracker
+
+@X040@C001Samples:
+>@X060@C002
+>- Gravis Ultrasound Patches, PAT.
+>- SMP/SAM/RAW/SND data files, signed and unsigned.
+>- WAV files.
+>- Amiga IFF.
+>- Apple AIFF.
+>- FLAC files.
+>- Super Nintendo BRR files.
+
+@X040@C001FT2 introduces several new file formats:
+>@X060@C002
+>- XM  @T110Extended module.
+>- XI  @T110Extended instrument.
+>- XP  @T110Extended pattern.
+>- XT  @T110Extended track.
+
+END
+;***************************************************************************
+;***************************************************************************
+@LEffects
+
+@X040@C001Short summary:
+>@X060@C002
+>0 Arpeggio
+>1 Portamento up
+>2 Portamento down
+>3 Tone portamento
+>4 Vibrato
+>5 Portamento + Volume slide
+>6 Vibrato + Volume slide
+>7 Tremolo
+>8 Set panning position
+>9 Sample offset
+>A Volume slide
+>B Position jump
+>C Set volume
+>D Pattern break
+>E +
+>@X0800 Filter on/off (Amiga only!)
+>1 Fine portamento up
+>2 Fine portamento down
+>3 Set glissando control
+>4 Set vibrato control
+>5 Set fine-tune
+>6 Jump loop
+>7 Set tremolo control
+>8 Unused
+>9 Retrig note
+>A Fine volume slide up
+>B Fine volume slide down
+>C Note cut
+>D Note delay
+>E Pattern delay
+>F Funk it! (Not implemented)
+>@X060
+F Set speed
+>G Set global volume
+>H Global volume slide
+>K Key off
+>L Set envelope position
+>P Panning slide
+>R Multi retrig note
+>T Tremor
+>X +
+>@X0801 Extra fine portamento up
+>2 Extra fine portamento down
+
+@X040@C001Volume column:
+>@X060@C002
+00..40 @T160Set volume.
+>
+>- @T160Volume slide down.
+>+ @T160Volume slide up.
+>D @T160Fine volume slide down. (Indicated by symbol)
+>U @T160Fine volume slide up. (Indicated by symbol)
+>S @T160Set vibrato speed.
+>V @T160Vibrato.
+>P @T160Set panning position.
+>R @T160Panning slide right. (Indicated by symbol)
+>L @T160Panning slide left. (Indicated by symbol)
+>M @T160Tone portamento.
+
+
+@L@X000Detailed information
+
+@X040@C001Arpeggio
+>@X060@C002
+Syntax: 0 + 1st halftone + 2nd halftone
+
+Ex.: C-1  037
+
+>10 Plays C-1 tick #1.
+>20 Plays C-1 + 3 Notes = D#1 tick #2.
+>30 Plays C-1 + 7 Notes = G-1 tick #3.
+>40 Goto 10
+
+@X040@C001Portamento up/down
+>@X060@C002
+Syntax: (1 or 2) + Speed
+
+Portamento is used to slide the sample pitch up or down. This is
+done using the period value. If Amiga frequency slides is used, the
+sliding will be non-linear (the speed depends on the frequency).
+
+@X040@C001Tone portamento
+>@X060@C002
+Syntax: 3 + Speed
+
+This command is used together with a note, and will slide to its
+frequency. If glissando (E3) is used, the frequency will be rounded
+to the nearest halftone.
+
+@X040@C001Vibrato
+>@X060@C002
+Syntax: 4 + Rate + Depth
+
+Adds vibrato to the channel with a rate and speed. Set vibrato
+control (E4) can be used to change the vibrato waveform (see
+below).
+
+@X040@C001Tone portamento + volume slide
+>@X060@C002
+Syntax: 5 + Speed
+
+This command will execute both tone portamento and volume slide.
+The speed is used for the volume slide.
+
+@X040@C001Vibrato + volume slide
+>@X060@C002
+Syntax: 6 + Speed
+
+This command will execute both vibrato and volume slide. The
+speed is used for the volume slide.
+
+@X040@C001Tremolo
+>@X060@C002
+Syntax: 7 + Rate + Depth
+
+Tremolo adds vibrato to the current volume. The syntax is exactly
+as for the vibrato command.
+
+@X040@C001Set panning position
+>@X060@C002
+Syntax: 8 + Position
+
+Sets the panning position for the channel. $00 is the leftmost
+position and $FF the rightmost. Note that some sound cards (ex.
+GUS) can't use as many as 256 panning positions.
+
+@X040@C001Sample offset
+>@X060@C002
+Syntax: 9 + Offset
+
+This command should be used together with a note. The sample will
+be played from (Offset*$100) instead of zero.
+
+@X040@C001Volume slide
+>@X060@C002
+Syntax: A + Up speed + Down speed
+
+Slides the current volume up or down. Either up speed or down
+speed should be zero.
+
+@X040@C001Position jump
+>@X060@C002
+Syntax: B + Position
+
+This command will jump to the selected song position and play the
+pattern from the beginning.
+
+@X040@C001Set volume
+>@X060@C002
+Syntax: C + Volume
+
+Sets the current volume. The volume should not be greater than
+$40.
+
+@X040@C001Pattern break
+>@X060@C002
+Syntax: D + Pattern-position
+
+This command will jump to the next pattern and play from the
+specified position.
+
+@X040@C001Set filter (Amiga only!)
+>@X060@C002
+Syntax: E0 + Status
+
+Use E00 and your tune will sound really bad on an Amiga!
+
+@X040@C001Fine portamento up/down
+>@X060@C002
+Syntax: E(1 or 2) + Speed
+
+This command works as portamento up/down, but it only slides up
+once.
+
+@X040@C001Set glissando control
+>@X060@C002
+Syntax: E3 + Status
+
+If Status is =1, the frequency when using tone portamento will be
+rounded to the nearest halftone.
+
+@X040@C001Set vibrato control
+>@X060@C002
+Syntax: E4 + Type
+
+This command controls the vibrato waveform.
+
+Type: 0 = Sine       1 = Ramp down       2 = Square
+
+If you add 4 to the type, the waveform will not be retrigged when a
+new instrument is played.
+
+@X040@C001Set fine-tune
+>@X060@C002
+Syntax: E5 + Tune
+
+This command should be used together with a note. It will cause
+another fine-tune value to be used. It seems quite unusable to me...
+
+@X040@C001Pattern loop
+>@X060@C002
+Syntax: E6 + Count
+
+If count is zero, the beginning of the loop will be specified. When a
+non-zero value is used, the pattern will be looped from the loop
+start.
+
+@X040@C001Set tremolo control
+>@X060@C002
+Syntax: E7 + Type
+
+This command works exactly as set vibrato control, but the
+tremolo waveform will be changed instead.
+
+@X040@C001Retrig note
+>@X060@C002
+Syntax: E9 + Interval
+
+Retrigs the note with the specified interval.
+
+@X040@C001Fine volume slide up/down
+>@X060@C002
+Syntax: E(A or B) + Speed
+
+This command works as the usual volume slide, but it will only slide
+once.
+
+@X040@C001Note cut
+>@X060@C002
+Syntax: EC + Tick
+
+Cuts the note at the specified tick. Note that it will only set the
+volume to zero, and the sample will still be played.
+
+@X040@C001Note delay
+>@X060@C002
+Syntax: ED + Ticks
+
+This command will delay the note the selected number of ticks.
+
+@X040@C001Pattern delay
+>@X060@C002
+Syntax: EE + Notes
+
+This command will delay the pattern the selected number of notes.
+
+@X040@C001Set speed
+>@X060@C002
+Syntax: F + Value
+
+This command will set the speed or BPM value of the song. If value
+is less than $20, the speed will be changed. Otherwise, the BPM
+value will be changed.
+
+@X040@C001Set global volume
+>@X060@C002
+Syntax: G + volume
+
+Sets the global volume. The volume should not be greater than $40.
+
+@X040@C001Global volume slide
+>@X060@C002
+Syntax: H + Up speed + Down speed
+
+This command works exactly as volume slide, but it slides the
+global volume instead.
+
+@X040@C001Key off
+>@X060@C002
+Syntax: K + Tick
+
+This command will trigger a "Key off" at the specified tick.
+
+@X040@C001Set envelope position
+>@X060@C002
+Syntax: L + Position
+
+Changes the envelope position. Magnus told me that it would be
+very usable.
+
+@X040@C001Panning slide
+>@X060@C002
+Syntax: P + Right speed + Left speed
+
+This command slides the panning position. It works like the volume
+slide. Note that some sound cards may not handle 256 panning
+positions.
+
+@X040@C001Multi retrig
+>@X060@C002
+Syntax: R + Volume change + Interval
+
+This is an extended version of the retrig command.
+
+Volume change:
+>@X1000 = None  @T3008 = Unused
+>1 = -1    @T3009 = +1
+>2 = -2    @T300A = +2
+>3 = -4    @T300B = +4
+>4 = -8    @T300C = +8
+>5 = -16   @T300D = +16
+>6 = *2/3  @T300E = *3/2
+>7 = *1/2  @T300F = *2
+
+@X040@C001Tremor
+>@X060@C002
+Syntax: T + On time + Off time
+
+This weird command will set the volume to zero during off time
+number of ticks. It is included for STM compatibility.
+
+@X040@C001Extra fine portamento up/down
+>@X060@C002
+Syntax: X(1 or 2) + Speed
+
+This command works as fine portamento up/down, but the speed
+will be divided by four.
+
+END
+;***************************************************************************
+;***************************************************************************
+@LKeybindings
+>@X020@C002
+>If you have an ambition to create music efficiently we strongly recommend
+that you learn ALL the keyboard functions. Many of them are the same
+from Fasttracker 1 and ProTracker to ensure that you feel comfortable
+using this program from the very first minute.
+>
+>@X020@C002Note for Mac keyboards on MacOS:
+>@C002- The left Option key is the left Alt key
+>- The left Command key can also be used instead of Alt for
+>@X031"select all"/cut/copy/paste for text/sample editing.
+>@X020@C001
+>You should be aware of the fact that:
+>
+>@C002This help text is written using a Swedish keyboard. Therefore some
+references to non-ordinary keys might be wrong.
+Sh = shift key.
+>
+@X040@C001Audio:
+>@X060@C002
+>Ctrl & numpad+ @T160Increase master volume by 16.
+>Ctrl & numpad- @T160Decrease master volume by 16.
+
+@X040@C001Video:
+>@X060@C002
+Alt+Enter @T160Toggle fullscreen mode
+>
+>(Or "Left Ctrl + Left Command + F" on Macs)
+
+@X040@C001Cursor moves:
+>@X060@C002
+F9..F12 @T160Jump in pattern.
+>Ctrl+F9..F12 @T160Pattern-play from F9..F12 line.
+>Sh+F9..F12 @T160Store current line in F9..F12.
+>PageUp  @T160Jump 16-lines upwards.
+>PageDown @T160Jump 16-lines downwards.
+>Home  @T160Jump to line 0.
+>End  @T160Jump to last line.
+>Tab  @T160Jump to next track.
+>Alt+Q..I @T160Jump to track (0..7) MOD N-Channels.
+>Alt+A..K @T160Jump to track (8..15) MOD N-Channels.
+
+@X040@C001Cut/Copy/Paste:
+>@X060@C002
+Delete  @T160Delete note or volume column at cursor.
+>Sh+Delete @T160Delete note, volume and effect at cursor.
+>Ctrl+Delete @T160Delete volume and effect at cursor.
+>Alt+Delete @T160Delete effect at cursor.
+>
+>Insert  @T160Insert note at cursor.
+>Sh+Insert  @T160Insert line at cursor.
+>
+>@X010@C002Alternative keys (Mac or keyboards without Insert):
+>@X060@C002Ctrl+Return  @T160Insert note at cursor.
+>Ctrl+Sh+Return  @T160Insert line at cursor.
+>
+>Backspace @T160Delete previous note.
+>Sh+Backspace @T160Delete previous line.
+>Alt+Cursor @T160Mark block.
+>Sh+F3 @T160Cut track.
+>Sh+F4 @T160Copy track.
+>Sh+F5 @T160Paste track.
+>Ctrl+F3 @T160Cut pattern.
+>Ctrl+F4 @T160Copy pattern.
+>Ctrl+F5 @T160Paste pattern.
+>Alt+F3 @T160Cut block.
+>Alt+F4 @T160Copy block.
+>Alt+F5 @T160Paste block.
+>Alt+C  @T160Mark current track.
+
+@X040@C001Miscellaneous:
+>@X060@C002
+Right ctrl.  @T160Play song.
+>Right alt    @T160Play pattern.
+>Right shift  @T160Record pattern.
+>Space    @T160Stop/Edit.
+>F1..F7 @T160Select octave.
+>Key below Esc @T160Increase cursoradd.
+>Sh+(1/2) @T160Decrease cursoradd.
+>CapsLock or <> @T160Enter Keyoff-"note".
+>Sh+Left @T160Increase song position.
+>Sh+Right @T160Decrease song position.
+>Ctrl+Left @T160Increase pattern number.
+>Ctrl+Right @T160Decrease pattern number.
+
+@X040@C001Miscellaneous (on a Mac keyboard):
+>@X060@C002
+Right command  @T240Play song.
+>Right alt/option  @T240Play pattern.
+>Right shift  @T240Record pattern.
+
+@X040@C001Window switching:
+>@X060@C002
+Ctrl+
+>A @T160Advanced edit.
+>B @T160About.
+>C @T160Configuration.
+>D @T160Disk operations.
+>E @T160Sample editor extension.
+>H @T160Help.
+>I @T160Instrument editor.
+>M @T160Instrument editor extension. (MIDI)
+>N @T160Nibbles.
+>P @T160Pattern.
+>R @T160Trim.
+>S @T160Sample editor.
+>T @T160Transpose.
+>X @T160Main screen. (almost alt+X)
+>Z @T160Full screen edit. (Z for siZe?)
+>1 @T160Configuration #1.
+>2 @T160Configuration #2.
+>3 @T160Configuration #3.
+>4 @T160Configuration #4.
+
+@X040@C001Instrument select (Numeric keypad):
+>@X060@C002
+Top 4 keys @T160Select instrument block.
+>'+' +Top 4 keys @T160Select instrument block + 4.
+>Enter @T160Select instrument bank.
+>0 @T160Select no instrument.
+>1..8 @T160Select instrument in block.
+>, @T160Clear instrument.
+>Sh+, @T160Clear sample.
+>Sh+Up @T160Select previous instrument.
+>Sh+Down @T160Select next instrument.
+
+@X040@C001Command/Volume macro:
+>@X060@C002
+Alt+1..0 @T160Write command/volume at cursor.
+>Sh+Alt+1..0 @T160Read command/volume at cursor.
+
+@X040@C001Scale-fade volume:
+>@X060@C002
+Sh+V @T160Scale-fade volume in track.
+>Ctrl+V @T160Scale-fade volume in pattern.
+>Alt+V @T160Scale-fade volume in block.
+
+@X040@C001Transpose:
+>@X060@C002
+Sh+F7 @T160Transpose current instrument in track down.
+>Sh+F8 @T160Transpose current instrument in track up.
+>Ctrl+F7 @T160Transpose current instrument in pattern down.
+>Ctrl+F8 @T160Transpose current instrument in pattern up.
+>Alt+F7 @T160Transpose current instrument in block down.
+>Alt+F8 @T160Transpose current instrument in block up.
+>Sh+F1 @T160Transpose all instruments in track down.
+>Sh+F2 @T160Transpose all instruments in track up.
+>Ctrl+F1 @T160Transpose all instruments in pattern down.
+>Ctrl+F2 @T160Transpose all instruments in pattern up.
+>Alt+F1 @T160Transpose all instruments in block down.
+>Alt+F2 @T160Transpose all instruments in block up.
+>
+@X040@C001Sample editor:
+>@X060@C002
+Alt/Ctrl+A @T160Range all.
+>Alt+S @T160Show range.
+>Alt+Z @T160Zoom out.
+>Alt+X or Delete @T160Cut.
+>Alt/Ctrl+C @T160Copy.
+>Alt/Ctrl+V @T160Paste.
+>Alt+R @T160Crop.
+>Mouse wheel @T160Zoom sample data in/out (shift+wheel = scroll).
+
+END
+;***************************************************************************
+;***************************************************************************
+@LHow to use Fasttracker II
+>@X040@C002
+>All "not-too-trivial" functions are presented below (ordered in
+windows) with a short description.
+
+>@X020@C001Main screen:
+>
+>@X040@C001BPM (Beats per minute):
+>@X060@C002
+The BPM setting defines how fast (ticks/second) the music player
+will run. 125 BPM <-> 50 Hz.
+>Number of player ticks/second = BPM*2/5
+
+>@X040@C001Spd, Speed:
+>@X060@C002
+Speed = number of player ticks/pattern line.
+
+>@X040@C001Add:
+>@X060@C002
+"Add" is the number of pattern lines the cursor jumps when you
+edit a note.
+
+>@X040@C001Ptn:
+>@X060@C002
+The current pattern number.
+
+>@X040@C001Ln:
+>@X060@C002
+The number of lines for the current pattern. Up to $100 lines. Note
+that FT2 won't warn you if you decrease this value. The notes at
+the bottom line will be thrown out to the binary space.
+
+>@X040@C001Expd:
+>@X060@C002
+Expand pattern. Inserts a blank line after each pattern line. Useful
+if you want to convert a pattern that runs in speed 2*x to a
+pattern that runs in speed x.
+
+>@X040@C001Shnk:
+>@X060@C002
+Shrink pattern. Deletes all odd pattern lines.
+
+>@X040@C001The instrument/sample selector:
+>@X060@C002
+The instrument that has a mark on it's name string, is the
+destination instrument.
+>The instrument that has a mark on it's number, is the source
+instrument.
+>The same goes for the samples.
+>You change the name on an instrument/sample by clicking the right
+button.
+
+>@X020@C001Scopes:
+>@X060@C002
+>Left button: Turn channel on/off.
+>Right button: Turn channel multi-record/edit on/off.
+>Left+right button: Turn all channels off except the selected one.
+
+@X020@C001Instrument Editor:
+>
+>@X040@C001What is an instrument?:
+>@X060@C002
+A Fasttracker 2 instrument is:
+>   1 Volume envelope
+>   1 Panning envelope
+>   1 Auto-vibrato definition
+>   1..16 sample(s)
+>   1 Keyboard split definition
+>   1 MIDI definition
+
+>A Fasttracker 2 sample is:
+>   1 Volume/Panning/Finetune definition
+>   1 Relative note
+>   1 Waveform
+
+>@X040@C001The volume envelope:
+>@X060@C002
+>An instrument's volume is defined by its envelope curve. If the
+instrument has a sustain point, the envelope will stop at that
+point until a key-off note has been played. When a key-off note is
+played, the "fadeout" begins.
+>One pixel in the envelope window corresponds to one player-tick. If
+the BPM is 125, you'll consume 50 pixel/second. The window's
+"size" is about 6 seconds.
+>If you press the right mouse button at the predefine buttons,
+you'll store the current envelope into that predefine cell. The
+predefines are stored in the configuration file.
+>Predefine number 1 is the default envelope. This means that if you
+load a sample, it will get all envelope information from predefine
+number 1, including the vibrato.
+>Note that if you turn the volume-envelope off, you don't turn the
+vibrato off.
+
+>@X040@C001The panning envelope:
+>@X060@C002
+>Same as above, except from that the vibrato is not connected to
+the panning envelope.
+
+>@X040@C001Tune (finetune):
+>@X060@C002
+>The finetune resolution has been changed from a signed nibble
+(-8..+7) to a signed byte (-128..+127).
+>NOTE: The last 3 bits are discarded during playback, so the true step
+size is 8 instead of 1.
+
+>@X040@C001Fadeout:
+>@X060@C002
+>This is the fadeout speed.
+
+>@X040@C001Vibrato sweep:
+>@X060@C002
+>This is the time (in player ticks) that will bypass until the
+auto-vibrato will reach it's final amplitude.
+
+>@X040@C001The piano keyboard:
+>@X060@C002
+>The piano keyboard defines the key split for an instrument. To
+change the key split, choose a sample within the instrument and
+then "draw" on the keyboard.
+>The notes played with the current instrument are indicated on the
+keyboard.
+
+>@X040@C001Important note:
+>@X060@C002
+>The volume, panning, finetune and relative note is defined for EACH
+SAMPLE in an instrument. All other information is defined for the
+entire instrument.
+
+@X020@C001Instrument Editor Extension: (I.E.Ext.)
+>
+>@X040@C001MIDI:
+>@X060@C002
+>'p.' stands for "program" (instrument).
+>Several instruments can have the same transmit channel but with
+different programs. FT2 changes the programs on the
+MIDI-channels instantly during play if different programs are used.
+Different programs cannot be played at the same channel at the
+same time though.
+>If you change this value, the program number will be transmitted to
+the synthesizer immediately.
+>Some synthesizers transmit program change information. If the
+current instrument in FT2 is a MIDI-instr. with the same channel as
+the received program change, it's MIDI-program will be changed.
+>If your synthesizer doesn't transmit program change, there's no
+point in changing it on the synthesizer, do it in FT2 instead.
+
+>@X040@C001Bender range:
+>@X060@C002
+>This value defines how many notes the instrument on the
+synthesizer can be pitchbended. FT2 uses this value for
+transmitting the portamento up/down and tone-portamento
+commands correctly.
+>The MIDI-pitchbend works correctly only with linear frequency slides.
+
+@X020@C001Sample Editor:
+>
+>@X040@C001Play (Waveform, range, display):
+>@X060@C002
+>Plays the current sample with the note displayed above the "stop"
+button. Note that respect is taken to the particular sample's
+relative note.
+
+>@X040@C001Save range:
+>@X060@C002
+>Stores the range specified in the current sample directory.
+
+>@X040@C001Paste:
+>@X060@C002
+>The sample data in the copy buffer is stored INTO the specified
+range.
+
+>@X040@C001Crop:
+>@X060@C002
+>Cuts everything but the range. Nothing is changed in the copy
+buffer by this operation.
+
+>@X040@C001Volume:
+>@X060@C002
+>Operates on the range.
+
+>@X040@C001X-Fade:
+>@X060@C002
+>This is a tool for making smooth loops. Specify a range that covers
+the first loop point. Make sure that there is as much space after
+the second loop point as the range bypasses the first loop point.
+Press the X-fade button. Enjoy!
+
+>@X040@C0018-Bit/16-bit:
+>@X060@C002
+>If you load a 16-bit sample without header, FT2 assumes that it's
+an 8-bit sample. When pressing the 16-bit button, do not press
+"convert" when the request is made.
+
+>@X040@C001Minimize:
+>@X060@C002
+>This function cuts the part of the sample that is beyond the second
+loop point.
+
+@X020@C001Sample Editor Extension: (S.E.Ext.)
+>
+>@X040@C001Copy/Xchg Sample/Instrument:
+>@X060@C002
+>The source is specified in the line numbering column of the
+instr./sample lists in the upper-right corner of the screen. The
+destination is the current instr./sample.
+
+>@X040@C001Backwards:
+>@X060@C002
+>Operates on the range (or the whole sample if no range is set).
+
+>@X040@C001Sign:
+>@X060@C002
+>Converts between signed/unsigned.
+
+>@X040@C001B. swap (byte swap):
+>@X060@C002
+Swaps the byte order to/from Intel from/to Motorola standard on
+the entire sample.
+You'll need this function if you import 16-bit samples with Motorola
+byte-ordering (f.ex. Kurzweil K2000 samples.)
+
+>@X040@C001Echo:
+>@X060@C002
+Operates on the entire sample.
+
+>@X040@C001Fix DC:
+>@X060@C002
+Attempts to center a sample that has unwanted DC offset/bias.
+Please note that it is using a crude algorithm, so it can sometimes
+fail depending on the sample data.
+
+>@X040@C001Resample:
+>@X060@C002
+Operates on the entire sample. The sample's relative note is
+changed with respect to the resampling rate.
+
+>@X040@C001Mix sample:
+>@X060@C002
+>Mixes the source with the destination to the source.
+
+>@X040@C001Draw mode:
+>@X060@C002
+By pressing the right mouse button in the sample window, you can
+draw your waveforms manually.
+
+@X020@C001Configuration:
+>
+>@X040@C001Auto save:
+>@X060@C002
+If the auto save is on, FT2 will update the configuration file when
+you exit the program.
+
+@X020@C001Configuration, Audio:
+>
+>@X040@C001Interpolation:
+>@X060@C002Selects what type of resampling interpolation to use. I recommend
+playing around with these, as a better interpolator isn't always the
+right choice. For modules with lo-fi samples, the better the filter the
+more dull it sounds. In such cases, a worse interpolator may allow
+for more "fun" listening by allowing some aliasing.
+>
+>@X052@C001No interpolation:
+>@X060@C002Also known as "nearest neighbor". The absolute worst option, but
+may be preferred by some people when playing chiptune styled
+tunes. Be prepared for a ton of aliasing (distortion).
+
+>@X052@C001Linear (FT2):
+>@X060@C002Same interpolator as original Fasttracker II. Not a particularly good
+option, but may be nostalgic to a lot of people, including those that
+used a Gravis Ultrasound sound card.
+
+>@X052@C001Quadratic spline:
+>@X060@C0023-point quadratic spline interpolation. If you prefer the soft sound
+of linear interpolation, but want just a tad bit more treble, then this
+may be a good option. Like linear interpolation, this one isn't too
+harsh on lo-fi samples.
+
+>@X052@C001Cubic spline:
+>@X060@C0024-point cubic Hermite spline interpolation. A good trade-off between
+sharpness and "fun listening" for lo-fi samples.
+>A pretty solid option if you play a wide selection of mixed modules.
+
+>@X052@C001Sinc (8 point):
+>@X060@C0028-point sinc interpolation with a Kaiser-Bessel window. If you mainly
+use hi-fi samples (or play XMs with hi-fi samples), then this may be
+a good option. It's a high quality interpolator. However, it may kill
+the fun of listening to lo-fi modules, as they may sound very dull
+and colored.
+>
+>@X052@C001Sinc (16 point):
+>@X060@C002Same as above, but with 16 points (better quality). This means less
+aliasing and more sharpness, but even more filtered/dull sound on
+lo-fi samples. if you only use (or play modules with) hi-fi samples,
+then this is going to give the best quality and sharpness.
+>
+
+>@X040@C001Volume ramping:
+>@X060@C002
+Enables the anti-click system in the audio mixer (FT2.08+).
+Please note that original FT2 can't load this config entry,
+clone only.
+
+>@X040@C001Amplification:
+>@X060@C002
+Amplifies the volume when mixing. If you set this one too high, you'll
+get distortion. 32X equals full amplitude for one channel.
+
+>@X040@C001Frequency slides:
+>@X060@C002
+Linear mode makes all pitch slides run in constant speed,
+independent of the current frequency. If you switch this
+one, on a finished song, it might sound strange if the song uses
+portamentoes.
+
+@X020@C001Configuration, Layout:
+>
+>@X040@C001Pattern layout, hex numbering:
+>@X060@C002
+If you use patterns that are longer than 99 lines, you should use
+hex counting since there are only 2 digits in the line number column.
+
+>@X040@C001Scopes:
+>@X060@C002
+"Std." (standard) will show the sample points as pixels (like FT2).
+"Lined" will draw interpolated samples (linear interpolation.
+
+@X020@C001Configuration, Miscellaneous:
+>
+>@X040@C001VSync off:
+>@X060@C002
+Tells the program to not use VSync for video. If your monitor's
+refresh rate is not 60Hz (or 59Hz), then VSync is always off for
+this program. Not having VSync will result in less input/video delay,
+but also potential stuttering.
+
+>@X040@C001Stretched:
+>@X060@C002
+Makes fullscreen mode completely stretch out the image.
+This can and will result in uneven pixel sizes, making the image look quite bad.
+The "Pixel filter" setting can help with this, but it makes the image look blurry.
+ 
+>@X040@C001Pixel filter:
+>@X060@C002
+Applies an anti-aliasing subpixel filter that is used when the window is upscaled.
+Please keep in mind that this will make pixels look blurry.
+
+@X020@C001Advanced edit functions: 
+>
+>@X040@C001Copy/Paste masking:
+>@X060@C002
+The masking is used for copying/pasting only parts of a
+"note-cell". The different parts of a "note-cell" is Note, Instr. nr.,
+Volume, Effect nr & Effect data.
+>As you can see in the window there are 3 columns of
+"enable/disable buttons" which has the letters C,P & T above.
+>C means copy, it controls which parts that goes into the copybuffer.
+>P means paste and controls which parts that goes out from the
+copybuffer.
+>T means transparency. If it's enabled, the pasting doesn't overwrite
+data with nil-information, only with a note or a number <> 0.
+>
+>The cut functions works like pasting with zero-data. This means
+that the cutting is controlled with P-column (or T-column).
+>When you copy data with masking, the disabled parts are not
+cleared in the copybuffer. (Making it possible to collect data from
+several locations into the copybuffer.)
+
+END
+;***************************************************************************
+;***************************************************************************
+@LProblems/FAQ
+>@X020
+>@C001Q: How can I toggle fullscreen mode?
+>@C002A: Press Alt+Enter (Ctrl+Cmd+F also works on Mac)
+>@X020
+>@C001Q: How can I make fullscreen mode stretch out the whole screen?
+>@C002A: Enable "Stretched" in Config -> Miscellaneous.
+>@X035This will result in uneven pixel widths. If you want to fix this, enable
+"Pixel filter" (though this will make the image look blurry).
+>@X020
+>@C001Q: I can't use Alt+F4 and Alt+F5!
+>@C002A: Windows: If you have GeForce Experience installed, you need to change
+>@X035the keybindings in its settings page.
+>macOS/OS X: Change Alt+F4/Alt+F5 keys in the OS to something else. Also for GNU/Linux.
+>@X020
+>@C001Q: The mouse cursor is delayed/laggy!
+>@C002A: Make sure "Software mouse" is disabled in Config -> Layout.
+>@X035Alternatively, you can enable "VSync off" in Config -> Miscellaneous.
+>This however, will introduce stuttering because the rendering rate is
+>not exact to your monitor's rate.
+>@X020
+>@C001Q: Will you implement MIDI out functionality?
+>@C002A: No, sorry. This is very difficult to implement correctly when having
+>@X035higher audio buffer sizes (buffered replayer ticks)...
+>@X020
+>@C001Q: Where is the configuration file stored?
+>@C002A: Windows: \Users\USER\AppData\Roaming\FT2 clone\FT2.CFG
+>@X035OS X: /Users/USER/Library/Application Support/FT2 clone/FT2.CFG
+GNU/Linux: /home/USER/.config/FT2 clone/FT2.CFG
+>
+It will be stored in the program directory if the path couldn't be used.
+If you put the configuration file in the program directory, it will read that
+one and not attempt to create config dirs for the OS user. (portable mode)
+>@X020
+>@C001Q: Can the clone read FT2.CFG from real FT2, and vice versa?
+>@C002A: Yes, it should work just fine. Put it in the directory shown above.
+>@X020
+>@C001Q: Smp. Ed.: While zoomed in, I sometimes can't mark the last sample point!
+>@C002A: This is normal. This is a limitation in the nature of scaling.
+>@X020
+>@C001Q: I found a bug!
+>@C002A: Please send me a mail (found at 16-bits.org) and try to explain it.
+
+END
+;***************************************************************************
+;***************************************************************************
+@LKnown bugs
+>
+>@X010@C001WAV exporting (rendering song to WAV):
+>
+>@X010@C002- Songs that jump back to a previous pattern will render forever and ever,
+>@X021and you need to press a key or click the mouse to abort the render when
+>@X021you want it to.
+>
+>@X010@C001Video:
+>@C002
+>@X010- Fullscreen mode can have issues with the mouse pixel mapping on some
+>@X021Linux systems.
+>@X010- Fullscreen mode can have several problems on multi-monitor systems
+
+END

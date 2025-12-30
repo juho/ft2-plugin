@@ -21,7 +21,7 @@
 #include "ft2_plugin_gui.h"
 #include "ft2_plugin_ui.h"
 #include "ft2_instance.h"
-#include "../helpdata/ft2_help_data.h"
+#include "../../plugin/helpdata/ft2_plugin_help_data.h"
 
 /* Help record structure - exact match to standalone */
 typedef struct

@@ -235,6 +235,9 @@ void ft2_ui_draw(ft2_ui_t *ui, void *inst)
 	}
 
 	ui->needsFullRedraw = false;
+
+	/* Swap buffers - copy back buffer to front buffer for OpenGL to read */
+	ft2_video_swap_buffers(video);
 }
 
 static void handleRedrawing(ft2_ui_t *ui, ft2_instance_t *inst)
@@ -496,7 +499,8 @@ uint32_t *ft2_ui_get_framebuffer(ft2_ui_t *ui)
 {
 	if (ui == NULL)
 		return NULL;
-	return ui->video.frameBuffer;
+	/* Return front buffer (displayBuffer) for OpenGL to read */
+	return ui->video.displayBuffer;
 }
 
 void ft2_ui_mouse_press(ft2_ui_t *ui, void *inst, int x, int y, bool leftButton, bool rightButton)

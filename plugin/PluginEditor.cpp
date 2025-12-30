@@ -33,7 +33,7 @@ FT2PluginEditor::FT2PluginEditor (FT2PluginProcessor& p)
     
     // Enable OpenGL rendering
     openGLContext.setRenderer(this);
-    openGLContext.setContinuousRepainting(true);  // Enable continuous rendering
+    openGLContext.setContinuousRepainting(false);  // Disable continuous rendering - we trigger repaints manually
     openGLContext.attachTo(*this);
     
     // Set resizable with aspect ratio constraint
@@ -841,6 +841,9 @@ void FT2PluginEditor::timerCallback()
     
     // Draw UI to the framebuffer
     ft2_ui_draw(&ui, audioProcessor.getInstance());
+    
+    // Trigger OpenGL repaint after framebuffer is fully updated
+    openGLContext.triggerRepaint();
 }
 
 //==============================================================================

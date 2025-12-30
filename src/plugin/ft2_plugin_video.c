@@ -45,9 +45,19 @@ bool ft2_video_init(ft2_video_t *video)
 	if (video == NULL)
 		return false;
 
+	/* Allocate back buffer (UI draws here) */
 	video->frameBuffer = (uint32_t *)calloc(SCREEN_W * SCREEN_H, sizeof(uint32_t));
 	if (video->frameBuffer == NULL)
 		return false;
+
+	/* Allocate front buffer (OpenGL reads from here) */
+	video->displayBuffer = (uint32_t *)calloc(SCREEN_W * SCREEN_H, sizeof(uint32_t));
+	if (video->displayBuffer == NULL)
+	{
+		free(video->frameBuffer);
+		video->frameBuffer = NULL;
+		return false;
+	}
 
 	ft2_video_set_default_palette(video);
 	return true;
@@ -63,6 +73,21 @@ void ft2_video_free(ft2_video_t *video)
 		free(video->frameBuffer);
 		video->frameBuffer = NULL;
 	}
+
+	if (video->displayBuffer != NULL)
+	{
+		free(video->displayBuffer);
+		video->displayBuffer = NULL;
+	}
+}
+
+void ft2_video_swap_buffers(ft2_video_t *video)
+{
+	if (video == NULL || video->frameBuffer == NULL || video->displayBuffer == NULL)
+		return;
+
+	/* Copy back buffer to front buffer */
+	memcpy(video->displayBuffer, video->frameBuffer, SCREEN_W * SCREEN_H * sizeof(uint32_t));
 }
 
 void ft2_video_set_default_palette(ft2_video_t *video)

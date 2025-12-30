@@ -95,7 +95,8 @@ enum
  */
 typedef struct ft2_video_t
 {
-	uint32_t *frameBuffer;
+	uint32_t *frameBuffer;   /* Back buffer - UI draws here */
+	uint32_t *displayBuffer; /* Front buffer - OpenGL reads from here */
 	uint32_t palette[PAL_NUM];
 } ft2_video_t;
 
@@ -114,6 +115,12 @@ bool ft2_video_init(ft2_video_t *video);
  * @param video Video state to free
  */
 void ft2_video_free(ft2_video_t *video);
+
+/**
+ * Swap front and back buffers (copy back to front for double buffering)
+ * @param video Video state
+ */
+void ft2_video_swap_buffers(ft2_video_t *video);
 
 /**
  * Set default FT2 palette

@@ -1,8 +1,13 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.16 (Dec 30, 2025)
+
+- Fix: Use double buffering and synchronized rendering to avoid visual glitches.
+- Feat: Separate plugin help files from standalone.
+
 ## 1.0.15 (Dec 30, 2025)
 
-- Fix: Reset scrollbar position when loading modules.
+- Fix: Reset pattern editor scrollbar position when loading modules.
 
 ## 1.0.14 (Dec 30, 2025)
 
