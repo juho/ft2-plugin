@@ -360,6 +360,8 @@ static void cbMidiEnable(struct ft2_instance_t *inst)
 		return;
 	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
 	inst->config.midiEnabled = widgets->checkBoxChecked[CB_CONF_MIDI_ENABLE];
+	/* Redraw config screen to update widget enable states */
+	inst->uiState.needsFullRedraw = true;
 }
 
 static void cbMidiAllChannels(struct ft2_instance_t *inst)

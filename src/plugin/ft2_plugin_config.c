@@ -838,13 +838,13 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	if (midiEnabled)
 	{
 		showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_MIDI_TRIGGER);
-		textOutShadow(video, bmp, 195, 36, PAL_FORGRND, PAL_DSKTOP2, "Notes");
-		textOutShadow(video, bmp, 258, 36, PAL_FORGRND, PAL_DSKTOP2, "Patterns");
+		textOutShadow(video, bmp, 233, 36, PAL_FORGRND, PAL_DSKTOP2, "Notes");
+		textOutShadow(video, bmp, 296, 36, PAL_FORGRND, PAL_DSKTOP2, "Patterns");
 	}
 	else
 	{
-		textOutShadow(video, bmp, 195, 36, PAL_DSKTOP2, PAL_DSKTOP2, "Notes");
-		textOutShadow(video, bmp, 258, 36, PAL_DSKTOP2, PAL_DSKTOP2, "Patterns");
+		textOutShadow(video, bmp, 233, 36, PAL_DSKTOP2, PAL_DSKTOP2, "Notes");
+		textOutShadow(video, bmp, 296, 36, PAL_DSKTOP2, PAL_DSKTOP2, "Patterns");
 	}
 
 	/* All channels checkbox - active if MIDI enabled AND notes mode */
@@ -1024,6 +1024,8 @@ void rbConfigMidiTriggerNotes(ft2_instance_t *inst)
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
 	if (widgets != NULL)
 		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_NOTES);
+	/* Redraw config screen to update widget enable states */
+	inst->uiState.needsFullRedraw = true;
 }
 
 /* Callback for sync settings warning dialog */
@@ -1045,6 +1047,8 @@ static void onMidiPatternSyncWarningResult(ft2_instance_t *inst,
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
 	if (widgets != NULL)
 		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PATTERNS);
+	/* Redraw config screen to update widget enable states */
+	inst->uiState.needsFullRedraw = true;
 }
 
 void rbConfigMidiTriggerPatterns(ft2_instance_t *inst)
@@ -1071,6 +1075,8 @@ void rbConfigMidiTriggerPatterns(ft2_instance_t *inst)
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
 	if (widgets != NULL)
 		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PATTERNS);
+	/* Redraw config screen to update widget enable states */
+	inst->uiState.needsFullRedraw = true;
 }
 
 /* ============ INTERPOLATION CALLBACKS ============ */
