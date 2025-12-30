@@ -631,7 +631,7 @@ void ft2_textbox_draw_with_cursor(ft2_video_t *video, const ft2_bmp_t *bmp,
 		
 		/* Only draw cursor if it's within visible area */
 		if (cursorX >= t->x + t->tx - 1 && cursorX < t->x + t->tx + t->renderW)
-			vLine(video, cursorX, t->y + t->ty - 1, 12, PAL_FORGRND);
+		vLine(video, cursorX, t->y + t->ty - 1, 12, PAL_FORGRND);
 	}
 }
 
