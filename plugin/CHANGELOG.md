@@ -3,6 +3,7 @@
 ## 1.0.13 (Dec 30, 2025)
 
 - Fix: Completely separate BPM sync from transport sync (was coupled before).
+- Visual: Move MIDI input settings around a little bit.
 
 ## 1.0.12 (Dec 30, 2025)
 

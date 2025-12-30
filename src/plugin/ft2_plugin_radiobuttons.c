@@ -203,9 +203,9 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 	{ 195, 95, 93, RB_GROUP_WAV_RENDER_BITDEPTH, NULL },
 
 	/* Config MIDI trigger mode */
-	/*x,   y,    w,  group,                         callback */
-	{ 182, 120, 48, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL },  /* RB_CONFIG_MIDI_NOTES */
-	{ 245, 120, 65, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL }   /* RB_CONFIG_MIDI_PATTERNS */
+	/*x,   y,   w,  group,                         callback */
+	{ 182, 33, 48, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL },  /* RB_CONFIG_MIDI_NOTES */
+	{ 245, 33, 65, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL }   /* RB_CONFIG_MIDI_PATTERNS */
 };
 
 void initRadioButtons(void)

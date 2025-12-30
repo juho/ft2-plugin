@@ -108,9 +108,9 @@ checkBox_t checkBoxes[NUM_CHECKBOXES] =
 	{ 212, 133, 180, 24, NULL },
 	{ 212, 159, 169, 12, NULL },
 	{ 116,  18,  93, 12, cbMidiEnable },       /* CB_CONF_MIDI_ENABLE */
-	{ 116,  32, 110, 12, cbMidiAllChannels },  /* CB_CONF_MIDI_ALLCHN */
+	{ 116,  48, 110, 12, cbMidiAllChannels },  /* CB_CONF_MIDI_ALLCHN */
 	{ 116,  64, 121, 12, NULL },               /* CB_CONF_MIDI_TRANSP (not used) */
-	{ 116, 102, 155, 12, cbMidiRecVelocity },  /* CB_CONF_MIDI_VELOCITY */
+	{ 116, 112, 155, 12, cbMidiRecVelocity },  /* CB_CONF_MIDI_VELOCITY */
 	{ 121, 116, 124, 12, NULL },               /* CB_CONF_MIDI_AFTERTOUCH (not used) */
 	{ 113, 115,  75, 12, NULL },
 	{ 113, 128,  78, 12, NULL },

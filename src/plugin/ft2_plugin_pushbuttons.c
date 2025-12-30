@@ -333,12 +333,12 @@ const pushButton_t pushButtonsTemplate[NUM_PUSHBUTTONS] =
 
 	/* Config MIDI input - horizontal scrollbars with left/right arrows */
 	/*x,   y,  w,  h,  p, d, text #1,             text #2, funcOnDown, funcOnUp */
-	{ 280, 50, 21, 13, 1, 4, ARROW_RIGHT_STRING,  NULL,    NULL,       NULL },  /* PB_CONFIG_MIDICHN_UP */
-	{ 204, 50, 21, 13, 1, 4, ARROW_LEFT_STRING,   NULL,    NULL,       NULL },  /* PB_CONFIG_MIDICHN_DOWN */
-	{ 280, 66, 21, 13, 1, 4, ARROW_RIGHT_STRING,  NULL,    NULL,       NULL },  /* PB_CONFIG_MIDITRANS_UP */
-	{ 204, 66, 21, 13, 1, 4, ARROW_LEFT_STRING,   NULL,    NULL,       NULL },  /* PB_CONFIG_MIDITRANS_DOWN */
-	{ 204, 82, 21, 13, 1, 4, ARROW_LEFT_STRING,   NULL,    NULL,       NULL },  /* PB_CONFIG_MIDISENS_DOWN */
-	{ 280, 82, 21, 13, 1, 4, ARROW_RIGHT_STRING,  NULL,    NULL,       NULL },  /* PB_CONFIG_MIDISENS_UP */
+	{ 280, 66, 21, 13, 1, 4, ARROW_RIGHT_STRING,  NULL,    NULL,       NULL },  /* PB_CONFIG_MIDICHN_UP */
+	{ 204, 66, 21, 13, 1, 4, ARROW_LEFT_STRING,   NULL,    NULL,       NULL },  /* PB_CONFIG_MIDICHN_DOWN */
+	{ 280, 82, 21, 13, 1, 4, ARROW_RIGHT_STRING,  NULL,    NULL,       NULL },  /* PB_CONFIG_MIDITRANS_UP */
+	{ 204, 82, 21, 13, 1, 4, ARROW_LEFT_STRING,   NULL,    NULL,       NULL },  /* PB_CONFIG_MIDITRANS_DOWN */
+	{ 204, 98, 21, 13, 1, 4, ARROW_LEFT_STRING,   NULL,    NULL,       NULL },  /* PB_CONFIG_MIDISENS_DOWN */
+	{ 280, 98, 21, 13, 1, 4, ARROW_RIGHT_STRING,  NULL,    NULL,       NULL },  /* PB_CONFIG_MIDISENS_UP */
 
 	/* Disk op */
 	/*x,   y,   w,  h,  p, d, text #1,           text #2, funcOnDown, funcOnUp */
