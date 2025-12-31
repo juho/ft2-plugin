@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.17 (Dec 31, 2025)
+
+- Feat: Add automatic update checking with a notification dialog.
+
 ## 1.0.16 (Dec 30, 2025)
 
 - Fix: Use double buffering and synchronized rendering to avoid visual glitches.

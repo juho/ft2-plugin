@@ -138,6 +138,9 @@ typedef struct ft2_plugin_config_t
 	bool midiRecordVelocity;    /* Record velocity as volume column */
 	bool midiTriggerPatterns;   /* false = trigger notes (default), true = trigger patterns */
 
+	/* Miscellaneous */
+	bool autoUpdateCheck;       /* Automatically check for updates on startup */
+
 	/* Palette */
 	uint8_t palettePreset;
 
@@ -233,6 +236,7 @@ void cbMultiChanEdit(struct ft2_instance_t *inst);
 void cbRecKeyOff(struct ft2_instance_t *inst);
 void cbQuantize(struct ft2_instance_t *inst);
 void cbChangePattLen(struct ft2_instance_t *inst);
+void cbAutoUpdateCheck(struct ft2_instance_t *inst);
 
 /* Amplification arrow button callbacks */
 void configAmpDown(struct ft2_instance_t *inst);

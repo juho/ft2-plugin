@@ -106,7 +106,8 @@ checkBox_t checkBoxes[NUM_CHECKBOXES] =
 	{ 212, 107, 143, 12, NULL },
 	{ 212, 120,  89, 12, NULL },
 	{ 212, 133, 180, 24, NULL },
-	{ 212, 159, 169, 12, NULL },
+	{   0,   0,   0,  0, NULL },               /* CB_CONF_OLDABOUTLOGO (unused) */
+	{ 212, 159, 155, 12, NULL },               /* CB_CONF_AUTO_UPDATE_CHECK */
 	{ 116,  18,  93, 12, cbMidiEnable },       /* CB_CONF_MIDI_ENABLE */
 	{ 116,  48, 110, 12, cbMidiAllChannels },  /* CB_CONF_MIDI_ALLCHN */
 	{ 116,  64, 121, 12, NULL },               /* CB_CONF_MIDI_TRANSP (not used) */
@@ -194,6 +195,7 @@ void initCheckBoxes(void)
 	checkBoxes[CB_CONF_REC_KEYOFF].callbackFunc = cbRecKeyOff;
 	checkBoxes[CB_CONF_QUANTIZE].callbackFunc = cbQuantize;
 	checkBoxes[CB_CONF_CHANGE_PATTLEN].callbackFunc = cbChangePattLen;
+	checkBoxes[CB_CONF_AUTO_UPDATE_CHECK].callbackFunc = cbAutoUpdateCheck;
 
 	/* DAW sync checkboxes */
 	checkBoxes[CB_CONF_SYNC_BPM].callbackFunc = cbSyncBpmFromDAW;

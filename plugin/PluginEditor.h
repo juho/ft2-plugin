@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_opengl/juce_opengl.h>
 #include "PluginProcessor.h"
+#include "UpdateChecker.h"
 
 extern "C" {
 #include "ft2_plugin_ui.h"
@@ -78,6 +79,12 @@ private:
     void deleteDiskOpFile();
     void renameDiskOpFile();
     void makeDiskOpDirectory();
+
+    // Update checker
+    UpdateChecker updateChecker;
+    bool updateDialogShown = false;
+    void checkForUpdates();
+    void showUpdateDialog();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FT2PluginEditor)
 };

@@ -47,6 +47,9 @@ FT2PluginEditor::FT2PluginEditor (FT2PluginProcessor& p)
     
     // Start timer for UI updates at ~60fps
     startTimerHz(60);
+    
+    // Start async update check
+    checkForUpdates();
 }
 
 FT2PluginEditor::~FT2PluginEditor()
@@ -836,6 +839,16 @@ void FT2PluginEditor::timerCallback()
     // Poll config action requests (reset/load/save global config)
     audioProcessor.pollConfigRequests();
 
+    // Check if update dialog should be shown (once per release)
+    if (!updateDialogShown && updateChecker.isCheckComplete())
+    {
+        if (updateChecker.shouldShowNotification(audioProcessor.getLastNotifiedVersion()))
+        {
+            showUpdateDialog();
+        }
+        updateDialogShown = true;  // Don't check again this session
+    }
+
     // Update UI
     ft2_ui_update(&ui, audioProcessor.getInstance());
     
@@ -1053,4 +1066,48 @@ void FT2PluginEditor::filesDropped(const juce::StringArray& files, int x, int y)
             inst->uiState.updateInstrSwitcher = true;
         }
     }
+}
+
+//==============================================================================
+// Update Checker
+
+void FT2PluginEditor::checkForUpdates()
+{
+#ifdef FT2_PLUGIN_VERSION
+    if (audioProcessor.isAutoUpdateCheckEnabled())
+        updateChecker.checkForUpdates(FT2_PLUGIN_VERSION);
+#endif
+}
+
+void FT2PluginEditor::showUpdateDialog()
+{
+    juce::String latestVersion = updateChecker.getLatestVersion();
+    
+#ifdef FT2_PLUGIN_VERSION
+    juce::String currentVersion = FT2_PLUGIN_VERSION;
+#else
+    juce::String currentVersion = "unknown";
+#endif
+
+    juce::String message = "A newer version (v" + latestVersion + ") is available!\n\n"
+                          "Your version: v" + currentVersion + "\n\n"
+                          "Would you like to visit the releases page?";
+
+    auto options = juce::MessageBoxOptions()
+        .withIconType(juce::MessageBoxIconType::InfoIcon)
+        .withTitle("Update Available")
+        .withMessage(message)
+        .withButton("Visit Releases")
+        .withButton("Dismiss");
+
+    juce::AlertWindow::showAsync(options, [this, latestVersion](int result)
+    {
+        if (result == 1)  // "Visit Releases" button
+        {
+            juce::URL(UpdateChecker::RELEASES_URL).launchInDefaultBrowser();
+        }
+        
+        // Save that we notified about this version (whether they visit or dismiss)
+        audioProcessor.setLastNotifiedVersion(latestVersion);
+    });
 }

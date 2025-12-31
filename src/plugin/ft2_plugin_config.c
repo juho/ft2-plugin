@@ -85,6 +85,9 @@ void ft2_config_init(ft2_plugin_config_t *config)
 	config->midiVelocitySens = 100;
 	config->midiRecordVelocity = true;
 
+	/* Miscellaneous */
+	config->autoUpdateCheck = true;  /* Enabled by default */
+
 	/* Palette */
 	config->palettePreset = PAL_ARCTIC;
 
@@ -349,6 +352,7 @@ void hideConfigScreen(ft2_instance_t *inst)
 	hideCheckBox(widgets, CB_CONF_QUANTIZE);
 	hideCheckBox(widgets, CB_CONF_CHANGE_PATTLEN);
 	hideCheckBox(widgets, CB_CONF_OLDABOUTLOGO);
+	hideCheckBox(widgets, CB_CONF_AUTO_UPDATE_CHECK);
 	hideCheckBox(widgets, CB_CONF_MIDI_ENABLE);
 	hideCheckBox(widgets, CB_CONF_MIDI_ALLCHN);
 	hideCheckBox(widgets, CB_CONF_MIDI_TRANSP);
@@ -728,8 +732,10 @@ static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, co
 	textOutShadow(video, bmp, 228, 135, PAL_FORGRND, PAL_DSKTOP2, "Change pattern length when");
 	textOutShadow(video, bmp, 228, 146, PAL_FORGRND, PAL_DSKTOP2, "inserting/deleting line.");
 
-	/* Original FT2 About screen - grayed out */
-	textOutShadow(video, bmp, 228, 161, PAL_DSKTOP2, PAL_DSKTOP2, "Original FT2 About screen");
+	/* Automatic update check */
+	widgets->checkBoxChecked[CB_CONF_AUTO_UPDATE_CHECK] = cfg->autoUpdateCheck;
+	showCheckBox(widgets, video, bmp, CB_CONF_AUTO_UPDATE_CHECK);
+	textOutShadow(video, bmp, 228, 161, PAL_FORGRND, PAL_DSKTOP2, "Automatic update check");
 
 	/* MIDI settings - grayed out (plugin uses DAW MIDI) */
 	textOutShadow(video, bmp, 428, 95, PAL_DSKTOP2, PAL_DSKTOP2, "Enable MIDI");
@@ -1437,6 +1443,13 @@ void cbChangePattLen(ft2_instance_t *inst)
 	if (inst == NULL)
 		return;
 	inst->config.recTrueInsert = !inst->config.recTrueInsert;
+}
+
+void cbAutoUpdateCheck(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	inst->config.autoUpdateCheck = !inst->config.autoUpdateCheck;
 }
 
 /* ============ DAW SYNC CHECKBOXES ============ */

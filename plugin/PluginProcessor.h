@@ -116,6 +116,15 @@ public:
     /** Poll and handle config request flags from C code. */
     void pollConfigRequests();
 
+    /** Get the last version the user was notified about. */
+    juce::String getLastNotifiedVersion() const { return lastNotifiedVersion; }
+
+    /** Set and save the last notified version (called after showing update dialog). */
+    void setLastNotifiedVersion(const juce::String& version);
+
+    /** Check if automatic update checking is enabled. */
+    bool isAutoUpdateCheckEnabled() const { return instance ? instance->config.autoUpdateCheck : true; }
+
 private:
     ft2_instance_t* instance = nullptr;
     double currentSampleRate = 48000.0;
@@ -136,6 +145,8 @@ private:
     
     std::unique_ptr<juce::ApplicationProperties> appProperties;
     void initAppProperties();
+
+    juce::String lastNotifiedVersion;  // Version user was last notified about (for update checker)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FT2PluginProcessor)
 };

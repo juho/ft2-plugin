@@ -697,6 +697,9 @@ void FT2PluginProcessor::saveGlobalConfig()
     props->setValue("config_midiRecordVelocity", cfg.midiRecordVelocity);
     props->setValue("config_midiTriggerPatterns", cfg.midiTriggerPatterns);
     
+    // Miscellaneous
+    props->setValue("config_autoUpdateCheck", cfg.autoUpdateCheck);
+    
     // Palette
     props->setValue("config_palettePreset", cfg.palettePreset);
     
@@ -721,6 +724,9 @@ void FT2PluginProcessor::saveGlobalConfig()
         toMainStr += cfg.channelToMain[i] ? "1" : "0";
     }
     props->setValue("config_channelToMain", toMainStr);
+    
+    // Update checker - last notified version
+    props->setValue("lastNotifiedVersion", lastNotifiedVersion);
     
     props->saveIfNeeded();
 }
@@ -802,6 +808,9 @@ void FT2PluginProcessor::loadGlobalConfig()
     cfg.midiRecordVelocity = props->getBoolValue("config_midiRecordVelocity", cfg.midiRecordVelocity);
     cfg.midiTriggerPatterns = props->getBoolValue("config_midiTriggerPatterns", cfg.midiTriggerPatterns);
     
+    // Miscellaneous
+    cfg.autoUpdateCheck = props->getBoolValue("config_autoUpdateCheck", cfg.autoUpdateCheck);
+    
     // Palette
     cfg.palettePreset = static_cast<uint8_t>(props->getIntValue("config_palettePreset", cfg.palettePreset));
     
@@ -831,6 +840,25 @@ void FT2PluginProcessor::loadGlobalConfig()
     
     // Apply the loaded config
     ft2_config_apply(instance, &cfg);
+    
+    // Update checker - last notified version
+    lastNotifiedVersion = props->getValue("lastNotifiedVersion", "");
+}
+
+void FT2PluginProcessor::setLastNotifiedVersion(const juce::String& version)
+{
+    lastNotifiedVersion = version;
+    
+    // Save immediately so it persists
+    if (appProperties != nullptr)
+    {
+        auto* props = appProperties->getUserSettings();
+        if (props != nullptr)
+        {
+            props->setValue("lastNotifiedVersion", version);
+            props->saveIfNeeded();
+        }
+    }
 }
 
 void FT2PluginProcessor::resetConfig()
