@@ -395,8 +395,7 @@ void drawHelpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 		case 1: tmpID = RB_HELP_EFFECTS;     break;
 		case 2: tmpID = RB_HELP_KEYBINDINGS; break;
 		case 3: tmpID = RB_HELP_HOWTO;       break;
-		case 4: tmpID = RB_HELP_FAQ;         break;
-		case 5: tmpID = RB_HELP_BUGS;        break;
+		case 4: tmpID = RB_HELP_PLUGIN;      break;
 	}
 	widgets->radioButtonState[tmpID] = RADIOBUTTON_CHECKED;
 
@@ -407,14 +406,13 @@ void drawHelpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 	setScrollBarPos(inst, widgets, video, SB_HELP_SCROLL, fHlp_Line, false);
 	showScrollBar(widgets, video, SB_HELP_SCROLL);
 
-	/* Draw subject labels - exact match to standalone */
+	/* Draw subject labels */
 	textOutShadow(video, bmp, 4,   4, PAL_FORGRND, PAL_DSKTOP2, "Subjects:");
 	textOutShadow(video, bmp, 21, 19, PAL_FORGRND, PAL_DSKTOP2, "Features");
 	textOutShadow(video, bmp, 21, 35, PAL_FORGRND, PAL_DSKTOP2, "Effects");
 	textOutShadow(video, bmp, 21, 51, PAL_FORGRND, PAL_DSKTOP2, "Keybindings");
 	textOutShadow(video, bmp, 21, 67, PAL_FORGRND, PAL_DSKTOP2, "How to use FT2");
-	textOutShadow(video, bmp, 21, 83, PAL_FORGRND, PAL_DSKTOP2, "Problems/FAQ");
-	textOutShadow(video, bmp, 21, 99, PAL_FORGRND, PAL_DSKTOP2, "Plugin");
+	textOutShadow(video, bmp, 21, 83, PAL_FORGRND, PAL_DSKTOP2, "Plugin");
 
 	writeHelp(video, bmp);
 }
@@ -499,8 +497,7 @@ void showHelpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 		case 1: tmpID = RB_HELP_EFFECTS;     break;
 		case 2: tmpID = RB_HELP_KEYBINDINGS; break;
 		case 3: tmpID = RB_HELP_HOWTO;       break;
-		case 4: tmpID = RB_HELP_FAQ;         break;
-		case 5: tmpID = RB_HELP_BUGS;        break;
+		case 4: tmpID = RB_HELP_PLUGIN;      break;
 	}
 	widgets->radioButtonState[tmpID] = RADIOBUTTON_CHECKED;
 
@@ -511,14 +508,13 @@ void showHelpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 	setScrollBarPos(inst, widgets, video, SB_HELP_SCROLL, fHlp_Line, false);
 	showScrollBar(widgets, video, SB_HELP_SCROLL);
 
-	/* Draw subject labels - exact match to standalone */
+	/* Draw subject labels */
 	textOutShadow(video, bmp, 4,   4, PAL_FORGRND, PAL_DSKTOP2, "Subjects:");
 	textOutShadow(video, bmp, 21, 19, PAL_FORGRND, PAL_DSKTOP2, "Features");
 	textOutShadow(video, bmp, 21, 35, PAL_FORGRND, PAL_DSKTOP2, "Effects");
 	textOutShadow(video, bmp, 21, 51, PAL_FORGRND, PAL_DSKTOP2, "Keybindings");
 	textOutShadow(video, bmp, 21, 67, PAL_FORGRND, PAL_DSKTOP2, "How to use FT2");
-	textOutShadow(video, bmp, 21, 83, PAL_FORGRND, PAL_DSKTOP2, "Problems/FAQ");
-	textOutShadow(video, bmp, 21, 99, PAL_FORGRND, PAL_DSKTOP2, "Plugin");
+	textOutShadow(video, bmp, 21, 83, PAL_FORGRND, PAL_DSKTOP2, "Plugin");
 
 	writeHelp(video, bmp);
 }
@@ -604,23 +600,13 @@ void rbHelpHowToUseFT2(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t
 	writeHelp(video, bmp);
 }
 
-void rbHelpFAQ(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+void rbHelpPlugin(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
 	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-	checkRadioButton(widgets, video, bmp, RB_HELP_FAQ);
+	checkRadioButton(widgets, video, bmp, RB_HELP_PLUGIN);
 	setHelpSubject(inst, widgets, video, 4);
-	writeHelp(video, bmp);
-}
-
-void rbHelpKnownBugs(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
-{
-	if (inst == NULL) return;
-	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-	checkRadioButton(widgets, video, bmp, RB_HELP_BUGS);
-	setHelpSubject(inst, widgets, video, 5);
 	writeHelp(video, bmp);
 }
 

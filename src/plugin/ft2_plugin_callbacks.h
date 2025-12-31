@@ -73,8 +73,7 @@ void cbHelpFeatures(struct ft2_instance_t *inst);
 void cbHelpEffects(struct ft2_instance_t *inst);
 void cbHelpKeybindings(struct ft2_instance_t *inst);
 void cbHelpHowToUseFT2(struct ft2_instance_t *inst);
-void cbHelpFAQ(struct ft2_instance_t *inst);
-void cbHelpKnownBugs(struct ft2_instance_t *inst);
+void cbHelpPlugin(struct ft2_instance_t *inst);
 
 /* Help screen scroll callbacks */
 void pbHelpScrollUp(struct ft2_instance_t *inst);

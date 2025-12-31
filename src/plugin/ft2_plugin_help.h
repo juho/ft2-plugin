@@ -39,8 +39,7 @@ void rbHelpFeatures(struct ft2_instance_t *inst, struct ft2_video_t *video, cons
 void rbHelpEffects(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 void rbHelpKeybindings(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 void rbHelpHowToUseFT2(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
-void rbHelpFAQ(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
-void rbHelpKnownBugs(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
+void rbHelpPlugin(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 
 /* Initialization */
 void initFTHelp(void);

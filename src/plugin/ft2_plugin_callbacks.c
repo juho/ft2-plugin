@@ -697,7 +697,7 @@ void cbHelpHowToUseFT2(ft2_instance_t *inst)
 	}
 }
 
-void cbHelpFAQ(ft2_instance_t *inst)
+void cbHelpPlugin(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
@@ -705,19 +705,7 @@ void cbHelpFAQ(ft2_instance_t *inst)
 	{
 		ft2_video_t *video = &ui->video;
 		const ft2_bmp_t *bmp = ui->bmpLoaded ? &ui->bmp : NULL;
-		rbHelpFAQ(inst, video, bmp);
-	}
-}
-
-void cbHelpKnownBugs(ft2_instance_t *inst)
-{
-	if (inst == NULL) return;
-	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui != NULL)
-	{
-		ft2_video_t *video = &ui->video;
-		const ft2_bmp_t *bmp = ui->bmpLoaded ? &ui->bmp : NULL;
-		rbHelpKnownBugs(inst, video, bmp);
+		rbHelpPlugin(inst, video, bmp);
 	}
 }
 

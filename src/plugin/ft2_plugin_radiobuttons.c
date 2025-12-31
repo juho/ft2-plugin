@@ -21,12 +21,11 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 {
 	/* Help screen */
 	/*x, y,   w,  group,         callback */
-	{ 5, 18,  69, RB_GROUP_HELP, NULL },
-	{ 5, 34,  60, RB_GROUP_HELP, NULL },
-	{ 5, 50,  86, RB_GROUP_HELP, NULL },
-	{ 5, 66, 109, RB_GROUP_HELP, NULL },
-	{ 5, 82, 101, RB_GROUP_HELP, NULL },
-	{ 5, 98,  86, RB_GROUP_HELP, NULL },
+	{ 5, 18,  69, RB_GROUP_HELP, NULL },  /* Features */
+	{ 5, 34,  60, RB_GROUP_HELP, NULL },  /* Effects */
+	{ 5, 50,  86, RB_GROUP_HELP, NULL },  /* Keybindings */
+	{ 5, 66, 109, RB_GROUP_HELP, NULL },  /* How to use FT2 */
+	{ 5, 82,  50, RB_GROUP_HELP, NULL },  /* Plugin */
 
 	/* Nibbles */
 	/*x,  y,   w,  group,                       callback */
@@ -248,8 +247,7 @@ void initRadioButtons(void)
 	radioButtons[RB_HELP_EFFECTS].callbackFunc = cbHelpEffects;
 	radioButtons[RB_HELP_KEYBINDINGS].callbackFunc = cbHelpKeybindings;
 	radioButtons[RB_HELP_HOWTO].callbackFunc = cbHelpHowToUseFT2;
-	radioButtons[RB_HELP_FAQ].callbackFunc = cbHelpFAQ;
-	radioButtons[RB_HELP_BUGS].callbackFunc = cbHelpKnownBugs;
+	radioButtons[RB_HELP_PLUGIN].callbackFunc = cbHelpPlugin;
 
 	/* Wire up palette entry callbacks */
 	radioButtons[RB_CONFIG_PAL_PATTEXT].callbackFunc = rbConfigPalPatternText;

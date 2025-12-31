@@ -4,7 +4,8 @@
 
 - Feat: Add automatic update checking with a notification dialog.
 - Config: Bump config version to 2, defaulting the update check to enabled.
-- Help: Add Plugin section to help.
+- Help: Replace "Known Bugs" section with "Plugin" section.
+- Help: Remove "Problems/FAQ" section.
 
 ## 1.0.16 (Dec 30, 2025)
 

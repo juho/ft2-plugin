@@ -5,7 +5,7 @@
 @X040@C001Brief list of features:
 >@X060@C002
 >- 32 channels.
->- Full MIDI support (input only in this clone!)
+>- Full MIDI support
 >- 12-Point Volume- & Panning Envelope.
 >- Multisamples, up to 16 samples/instrument.
 >- 128 instruments.
@@ -20,24 +20,16 @@
 >- Full screen edit mode.
 >- Improved editing facilities.
 
-@X040@C001The FT2 clone supports the following file formats:
+@X040@C001The FT2 plugin supports the following file formats:
 
 @X040@C001Modules:
 >@X060@C002
->- Standard modules (15/31 samples). (MOD,NST,STK)
+>- Standard modules (15/31 samples). (MOD)
 >- Fasttracker II modules. (XM,MOD)
->- Fasttracker modules. (MOD/FST)
 
 @X040@C001Experimental (imperfect) module support:
 >@X060@C002
 >- Scream Tracker 3 modules. (S3M)
->- Scream Tracker 2 modules. (STM)
->- DIGI Booster (non-Pro) modules. (DIGI)
->- MikMod "UN05" XM modules. (BEM)
-
-@X040@C001Abysmal (super broken) module support:
->@X060@C002
->- Impulse Tracker
 
 @X040@C001Samples:
 >@X060@C002
@@ -920,161 +912,115 @@ several locations into the copybuffer.)
 END
 ;***************************************************************************
 ;***************************************************************************
-@LProblems/FAQ
->@X020
->@C001Q: How can I toggle fullscreen mode?
->@C002A: Press Alt+Enter (Ctrl+Cmd+F also works on Mac)
->@X020
->@C001Q: How can I make fullscreen mode stretch out the whole screen?
->@C002A: Enable "Stretched" in Config -> Miscellaneous.
->@X035This will result in uneven pixel widths. If you want to fix this, enable
-"Pixel filter" (though this will make the image look blurry).
->@X020
->@C001Q: I can't use Alt+F4 and Alt+F5!
->@C002A: Windows: If you have GeForce Experience installed, you need to change
->@X035the keybindings in its settings page.
->macOS/OS X: Change Alt+F4/Alt+F5 keys in the OS to something else. Also for GNU/Linux.
->@X020
->@C001Q: The mouse cursor is delayed/laggy!
->@C002A: Make sure "Software mouse" is disabled in Config -> Layout.
->@X035Alternatively, you can enable "VSync off" in Config -> Miscellaneous.
->This however, will introduce stuttering because the rendering rate is
->not exact to your monitor's rate.
->@X020
->@C001Q: Will you implement MIDI out functionality?
->@C002A: No, sorry. This is very difficult to implement correctly when having
->@X035higher audio buffer sizes (buffered replayer ticks)...
->@X020
->@C001Q: Where is the configuration file stored?
->@C002A: Windows: \Users\USER\AppData\Roaming\FT2 clone\FT2.CFG
->@X035OS X: /Users/USER/Library/Application Support/FT2 clone/FT2.CFG
-GNU/Linux: /home/USER/.config/FT2 clone/FT2.CFG
->
-It will be stored in the program directory if the path couldn't be used.
-If you put the configuration file in the program directory, it will read that
-one and not attempt to create config dirs for the OS user. (portable mode)
->@X020
->@C001Q: Can the clone read FT2.CFG from real FT2, and vice versa?
->@C002A: Yes, it should work just fine. Put it in the directory shown above.
->@X020
->@C001Q: Smp. Ed.: While zoomed in, I sometimes can't mark the last sample point!
->@C002A: This is normal. This is a limitation in the nature of scaling.
->@X020
->@C001Q: I found a bug!
->@C002A: Please send me a mail (found at 16-bits.org) and try to explain it.
-
-END
-;***************************************************************************
-;***************************************************************************
 @LPlugin
 >@X020@C002
 >This section documents plugin-specific features and configuration options
->that differ from the standalone FT2 clone.
+that differ from the standalone FT2 clone.
 
 @X020@C001Configuration, Audio (DAW Sync):
 >
 >@X040@C001Sync BPM from DAW:
 >@X060@C002
->When enabled, the plugin uses the host DAW's tempo instead of the
->module's BPM setting. Fxx effects that set BPM (values >= $20) will be
->ignored. The module's original BPM is restored when this is disabled.
+When enabled, the plugin uses the host DAW's tempo instead of the
+module's BPM setting. Fxx effects that set BPM (values >= $20) will be
+ignored. The module's original BPM is restored when this is disabled.
 
 >@X040@C001Sync transport (start/stop):
 >@X060@C002
->When enabled, playback starts and stops with the DAW transport.
->Pressing play in the DAW starts the module; pressing stop halts it.
+When enabled, playback starts and stops with the DAW transport.
+Pressing play in the DAW starts the module; pressing stop halts it.
 
 >@X040@C001Sync position (seek):
 >@X060@C002
->When enabled, the pattern position follows the DAW playhead. Seeking
->in the DAW will jump to the corresponding position in the module.
->This uses a time-to-position mapping based on the module's tempo.
+When enabled, the pattern position follows the DAW playhead. Seeking
+in the DAW will jump to the corresponding position in the module.
+This uses a time-to-position mapping based on the module's tempo.
 
 >@X040@C001Allow Fxx speed changes:
 >@X060@C002
->Controls whether Fxx effects with values < $20 can change the song
->speed. This is independent of BPM sync. When disabled, the module
->plays at constant speed regardless of Fxx speed commands.
+Controls whether Fxx effects with values < $20 can change the song
+speed. This is independent of BPM sync. When disabled, the module
+plays at constant speed regardless of Fxx speed commands.
 
 @X020@C001Configuration, MIDI Input:
 >
 >@X040@C001Enable MIDI input:
 >@X060@C002
->Toggles MIDI note processing. When disabled, no MIDI input is handled.
+Toggles MIDI note processing. When disabled, no MIDI input is handled.
 
 >@X040@C001Notes trigger (Notes / Patterns):
 >@X060@C002
->Selects what incoming MIDI notes do:
+Selects what incoming MIDI notes do:
 >
 >@X052@C001Notes:
 >@X060@C002MIDI notes play through the currently selected instrument, like a
->keyboard. Notes are allocated to available channels. This is useful for
->live performance or recording note input.
+keyboard. Notes are allocated to available channels. This is useful for
+live performance or recording note input.
 >
 >@X052@C001Patterns:
 >@X060@C002MIDI notes trigger pattern playback. Note number 0-127 plays pattern
->0-127 for as long as the note is held. Releasing the note stops
->playback. This is useful for live performance with pattern triggering.
->When switching to this mode, a dialog offers to disable transport and
->position sync for consistent triggering behavior.
+0-127 for as long as the note is held. Releasing the note stops
+playback. This is useful for live performance with pattern triggering.
+When switching to this mode, a dialog offers to disable transport and
+position sync for consistent triggering behavior.
 
 >@X040@C001Receive all channels:
 >@X060@C002
->When enabled, MIDI input is accepted from all 16 MIDI channels.
->When disabled, only the channel specified below is used.
+When enabled, MIDI input is accepted from all 16 MIDI channels.
+When disabled, only the channel specified below is used.
 
 >@X040@C001Channel:
 >@X060@C002
->The MIDI channel to listen on (1-16). Only used when "Receive all
->channels" is disabled.
+The MIDI channel to listen on (1-16). Only used when "Receive all
+channels" is disabled.
 
 >@X040@C001Transpose:
 >@X060@C002
->Shifts incoming MIDI notes by the specified number of semitones.
->Range is -48 to +48 (4 octaves up or down).
+Shifts incoming MIDI notes by the specified number of semitones.
+Range is -48 to +48 (4 octaves up or down).
 
 >@X040@C001Velocity sensitivity:
 >@X060@C002
->Controls how much MIDI velocity affects note volume. At 100%, full
->velocity (127) produces full volume. At 200%, half velocity produces
->full volume. At 0%, velocity is ignored and all notes play at full volume.
+Controls how much MIDI velocity affects note volume. At 100%, full
+velocity (127) produces full volume. At 200%, half velocity produces
+full volume. At 0%, velocity is ignored and all notes play at full volume.
 
 >@X040@C001Record velocity as volume:
 >@X060@C002
->When recording, stores the MIDI velocity in the volume column.
+When recording, stores the MIDI velocity in the volume column.
 
 @X020@C001Configuration, Miscellaneous:
 >
 >@X040@C001Automatic update check:
 >@X060@C002
->When enabled, the plugin checks GitHub for new releases on startup.
->If a newer version is available, a notification is shown once per release.
+When enabled, the plugin checks GitHub for new releases on startup.
+If a newer version is available, a notification is shown once per release.
 
 @X020@C001Configuration, I/O Routing:
 >
 >@X040@C001Channel output routing:
 >@X060@C002
->The plugin supports multi-output routing for DAWs that support it.
->Each of the 32 channels can be routed to one of 15 stereo output pairs.
->The "To Main" checkbox also sends that channel to the main stereo output.
->This allows separating channels for external mixing or processing.
+The plugin supports multi-output routing for DAWs that support it.
+Each of the 32 channels can be routed to one of 15 stereo output pairs.
+The "To Main" checkbox also sends that channel to the main stereo output.
+This allows separating channels for external mixing or processing.
 
 @X020@C001Plugin State:
 >
 >@X040@C001How configuration is stored:
 >@X060@C002
->The plugin has two types of configuration:
+The plugin has two types of configuration:
 >
 >@X052@C001Global config:
 >@X060@C002Settings like pattern editor preferences, interpolation, and visual
->options can be saved to a global config file by clicking "Save config"
->in the Config screen. New plugin instances load this global config on
->startup. Changes made in one instance do not affect others until saved.
+options can be saved to a global config file by clicking "Save config"
+in the Config screen. New plugin instances load this global config on
+startup. Changes made in one instance do not affect others until saved.
 >
 >@X052@C001Project state:
 >@X060@C002The loaded module data, current playback position, and any unsaved
->changes are stored in the DAW project. This means each project can
->have its own module loaded, and the state is restored when you reopen
->the project.
+changes are stored in the DAW project. This means each project can
+have its own module loaded, and the state is restored when you reopen
+the project.
 
 END
