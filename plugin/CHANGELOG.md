@@ -3,6 +3,7 @@
 ## 1.0.18 (Dec 31, 2025)
 
 - Fix: Clean up code in help.
+- Visual: Remove some superfluous text from config.
 
 ## 1.0.17 (Dec 31, 2025)
 

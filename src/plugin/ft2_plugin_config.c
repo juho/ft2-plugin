@@ -736,17 +736,6 @@ static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, co
 	widgets->checkBoxChecked[CB_CONF_AUTO_UPDATE_CHECK] = cfg->autoUpdateCheck;
 	showCheckBox(widgets, video, bmp, CB_CONF_AUTO_UPDATE_CHECK);
 	textOutShadow(video, bmp, 228, 161, PAL_FORGRND, PAL_DSKTOP2, "Automatic update check");
-
-	/* MIDI settings - grayed out (plugin uses DAW MIDI) */
-	textOutShadow(video, bmp, 428, 95, PAL_DSKTOP2, PAL_DSKTOP2, "Enable MIDI");
-	textOutShadow(video, bmp, 412, 108, PAL_DSKTOP2, PAL_DSKTOP2, "Record MIDI chn.");
-	charOutShadow(video, bmp, 523, 108, PAL_DSKTOP2, PAL_DSKTOP2, '(');
-	textOutShadow(video, bmp, 546, 108, PAL_DSKTOP2, PAL_DSKTOP2, "all )");
-	textOutShadow(video, bmp, 428, 121, PAL_DSKTOP2, PAL_DSKTOP2, "Record transpose");
-	textOutShadow(video, bmp, 428, 134, PAL_DSKTOP2, PAL_DSKTOP2, "Record velocity");
-	textOutShadow(video, bmp, 428, 147, PAL_DSKTOP2, PAL_DSKTOP2, "Record aftertouch");
-	textOutShadow(video, bmp, 412, 160, PAL_DSKTOP2, PAL_DSKTOP2, "Vel./A.t. senstvty.");
-	charOutShadow(video, bmp, 547, 160, PAL_DSKTOP2, PAL_DSKTOP2, '%');
 }
 
 static void showConfigIORouting(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
