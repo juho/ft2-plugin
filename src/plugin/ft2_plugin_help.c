@@ -414,7 +414,7 @@ void drawHelpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 	textOutShadow(video, bmp, 21, 51, PAL_FORGRND, PAL_DSKTOP2, "Keybindings");
 	textOutShadow(video, bmp, 21, 67, PAL_FORGRND, PAL_DSKTOP2, "How to use FT2");
 	textOutShadow(video, bmp, 21, 83, PAL_FORGRND, PAL_DSKTOP2, "Problems/FAQ");
-	textOutShadow(video, bmp, 21, 99, PAL_FORGRND, PAL_DSKTOP2, "Known bugs");
+	textOutShadow(video, bmp, 21, 99, PAL_FORGRND, PAL_DSKTOP2, "Plugin");
 
 	writeHelp(video, bmp);
 }
@@ -518,7 +518,7 @@ void showHelpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 	textOutShadow(video, bmp, 21, 51, PAL_FORGRND, PAL_DSKTOP2, "Keybindings");
 	textOutShadow(video, bmp, 21, 67, PAL_FORGRND, PAL_DSKTOP2, "How to use FT2");
 	textOutShadow(video, bmp, 21, 83, PAL_FORGRND, PAL_DSKTOP2, "Problems/FAQ");
-	textOutShadow(video, bmp, 21, 99, PAL_FORGRND, PAL_DSKTOP2, "Known bugs");
+	textOutShadow(video, bmp, 21, 99, PAL_FORGRND, PAL_DSKTOP2, "Plugin");
 
 	writeHelp(video, bmp);
 }
