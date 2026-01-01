@@ -1,5 +1,12 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.19 (Jan 1, 2026)
+
+- Fix: Hook up directory sorting priority buttons in config.
+- Fix: Hook up overwrite warning button in config.
+- Visual: Remove some superfluous text from config.
+- Fix: Hook up Amiga frequency slides button in config.
+
 ## 1.0.18 (Dec 31, 2025)
 
 - Fix: Clean up code in help.

@@ -189,6 +189,7 @@ void initCheckBoxes(void)
 	checkBoxes[CB_CONF_SAMPCUTBUF].callbackFunc = cbSampCutToBuff;
 	checkBoxes[CB_CONF_PATTCUTBUF].callbackFunc = cbPattCutToBuff;
 	checkBoxes[CB_CONF_KILLNOTES].callbackFunc = cbKillNotesAtStop;
+	checkBoxes[CB_CONF_OVERWRITE_WARN].callbackFunc = cbFileOverwriteWarn;
 	checkBoxes[CB_CONF_MULTICHAN_REC].callbackFunc = cbMultiChanRec;
 	checkBoxes[CB_CONF_MULTICHAN_KEYJAZZ].callbackFunc = cbMultiChanKeyJazz;
 	checkBoxes[CB_CONF_MULTICHAN_EDIT].callbackFunc = cbMultiChanEdit;

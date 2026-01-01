@@ -121,6 +121,10 @@ typedef struct ft2_plugin_config_t
 	bool ptnCutToBuffer;
 	bool killNotesOnStopPlay;
 
+	/* Disk operation settings */
+	uint8_t dirSortPriority;   /* 0=extension first, 1=name only */
+	bool overwriteWarning;     /* Show confirmation before overwriting files */
+
 	/* DAW sync settings */
 	bool syncBpmFromDAW;        /* Sync BPM from DAW host */
 	bool syncTransportFromDAW;  /* Sync start/stop from DAW host */
@@ -230,6 +234,7 @@ void cbConfigShowVolCol(struct ft2_instance_t *inst);
 void cbSampCutToBuff(struct ft2_instance_t *inst);
 void cbPattCutToBuff(struct ft2_instance_t *inst);
 void cbKillNotesAtStop(struct ft2_instance_t *inst);
+void cbFileOverwriteWarn(struct ft2_instance_t *inst);
 void cbMultiChanRec(struct ft2_instance_t *inst);
 void cbMultiChanKeyJazz(struct ft2_instance_t *inst);
 void cbMultiChanEdit(struct ft2_instance_t *inst);
@@ -271,6 +276,15 @@ void sbMidiTranspose(struct ft2_instance_t *inst, uint32_t pos);
 void configMidiSensDown(struct ft2_instance_t *inst);
 void configMidiSensUp(struct ft2_instance_t *inst);
 void sbMidiSens(struct ft2_instance_t *inst, uint32_t pos);
+
+/* File sorting */
+void rbFileSortExt(struct ft2_instance_t *inst);
+void rbFileSortName(struct ft2_instance_t *inst);
+
+/* Frequency slides */
+void rbConfigFreqSlidesAmiga(struct ft2_instance_t *inst);
+void rbConfigFreqSlidesLinear(struct ft2_instance_t *inst);
+
 void rbConfigMidiTriggerNotes(struct ft2_instance_t *inst);
 void rbConfigMidiTriggerPatterns(struct ft2_instance_t *inst);
 

@@ -522,6 +522,7 @@ typedef struct ft2_diskop_state_t
 	volatile int32_t requestOpenEntry; /* Entry index to open, -1 = none */
 	volatile int32_t requestLoadEntry; /* Entry index to load, -1 = none */
 	volatile bool requestSave;       /* Request save */
+	volatile bool requestSaveConfirmed; /* Overwrite confirmed, proceed without check */
 	volatile bool requestDelete;     /* Request delete selected file */
 	volatile bool requestRename;     /* Request rename selected file */
 	volatile bool requestMakeDir;    /* Request create directory */

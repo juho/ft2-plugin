@@ -271,6 +271,14 @@ void initRadioButtons(void)
 	radioButtons[RB_CONFIG_PAL_JUNGLE].callbackFunc = rbConfigPalJungle;
 	radioButtons[RB_CONFIG_PAL_USER].callbackFunc = rbConfigPalUserDefined;
 
+	/* Wire up file sorting callbacks */
+	radioButtons[RB_CONFIG_FILESORT_EXT].callbackFunc = rbFileSortExt;
+	radioButtons[RB_CONFIG_FILESORT_NAME].callbackFunc = rbFileSortName;
+
+	/* Wire up frequency slides callbacks */
+	radioButtons[RB_CONFIG_FREQ_AMIGA].callbackFunc = rbConfigFreqSlidesAmiga;
+	radioButtons[RB_CONFIG_FREQ_LINEAR].callbackFunc = rbConfigFreqSlidesLinear;
+
 	/* Wire up MIDI trigger mode callbacks */
 	radioButtons[RB_CONFIG_MIDI_NOTES].callbackFunc = rbConfigMidiTriggerNotes;
 	radioButtons[RB_CONFIG_MIDI_PATTERNS].callbackFunc = rbConfigMidiTriggerPatterns;

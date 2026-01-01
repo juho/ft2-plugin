@@ -548,6 +548,27 @@ void FT2PluginEditor::saveDiskOpFile()
     juce::File destDir(diskop.currentPath);
     juce::File destFile = destDir.getChildFile(filename);
 
+    // Check for overwrite warning (unless already confirmed)
+    if (inst->config.overwriteWarning && destFile.exists() && !diskop.requestSaveConfirmed)
+    {
+        juce::AlertWindow::showAsync(
+            juce::MessageBoxOptions()
+                .withIconType(juce::MessageBoxIconType::WarningIcon)
+                .withTitle("File Overwrite")
+                .withMessage("File \"" + filename + "\" already exists.\nDo you want to overwrite it?")
+                .withButton("Yes")
+                .withButton("No"),
+            [inst](int result) {
+                if (result == 1) // Yes
+                {
+                    inst->diskop.requestSaveConfirmed = true;
+                    inst->diskop.requestSave = true;
+                }
+            });
+        return;
+    }
+    diskop.requestSaveConfirmed = false; // Reset for next save
+
     uint8_t* data = nullptr;
     uint32_t dataSize = 0;
     bool success = false;
@@ -776,19 +797,33 @@ void FT2PluginEditor::readDiskOpDirectory()
         }
     }
 
-    // Sort: directories first, then by name
+    // Sort: directories first, then by extension or name based on config
     struct FileComparator
     {
-        int compareElements(juce::File a, juce::File b)
+        uint8_t sortPriority;  // 0 = extension first, 1 = name only
+        
+        int compareElements(juce::File a, juce::File b) const
         {
             bool aDir = a.isDirectory();
             bool bDir = b.isDirectory();
             if (aDir != bDir)
                 return aDir ? -1 : 1;
+            
+            if (sortPriority == 0)
+            {
+                // Extension first, then name
+                juce::String aExt = a.getFileExtension().toLowerCase();
+                juce::String bExt = b.getFileExtension().toLowerCase();
+                int extCmp = aExt.compareIgnoreCase(bExt);
+                if (extCmp != 0)
+                    return extCmp;
+            }
+            // Name only (or as secondary sort)
             return a.getFileName().compareIgnoreCase(b.getFileName());
         }
     };
     FileComparator comparator;
+    comparator.sortPriority = inst->config.dirSortPriority;
     filtered.sort(comparator);
 
     // Check if we need a parent entry (not at root)

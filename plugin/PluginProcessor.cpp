@@ -682,6 +682,10 @@ void FT2PluginProcessor::saveGlobalConfig()
     props->setValue("config_ptnCutToBuffer", cfg.ptnCutToBuffer);
     props->setValue("config_killNotesOnStopPlay", cfg.killNotesOnStopPlay);
     
+    // Disk operation settings
+    props->setValue("config_dirSortPriority", cfg.dirSortPriority);
+    props->setValue("config_overwriteWarning", cfg.overwriteWarning);
+    
     // DAW sync settings
     props->setValue("config_syncBpmFromDAW", cfg.syncBpmFromDAW);
     props->setValue("config_syncTransportFromDAW", cfg.syncTransportFromDAW);
@@ -795,6 +799,10 @@ void FT2PluginProcessor::loadGlobalConfig()
     cfg.smpCutToBuffer = props->getBoolValue("config_smpCutToBuffer", cfg.smpCutToBuffer);
     cfg.ptnCutToBuffer = props->getBoolValue("config_ptnCutToBuffer", cfg.ptnCutToBuffer);
     cfg.killNotesOnStopPlay = props->getBoolValue("config_killNotesOnStopPlay", cfg.killNotesOnStopPlay);
+    
+    // Disk operation settings
+    cfg.dirSortPriority = static_cast<uint8_t>(props->getIntValue("config_dirSortPriority", cfg.dirSortPriority));
+    cfg.overwriteWarning = props->getBoolValue("config_overwriteWarning", cfg.overwriteWarning);
     
     // DAW sync settings
     cfg.syncBpmFromDAW = props->getBoolValue("config_syncBpmFromDAW", cfg.syncBpmFromDAW);

@@ -69,6 +69,10 @@ void ft2_config_init(ft2_plugin_config_t *config)
 	config->ptnCutToBuffer = true;
 	config->killNotesOnStopPlay = true;
 
+	/* Disk operation defaults */
+	config->dirSortPriority = 0;    /* 0 = extension first (default) */
+	config->overwriteWarning = true;
+
 	/* DAW sync defaults (all enabled by default) */
 	config->syncBpmFromDAW = true;
 	config->syncTransportFromDAW = true;
@@ -449,17 +453,6 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	showCheckBox(widgets, video, bmp, CB_CONF_ALLOW_FXX_SPEED);
 	textOutShadow(video, bmp, 131, 69, PAL_FORGRND, PAL_DSKTOP2, "Allow Fxx speed changes");
 
-	/* Audio buffer size - grayed out (DAW controls this) */
-	textOutShadow(video, bmp, 390, 3, PAL_DSKTOP2, PAL_DSKTOP2, "Audio buffer size:");
-	textOutShadow(video, bmp, 405, 17, PAL_DSKTOP2, PAL_DSKTOP2, "Small");
-	textOutShadow(video, bmp, 405, 31, PAL_DSKTOP2, PAL_DSKTOP2, "Medium (default)");
-	textOutShadow(video, bmp, 405, 45, PAL_DSKTOP2, PAL_DSKTOP2, "Large");
-
-	/* Audio bit depth - grayed out (DAW controls this) */
-	textOutShadow(video, bmp, 390, 61, PAL_DSKTOP2, PAL_DSKTOP2, "Audio bit depth:");
-	textOutShadow(video, bmp, 405, 74, PAL_DSKTOP2, PAL_DSKTOP2, "16-bit");
-	textOutShadow(video, bmp, 468, 74, PAL_DSKTOP2, PAL_DSKTOP2, "32-bit");
-
 	/* Interpolation - ACTIVE */
 	setAudioConfigRadioButtonStates(widgets, cfg);
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_AUDIO_INTERPOLATION);
@@ -470,16 +463,16 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	textOutShadow(video, bmp, 405, 147, PAL_FORGRND, PAL_DSKTOP2, "Sinc (8 point)");
 	textOutShadow(video, bmp, 405, 161, PAL_FORGRND, PAL_DSKTOP2, "Sinc (16 point)");
 
-	/* Audio output rate - grayed out (DAW controls this) */
-	textOutShadow(video, bmp, 513, 3, PAL_DSKTOP2, PAL_DSKTOP2, "Audio output rate:");
-	textOutShadow(video, bmp, 528, 17, PAL_DSKTOP2, PAL_DSKTOP2, "44100Hz");
-	textOutShadow(video, bmp, 528, 31, PAL_DSKTOP2, PAL_DSKTOP2, "48000Hz");
-	textOutShadow(video, bmp, 528, 45, PAL_DSKTOP2, PAL_DSKTOP2, "96000Hz");
-
-	/* Frequency slides - grayed out */
-	textOutShadow(video, bmp, 513, 61, PAL_DSKTOP2, PAL_DSKTOP2, "Frequency slides:");
-	textOutShadow(video, bmp, 528, 75, PAL_DSKTOP2, PAL_DSKTOP2, "Amiga");
-	textOutShadow(video, bmp, 528, 89, PAL_DSKTOP2, PAL_DSKTOP2, "Linear (default)");
+	/* Frequency slides - ACTIVE */
+	textOutShadow(video, bmp, 513, 61, PAL_FORGRND, PAL_DSKTOP2, "Frequency slides:");
+	textOutShadow(video, bmp, 528, 75, PAL_FORGRND, PAL_DSKTOP2, "Amiga");
+	textOutShadow(video, bmp, 528, 89, PAL_FORGRND, PAL_DSKTOP2, "Linear (default)");
+	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_FREQ_SLIDES);
+	if (inst->audio.linearPeriodsFlag)
+		widgets->radioButtonState[RB_CONFIG_FREQ_LINEAR] = RADIOBUTTON_CHECKED;
+	else
+		widgets->radioButtonState[RB_CONFIG_FREQ_AMIGA] = RADIOBUTTON_CHECKED;
+	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_FREQ_SLIDES);
 
 	/* Amplification - ACTIVE */
 	textOutShadow(video, bmp, 513, 105, PAL_FORGRND, PAL_DSKTOP2, "Amplification:");
@@ -556,16 +549,6 @@ static void showConfigLayout(ft2_instance_t *inst, ft2_video_t *video, const ft2
 	showCheckBox(widgets, video, bmp, CB_CONF_CHANNUMS);
 	textOutShadow(video, bmp, 130, 94, PAL_FORGRND, PAL_DSKTOP2, "Channel numbering");
 
-	/* Mouse shape - grayed out (not applicable for plugin) */
-	textOutShadow(video, bmp, 114, 109, PAL_DSKTOP2, PAL_DSKTOP2, "Mouse shape:");
-	textOutShadow(video, bmp, 130, 121, PAL_DSKTOP2, PAL_DSKTOP2, "Nice");
-	textOutShadow(video, bmp, 194, 121, PAL_DSKTOP2, PAL_DSKTOP2, "Ugly");
-	textOutShadow(video, bmp, 130, 135, PAL_DSKTOP2, PAL_DSKTOP2, "Awful");
-	textOutShadow(video, bmp, 194, 135, PAL_DSKTOP2, PAL_DSKTOP2, "Usable");
-	textOutShadow(video, bmp, 114, 148, PAL_DSKTOP2, PAL_DSKTOP2, "Mouse busy shape:");
-	textOutShadow(video, bmp, 130, 160, PAL_DSKTOP2, PAL_DSKTOP2, "Vogue");
-	textOutShadow(video, bmp, 194, 160, PAL_DSKTOP2, PAL_DSKTOP2, "Mr. H");
-
 	/* Pattern modes section - ACTIVE */
 	textOutShadow(video, bmp, 256, 3, PAL_FORGRND, PAL_DSKTOP2, "Pattern modes:");
 
@@ -595,9 +578,6 @@ static void showConfigLayout(ft2_instance_t *inst, ft2_video_t *video, const ft2
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_SCOPE);
 	textOutShadow(video, bmp, 319, 146, PAL_FORGRND, PAL_DSKTOP2, "FT2");
 	textOutShadow(video, bmp, 360, 146, PAL_FORGRND, PAL_DSKTOP2, "Lined");
-
-	/* Software mouse - grayed out */
-	textOutShadow(video, bmp, 272, 160, PAL_DSKTOP2, PAL_DSKTOP2, "Software mouse");
 
 	/* Pattern text / Palette section - ACTIVE */
 	textOutShadow(video, bmp, 414, 3, PAL_FORGRND, PAL_DSKTOP2, "Pattern text");
@@ -646,10 +626,16 @@ static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, co
 	drawFramework(video, 110, 100, 99, 73, FRAMEWORK_TYPE1);   /* Video settings */
 	drawFramework(video, 209, 157, 199, 16, FRAMEWORK_TYPE1);  /* Original FT2 About */
 
-	/* Dir sorting - grayed out (not applicable for plugin) */
-	textOutShadow(video, bmp, 114, 3, PAL_DSKTOP2, PAL_DSKTOP2, "Dir. sorting pri.:");
-	textOutShadow(video, bmp, 130, 16, PAL_DSKTOP2, PAL_DSKTOP2, "Ext.");
-	textOutShadow(video, bmp, 130, 30, PAL_DSKTOP2, PAL_DSKTOP2, "Name");
+	/* Dir sorting priority - ACTIVE */
+	textOutShadow(video, bmp, 114, 3, PAL_FORGRND, PAL_DSKTOP2, "Dir. sorting pri.:");
+	textOutShadow(video, bmp, 130, 16, PAL_FORGRND, PAL_DSKTOP2, "Ext.");
+	textOutShadow(video, bmp, 130, 30, PAL_FORGRND, PAL_DSKTOP2, "Name");
+	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_FILESORT);
+	if (cfg->dirSortPriority == 0)
+		widgets->radioButtonState[RB_CONFIG_FILESORT_EXT] = RADIOBUTTON_CHECKED;
+	else
+		widgets->radioButtonState[RB_CONFIG_FILESORT_NAME] = RADIOBUTTON_CHECKED;
+	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_FILESORT);
 
 	/* Sample/Pattern cut to buffer - ACTIVE */
 	widgets->checkBoxChecked[CB_CONF_SAMPCUTBUF] = cfg->smpCutToBuffer;
@@ -665,8 +651,10 @@ static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, co
 	showCheckBox(widgets, video, bmp, CB_CONF_KILLNOTES);
 	textOutShadow(video, bmp, 228, 30, PAL_FORGRND, PAL_DSKTOP2, "Kill voices at music stop");
 
-	/* File-overwrite warning - grayed out */
-	textOutShadow(video, bmp, 228, 43, PAL_DSKTOP2, PAL_DSKTOP2, "File-overwrite warning");
+	/* File-overwrite warning - ACTIVE */
+	widgets->checkBoxChecked[CB_CONF_OVERWRITE_WARN] = cfg->overwriteWarning;
+	showCheckBox(widgets, video, bmp, CB_CONF_OVERWRITE_WARN);
+	textOutShadow(video, bmp, 228, 43, PAL_FORGRND, PAL_DSKTOP2, "File-overwrite warning");
 
 	/* Default directories - grayed out */
 	textOutShadow(video, bmp, 464, 3, PAL_DSKTOP2, PAL_DSKTOP2, "Default directories:");
@@ -682,21 +670,6 @@ static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, co
 	drawFramework(video, 485, 45, 145, 14, FRAMEWORK_TYPE2);
 	drawFramework(video, 485, 60, 145, 14, FRAMEWORK_TYPE2);
 	drawFramework(video, 485, 75, 145, 14, FRAMEWORK_TYPE2);
-
-	/* Window size - grayed out */
-	textOutShadow(video, bmp, 114, 46, PAL_DSKTOP2, PAL_DSKTOP2, "Window size:");
-	textOutShadow(video, bmp, 130, 59, PAL_DSKTOP2, PAL_DSKTOP2, "Auto fit");
-	textOutShadow(video, bmp, 130, 73, PAL_DSKTOP2, PAL_DSKTOP2, "1x");
-	textOutShadow(video, bmp, 172, 73, PAL_DSKTOP2, PAL_DSKTOP2, "3x");
-	textOutShadow(video, bmp, 130, 87, PAL_DSKTOP2, PAL_DSKTOP2, "2x");
-	textOutShadow(video, bmp, 172, 87, PAL_DSKTOP2, PAL_DSKTOP2, "4x");
-
-	/* Video settings - grayed out */
-	textOutShadow(video, bmp, 114, 103, PAL_DSKTOP2, PAL_DSKTOP2, "Video settings:");
-	textOutShadow(video, bmp, 130, 117, PAL_DSKTOP2, PAL_DSKTOP2, "VSync off");
-	textOutShadow(video, bmp, 130, 130, PAL_DSKTOP2, PAL_DSKTOP2, "Fullscreen");
-	textOutShadow(video, bmp, 130, 143, PAL_DSKTOP2, PAL_DSKTOP2, "Stretched");
-	textOutShadow(video, bmp, 130, 156, PAL_DSKTOP2, PAL_DSKTOP2, "Pixel filter");
 
 	/* Rec./Edit/Play section - ACTIVE */
 	textOutShadow(video, bmp, 213, 57, PAL_FORGRND, PAL_DSKTOP2, "Rec./Edit/Play:");
@@ -1004,6 +977,48 @@ void rbConfigMidiInput(ft2_instance_t *inst)
 	inst->config.currConfigScreen = CONFIG_SCREEN_MIDI_INPUT;
 	showConfigScreen(inst);
 	inst->uiState.needsFullRedraw = true;
+}
+
+/* ============ FILE SORTING CALLBACKS ============ */
+
+void rbFileSortExt(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	inst->config.dirSortPriority = 0;  /* Extension first */
+	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets != NULL)
+		checkRadioButtonNoRedraw(widgets, RB_CONFIG_FILESORT_EXT);
+	/* Request directory re-read to apply new sorting */
+	inst->diskop.requestReadDir = true;
+}
+
+void rbFileSortName(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	inst->config.dirSortPriority = 1;  /* Name only */
+	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets != NULL)
+		checkRadioButtonNoRedraw(widgets, RB_CONFIG_FILESORT_NAME);
+	/* Request directory re-read to apply new sorting */
+	inst->diskop.requestReadDir = true;
+}
+
+/* ============ FREQUENCY SLIDES CALLBACKS ============ */
+
+void rbConfigFreqSlidesAmiga(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	inst->audio.linearPeriodsFlag = false;
+}
+
+void rbConfigFreqSlidesLinear(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	inst->audio.linearPeriodsFlag = true;
 }
 
 /* ============ MIDI TRIGGER MODE CALLBACKS ============ */
@@ -1392,6 +1407,13 @@ void cbKillNotesAtStop(ft2_instance_t *inst)
 	if (inst == NULL)
 		return;
 	inst->config.killNotesOnStopPlay = !inst->config.killNotesOnStopPlay;
+}
+
+void cbFileOverwriteWarn(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	inst->config.overwriteWarning = !inst->config.overwriteWarning;
 }
 
 void cbMultiChanRec(ft2_instance_t *inst)
