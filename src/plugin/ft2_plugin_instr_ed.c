@@ -223,59 +223,100 @@ static void envelopePixel(ft2_video_t *video, int32_t envNum, int32_t x, int32_t
 		video->frameBuffer[(screenY * SCREEN_W) + x] = video->palette[paletteIndex];
 }
 
-/* Draw a line in the envelope area - safe implementation with bounds checking */
-static void envelopeLine(ft2_video_t *video, int32_t envNum, int32_t x1, int32_t y1, int32_t x2, int32_t y2, uint8_t paletteIndex)
+/* Draw a line in the envelope area - exact match to standalone envelopeLine() */
+static void envelopeLine(ft2_video_t *video, int32_t envNum, int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint8_t pal)
 {
 	if (video == NULL || video->frameBuffer == NULL)
 		return;
 
-	/* Clamp coordinates like standalone */
+	/* Clamp coordinates - exact match to standalone */
 	if (y1 < 0) y1 = 0; if (y1 > 66) y1 = 66;
 	if (y2 < 0) y2 = 0; if (y2 > 66) y2 = 66;
 	if (x1 < 0) x1 = 0; if (x1 > 335) x1 = 335;
 	if (x2 < 0) x2 = 0; if (x2 > 335) x2 = 335;
 
-	int32_t baseY = (envNum == 0) ? VOL_ENV_Y : PAN_ENV_Y;
-	y1 += baseY;
-	y2 += baseY;
-	
-	/* Get palette colors for skip check */
+	if (envNum == 0) /* volume envelope */
+	{
+		y1 += 189;
+		y2 += 189;
+	}
+	else /* panning envelope */
+	{
+		y1 += 276;
+		y2 += 276;
+	}
+
+	const int16_t dx = x2 - x1;
+	const uint16_t ax = (dx < 0 ? -dx : dx) << 1;
+	const int16_t sx = (dx > 0) ? 1 : ((dx < 0) ? -1 : 0);
+	const int16_t dy = y2 - y1;
+	const uint16_t ay = (dy < 0 ? -dy : dy) << 1;
+	const int16_t sy = (dy > 0) ? 1 : ((dy < 0) ? -1 : 0);
+	int16_t x = x1;
+	int16_t y = y1;
+
 	const uint32_t pal1 = video->palette[PAL_BLCKMRK];
 	const uint32_t pal2 = video->palette[PAL_BLCKTXT];
-	const uint32_t pixVal = video->palette[paletteIndex];
+	const uint32_t pixVal = video->palette[pal];
+	const int32_t pitch = sy * SCREEN_W;
 
-	/* Bresenham's line algorithm with safe pixel access */
-	int32_t dx = (x2 > x1) ? (x2 - x1) : (x1 - x2);
-	int32_t dy = (y2 > y1) ? (y2 - y1) : (y1 - y2);
-	int32_t sx = (x1 < x2) ? 1 : -1;
-	int32_t sy = (y1 < y2) ? 1 : -1;
-	int32_t err = dx - dy;
-	int32_t x = x1;
-	int32_t y = y1;
+	uint32_t *dst32 = &video->frameBuffer[(y * SCREEN_W) + x];
 
-	while (true)
+	/* Draw line - exact match to standalone Bresenham implementation */
+	if (ax > ay)
 	{
-		/* Safe pixel access with bounds check and color skip */
-		if (x >= 0 && x < SCREEN_W && y >= 0 && y < SCREEN_H)
+		int16_t d = ay - (ax >> 1);
+		while (true)
 		{
-			uint32_t *dst = &video->frameBuffer[(y * SCREEN_W) + x];
-			if (*dst != pal1 && *dst != pal2)
-				*dst = pixVal;
-		}
+			/* Invert certain colors - exact match to standalone */
+			if (*dst32 != pal2)
+			{
+				if (*dst32 == pal1)
+					*dst32 = pal2;
+				else
+					*dst32 = pixVal;
+			}
 
-		if (x == x2 && y == y2)
-			break;
+			if (x == x2)
+				break;
 
-		int32_t e2 = 2 * err;
-		if (e2 > -dy)
-		{
-			err -= dy;
+			if (d >= 0)
+			{
+				d -= ax;
+				dst32 += pitch;
+			}
+
 			x += sx;
+			d += ay;
+			dst32 += sx;
 		}
-		if (e2 < dx)
+	}
+	else
+	{
+		int16_t d = ax - (ay >> 1);
+		while (true)
 		{
-			err += dx;
+			/* Invert certain colors - exact match to standalone */
+			if (*dst32 != pal2)
+			{
+				if (*dst32 == pal1)
+					*dst32 = pal2;
+				else
+					*dst32 = pixVal;
+			}
+
+			if (y == y2)
+				break;
+
+			if (d >= 0)
+			{
+				d -= ay;
+				dst32 += sx;
+			}
+
 			y += sy;
+			d += ax;
+			dst32 += pitch;
 		}
 	}
 }
@@ -345,10 +386,13 @@ static void writePianoNumber(ft2_instrument_editor_t *ed, const ft2_bmp_t *bmp, 
 	if (ed == NULL || ed->video == NULL || ed->instance == NULL)
 		return;
 
+	ft2_instance_t *inst = ed->instance;
+	int16_t curInstr = inst->editor.curInstr;
+
 	uint8_t number = 0;
-	if (ed->currInstr > 0 && ed->currInstr < 128)
+	if (curInstr > 0 && curInstr < 128)
 	{
-		ft2_instr_t *ins = ed->instance->replayer.instr[ed->currInstr];
+		ft2_instr_t *ins = inst->replayer.instr[curInstr];
 		if (ins != NULL)
 			number = ins->note2SampleLUT[note];
 	}
@@ -478,10 +522,6 @@ void ft2_instr_ed_init(ft2_instrument_editor_t *editor, ft2_video_t *video)
 	memset(editor, 0, sizeof(ft2_instrument_editor_t));
 	editor->video = video;
 	editor->instance = NULL;
-	editor->currInstr = 1;
-	editor->currSmp = 0;
-	editor->currVolEnvPoint = 0;
-	editor->currPanEnvPoint = 0;
 	editor->draggingVolEnv = false;
 	editor->draggingPanEnv = false;
 	memset(editor->pianoKeyStatus, 0, sizeof(editor->pianoKeyStatus));
@@ -494,14 +534,6 @@ void ft2_instr_ed_set_instance(ft2_instrument_editor_t *editor, ft2_instance_t *
 	editor->instance = inst;
 }
 
-void ft2_instr_ed_set_instr(ft2_instrument_editor_t *editor, int instr)
-{
-	if (editor == NULL)
-		return;
-	editor->currInstr = (int16_t)instr;
-	editor->currVolEnvPoint = 0;
-	editor->currPanEnvPoint = 0;
-}
 
 /* Draw 3x3 envelope point dot - exact match to standalone envelopeDot() */
 static void envelopeDot(ft2_video_t *video, int32_t envNum, int32_t x, int32_t y)
@@ -577,18 +609,19 @@ void ft2_instr_ed_draw_envelope(ft2_instrument_editor_t *ed, int envNum)
 	if (envNum == 1)
 		envelopeLine(video, envNum, 8, 33, 332, 33, PAL_BLCKMRK);
 
-	/* Get instrument */
-	if (ed->currInstr <= 0 || ed->currInstr >= 128)
+	/* Get instrument from instance editor state */
+	int16_t curInstr = inst->editor.curInstr;
+	if (curInstr <= 0 || curInstr >= 128)
 		return;
 
-	ft2_instr_t *ins = inst->replayer.instr[ed->currInstr];
+	ft2_instr_t *ins = inst->replayer.instr[curInstr];
 	if (ins == NULL)
 		return;
 
 	/* Collect variables - exact match to standalone */
 	int16_t nd, sp, ls, le;
 	int16_t (*curEnvP)[2];
-	uint8_t selected;
+	int8_t selected;
 
 	if (envNum == 0) /* Volume envelope */
 	{
@@ -605,7 +638,9 @@ void ft2_instr_ed_draw_envelope(ft2_instrument_editor_t *ed, int envNum)
 			le = -1;
 		}
 		curEnvP = ins->volEnvPoints;
-		selected = ed->currVolEnvPoint;
+		selected = inst->editor.currVolEnvPoint;
+		if (selected < 0) selected = 0;
+		if (selected >= 12) selected = 11;
 	}
 	else /* Panning envelope */
 	{
@@ -622,7 +657,9 @@ void ft2_instr_ed_draw_envelope(ft2_instrument_editor_t *ed, int envNum)
 			le = -1;
 		}
 		curEnvP = ins->panEnvPoints;
-		selected = ed->currPanEnvPoint;
+		selected = inst->editor.currPanEnvPoint;
+		if (selected < 0) selected = 0;
+		if (selected >= 12) selected = 11;
 	}
 
 	if (nd > 12)
@@ -709,6 +746,8 @@ void ft2_instr_ed_draw_note_map(ft2_instrument_editor_t *ed, const ft2_bmp_t *bm
 	if (ed == NULL || ed->video == NULL || ed->instance == NULL)
 		return;
 
+	ft2_instance_t *inst = ed->instance;
+
 	/* Note-to-sample map is shown in the right side of the instrument editor */
 	/* For now, just draw a placeholder */
 	ft2_video_t *video = ed->video;
@@ -719,10 +758,11 @@ void ft2_instr_ed_draw_note_map(ft2_instrument_editor_t *ed, const ft2_bmp_t *bm
 		textOutShadow(video, bmp, 404, 193, PAL_FORGRND, PAL_DSKTOP2, "Note-Sample Map");
 
 	/* Get instrument */
-	if (ed->currInstr <= 0 || ed->currInstr >= 128)
+	int16_t curInstr = inst->editor.curInstr;
+	if (curInstr <= 0 || curInstr >= 128)
 		return;
 
-	ft2_instr_t *ins = ed->instance->replayer.instr[ed->currInstr];
+	ft2_instr_t *ins = inst->replayer.instr[curInstr];
 	if (ins == NULL)
 		return;
 
@@ -765,18 +805,20 @@ void updateInstEditor(ft2_instrument_editor_t *editor, const ft2_bmp_t *bmp)
 	if (widgets == NULL)
 		return;
 
-	/* Get current instrument and sample */
+	/* Get current instrument and sample from instance editor state */
 	ft2_instr_t *ins = NULL;
 	ft2_sample_t *s = NULL;
+	int16_t curInstr = inst->editor.curInstr;
+	int16_t curSmp = inst->editor.curSmp;
 
-	if (editor->currInstr > 0 && editor->currInstr < 128)
+	if (curInstr > 0 && curInstr < 128)
 	{
-		ins = inst->replayer.instr[editor->currInstr];
+		ins = inst->replayer.instr[curInstr];
 	}
 
-	if (ins != NULL && editor->currSmp >= 0 && editor->currSmp < FT2_MAX_SMP_PER_INST)
+	if (ins != NULL && curSmp >= 0 && curSmp < FT2_MAX_SMP_PER_INST)
 	{
-		s = &ins->smp[editor->currSmp];
+		s = &ins->smp[curSmp];
 	}
 
 	/* Draw Volume (hex at 505, 177) */
@@ -1006,19 +1048,17 @@ void ft2_instr_ed_draw(ft2_instrument_editor_t *editor, const ft2_bmp_t *bmp)
 
 	ft2_video_t *video = editor->video;
 	ft2_instance_t *inst = editor->instance;
+	if (inst == NULL)
+		return;
 
-	/* Sync with global current instrument and sample */
-	if (inst != NULL)
+	/* Read current instrument/sample from instance editor state */
+	int16_t curInstr = inst->editor.curInstr;
+
+	/* Allocate instrument if needed (user selected an empty slot) */
+	if (curInstr > 0 && curInstr <= 128)
 	{
-		editor->currInstr = inst->editor.curInstr;
-		editor->currSmp = inst->editor.curSmp;
-
-		/* Allocate instrument if needed (user selected an empty slot) */
-		if (editor->currInstr > 0 && editor->currInstr <= 128)
-		{
-			if (inst->replayer.instr[editor->currInstr] == NULL)
-				ft2_instance_alloc_instr(inst, editor->currInstr);
-		}
+		if (inst->replayer.instr[curInstr] == NULL)
+			ft2_instance_alloc_instr(inst, curInstr);
 	}
 
 	/* Draw frameworks - exact match to standalone showInstEditor() */
@@ -1077,22 +1117,35 @@ void ft2_instr_ed_draw(ft2_instrument_editor_t *editor, const ft2_bmp_t *bmp)
 	/* Draw envelope coordinates (tick/value display) */
 	{
 		ft2_instr_t *ins = NULL;
-		if (editor->currInstr > 0 && editor->currInstr < 128)
-			ins = editor->instance->replayer.instr[editor->currInstr];
+		if (curInstr > 0 && curInstr < 128)
+			ins = inst->replayer.instr[curInstr];
 
 		int16_t volTick = 0, volVal = 0;
 		int16_t panTick = 0, panVal = 32;
 
+		int8_t currVolEnvPoint = inst->editor.currVolEnvPoint;
+		int8_t currPanEnvPoint = inst->editor.currPanEnvPoint;
+
+		/* Bounds check envelope point indices */
+		if (currVolEnvPoint < 0) currVolEnvPoint = 0;
+		if (currVolEnvPoint >= 12) currVolEnvPoint = 11;
+		if (currPanEnvPoint < 0) currPanEnvPoint = 0;
+		if (currPanEnvPoint >= 12) currPanEnvPoint = 11;
+
 		if (ins != NULL && ins->volEnvLength > 0)
-			{
-			volTick = ins->volEnvPoints[editor->currVolEnvPoint][0];
-			volVal = ins->volEnvPoints[editor->currVolEnvPoint][1];
+		{
+			if (currVolEnvPoint >= ins->volEnvLength)
+				currVolEnvPoint = ins->volEnvLength - 1;
+			volTick = ins->volEnvPoints[currVolEnvPoint][0];
+			volVal = ins->volEnvPoints[currVolEnvPoint][1];
 		}
 
 		if (ins != NULL && ins->panEnvLength > 0)
 		{
-			panTick = ins->panEnvPoints[editor->currPanEnvPoint][0];
-			panVal = ins->panEnvPoints[editor->currPanEnvPoint][1];
+			if (currPanEnvPoint >= ins->panEnvLength)
+				currPanEnvPoint = ins->panEnvLength - 1;
+			panTick = ins->panEnvPoints[currPanEnvPoint][0];
+			panVal = ins->panEnvPoints[currPanEnvPoint][1];
 		}
 
 		drawVolEnvCoords(video, bmp, volTick, volVal);
@@ -1118,7 +1171,7 @@ void ft2_instr_ed_mouse_click(ft2_instrument_editor_t *editor, int x, int y, int
 	if (y >= VOL_ENV_Y && y <= VOL_ENV_Y + ENV_HEIGHT && x >= 7 && x <= 334)
 	{
 		ft2_instance_t *inst = editor->instance;
-		if (inst == NULL || editor->currInstr == 0)
+		if (inst == NULL || inst->editor.curInstr == 0)
 			return;
 		
 		ft2_instr_t *ins = getInstrForInst(inst);
@@ -1136,11 +1189,11 @@ void ft2_instr_ed_mouse_click(ft2_instrument_editor_t *editor, int x, int y, int
 			const int32_t py = VOL_ENV_Y + 1 + (64 - ins->volEnvPoints[i][1]);
 			
 			if (x >= px - 2 && x <= px + 2 && y >= py - 2 && y <= py + 2)
-	{
-				editor->currVolEnvPoint = i;
+			{
+				inst->editor.currVolEnvPoint = i;
 				editor->saveMouseX = 8 + (editor->lastMouseX - px);
 				editor->saveMouseY = (VOL_ENV_Y + 1) + (editor->lastMouseY - py);
-		editor->draggingVolEnv = true;
+				editor->draggingVolEnv = true;
 				inst->uiState.updateInstEditor = true;
 				return;
 			}
@@ -1152,7 +1205,7 @@ void ft2_instr_ed_mouse_click(ft2_instrument_editor_t *editor, int x, int y, int
 	if (y >= PAN_ENV_Y && y <= PAN_ENV_Y + ENV_HEIGHT && x >= 7 && x <= 334)
 	{
 		ft2_instance_t *inst = editor->instance;
-		if (inst == NULL || editor->currInstr == 0)
+		if (inst == NULL || inst->editor.curInstr == 0)
 			return;
 		
 		ft2_instr_t *ins = getInstrForInst(inst);
@@ -1170,11 +1223,11 @@ void ft2_instr_ed_mouse_click(ft2_instrument_editor_t *editor, int x, int y, int
 			const int32_t py = PAN_ENV_Y + 1 + (63 - ins->panEnvPoints[i][1]);
 			
 			if (x >= px - 2 && x <= px + 2 && y >= py - 2 && y <= py + 2)
-	{
-				editor->currPanEnvPoint = i;
+			{
+				inst->editor.currPanEnvPoint = i;
 				editor->saveMouseX = editor->lastMouseX - px + 8;
 				editor->saveMouseY = editor->lastMouseY - py + (PAN_ENV_Y + 1);
-		editor->draggingPanEnv = true;
+				editor->draggingPanEnv = true;
 				inst->uiState.updateInstEditor = true;
 				return;
 			}
@@ -1186,7 +1239,7 @@ void ft2_instr_ed_mouse_click(ft2_instrument_editor_t *editor, int x, int y, int
 	if (y >= PIANO_Y && y < PIANO_Y + PIANOKEY_WHITE_H && x >= PIANO_X && x < PIANO_X + (77 * PIANO_OCTAVES))
 	{
 		ft2_instance_t *inst = editor->instance;
-		if (inst == NULL || editor->currInstr == 0)
+		if (inst == NULL || inst->editor.curInstr == 0)
 			return;
 		
 		ft2_instr_t *ins = getInstrForInst(inst);
@@ -1241,7 +1294,7 @@ void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y)
 	if (editor->draggingPiano)
 	{
 		ft2_instance_t *inst = editor->instance;
-		if (inst == NULL || editor->currInstr == 0)
+		if (inst == NULL || inst->editor.curInstr == 0)
 			return;
 		
 		ft2_instr_t *ins = getInstrForInst(inst);
@@ -1286,7 +1339,7 @@ void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y)
 	if (editor->draggingVolEnv)
 	{
 		ft2_instance_t *inst = editor->instance;
-		if (inst == NULL || editor->currInstr == 0)
+		if (inst == NULL || inst->editor.curInstr == 0)
 			return;
 		
 		ft2_instr_t *ins = getInstrForInst(inst);
@@ -1301,26 +1354,30 @@ void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y)
 		int32_t my = y;
 		
 		/* Handle X movement - constrain between adjacent points */
+		int8_t currVolEnvPoint = inst->editor.currVolEnvPoint;
+		if (currVolEnvPoint < 0) currVolEnvPoint = 0;
+		if (currVolEnvPoint >= 12) currVolEnvPoint = 11;
+
 		if (mx != editor->lastMouseX)
 		{
 			editor->lastMouseX = mx;
 			
-			if (ant > 1 && editor->currVolEnvPoint > 0)
+			if (ant > 1 && currVolEnvPoint > 0)
 			{
 				mx -= editor->saveMouseX;
 				if (mx < 0) mx = 0;
 				if (mx > 324) mx = 324;
 				
 				int32_t minX, maxX;
-				if (editor->currVolEnvPoint == ant - 1)
+				if (currVolEnvPoint == ant - 1)
 				{
-					minX = ins->volEnvPoints[editor->currVolEnvPoint - 1][0] + 1;
+					minX = ins->volEnvPoints[currVolEnvPoint - 1][0] + 1;
 					maxX = 324;
 				}
 				else
 				{
-					minX = ins->volEnvPoints[editor->currVolEnvPoint - 1][0] + 1;
-					maxX = ins->volEnvPoints[editor->currVolEnvPoint + 1][0] - 1;
+					minX = ins->volEnvPoints[currVolEnvPoint - 1][0] + 1;
+					maxX = ins->volEnvPoints[currVolEnvPoint + 1][0] - 1;
 				}
 				
 				if (minX < 0) minX = 0;
@@ -1331,7 +1388,7 @@ void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y)
 				if (mx < minX) mx = minX;
 				if (mx > maxX) mx = maxX;
 				
-				ins->volEnvPoints[editor->currVolEnvPoint][0] = (int16_t)mx;
+				ins->volEnvPoints[currVolEnvPoint][0] = (int16_t)mx;
 				inst->uiState.updateInstEditor = true;
 			}
 		}
@@ -1346,7 +1403,7 @@ void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y)
 			if (my > 64) my = 64;
 			my = 64 - my;
 			
-			ins->volEnvPoints[editor->currVolEnvPoint][1] = (int16_t)my;
+			ins->volEnvPoints[currVolEnvPoint][1] = (int16_t)my;
 			inst->uiState.updateInstEditor = true;
 		}
 		return;
@@ -1356,7 +1413,7 @@ void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y)
 	if (editor->draggingPanEnv)
 	{
 		ft2_instance_t *inst = editor->instance;
-		if (inst == NULL || editor->currInstr == 0)
+		if (inst == NULL || inst->editor.curInstr == 0)
 			return;
 		
 		ft2_instr_t *ins = getInstrForInst(inst);
@@ -1371,26 +1428,30 @@ void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y)
 		int32_t my = y;
 		
 		/* Handle X movement - constrain between adjacent points */
+		int8_t currPanEnvPoint = inst->editor.currPanEnvPoint;
+		if (currPanEnvPoint < 0) currPanEnvPoint = 0;
+		if (currPanEnvPoint >= 12) currPanEnvPoint = 11;
+
 		if (mx != editor->lastMouseX)
 		{
 			editor->lastMouseX = mx;
 			
-			if (ant > 1 && editor->currPanEnvPoint > 0)
+			if (ant > 1 && currPanEnvPoint > 0)
 			{
 				mx -= editor->saveMouseX;
 				if (mx < 0) mx = 0;
 				if (mx > 324) mx = 324;
 				
 				int32_t minX, maxX;
-				if (editor->currPanEnvPoint == ant - 1)
+				if (currPanEnvPoint == ant - 1)
 				{
-					minX = ins->panEnvPoints[editor->currPanEnvPoint - 1][0] + 1;
+					minX = ins->panEnvPoints[currPanEnvPoint - 1][0] + 1;
 					maxX = 324;
 				}
 				else
 				{
-					minX = ins->panEnvPoints[editor->currPanEnvPoint - 1][0] + 1;
-					maxX = ins->panEnvPoints[editor->currPanEnvPoint + 1][0] - 1;
+					minX = ins->panEnvPoints[currPanEnvPoint - 1][0] + 1;
+					maxX = ins->panEnvPoints[currPanEnvPoint + 1][0] - 1;
 				}
 				
 				if (minX < 0) minX = 0;
@@ -1401,7 +1462,7 @@ void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y)
 				if (mx < minX) mx = minX;
 				if (mx > maxX) mx = maxX;
 				
-				ins->panEnvPoints[editor->currPanEnvPoint][0] = (int16_t)mx;
+				ins->panEnvPoints[currPanEnvPoint][0] = (int16_t)mx;
 				inst->uiState.updateInstEditor = true;
 			}
 		}
@@ -1416,7 +1477,7 @@ void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y)
 			if (my > 63) my = 63;
 			my = 63 - my;
 			
-			ins->panEnvPoints[editor->currPanEnvPoint][1] = (int16_t)my;
+			ins->panEnvPoints[currPanEnvPoint][1] = (int16_t)my;
 			inst->uiState.updateInstEditor = true;
 		}
 		return;
@@ -1438,10 +1499,13 @@ static ft2_instr_t *getCurrentInstr(ft2_instrument_editor_t *editor)
 	if (editor == NULL || editor->instance == NULL)
 		return NULL;
 	
-	if (editor->currInstr <= 0 || editor->currInstr >= 128)
+	ft2_instance_t *inst = editor->instance;
+	int16_t curInstr = inst->editor.curInstr;
+	
+	if (curInstr <= 0 || curInstr >= 128)
 		return NULL;
 	
-	return editor->instance->replayer.instr[editor->currInstr];
+	return inst->replayer.instr[curInstr];
 }
 
 void ft2_instr_ed_add_env_point(ft2_instrument_editor_t *editor, bool volEnv)

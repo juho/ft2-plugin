@@ -2,7 +2,8 @@
 
 ## 1.0.20 (Jan 2, 2026)
 
-- Fix: Plugin state serialization is now forward-compatible (won't destroy song between versions). 
+- Fix: Plugin state serialization is now forward-compatible (won't destroy song between versions).
+- Fix: Regressions in instrument editor.
 
 ## 1.0.19 (Jan 1, 2026)
 

@@ -7,6 +7,12 @@ assignees: ''
 
 ---
 
+**Plugin version**
+What version of the plugin are you using? (Look at the About screen if unsure)
+
+**Have you tried updating to the latest version, if you aren't on it?**
+Please try this first if applicable.
+
 **Describe the bug**
 A clear and concise description of what the bug is.
 

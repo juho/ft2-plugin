@@ -44,12 +44,7 @@ typedef struct ft2_instrument_editor_t
 	struct ft2_video_t *video;
 	struct ft2_instance_t *instance;
 	
-	int16_t currInstr;
-	int16_t currSmp;    /* Current sample index (0-15) within instrument */
-	
-	/* Envelope editing state */
-	int8_t currVolEnvPoint;
-	int8_t currPanEnvPoint;
+	/* Envelope dragging state (UI-specific, not in inst->editor) */
 	bool draggingVolEnv;
 	bool draggingPanEnv;
 	int32_t saveMouseX;   /* Offset from point center for precise dragging */
@@ -66,7 +61,6 @@ typedef struct ft2_instrument_editor_t
 
 void ft2_instr_ed_init(ft2_instrument_editor_t *editor, struct ft2_video_t *video);
 void ft2_instr_ed_set_instance(ft2_instrument_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_instr_ed_set_instr(ft2_instrument_editor_t *editor, int instr);
 void ft2_instr_ed_set_current(ft2_instrument_editor_t *editor);
 ft2_instrument_editor_t *ft2_instr_ed_get_current(void);
 void ft2_instr_ed_draw(ft2_instrument_editor_t *editor, const struct ft2_bmp_t *bmp);
