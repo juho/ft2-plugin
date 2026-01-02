@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.20 (Jan 2, 2026)
+
+- Fix: Plugin state serialization is now forward-compatible (won't destroy song between versions). 
+
 ## 1.0.19 (Jan 1, 2026)
 
 - Fix: Hook up directory sorting priority buttons in config.

@@ -393,11 +393,13 @@ void FT2PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
     if (instance == nullptr)
         return;
     
-    uint32_t version = 1;
+    uint32_t version = 2;
     destData.append(&version, sizeof(version));
     
-    // Config
-    destData.append(&instance->config, sizeof(ft2_plugin_config_t));
+    // Config - store size for forward compatibility
+    uint32_t configSize = sizeof(ft2_plugin_config_t);
+    destData.append(&configSize, sizeof(configSize));
+    destData.append(&instance->config, configSize);
     
     // Editor state
     destData.append(&instance->editor.curInstr, 1);
@@ -430,47 +432,107 @@ void FT2PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
     if (instance == nullptr || data == nullptr || sizeInBytes < 4)
         return;
     
-    const uint8_t* ptr = static_cast<const uint8_t*>(data);
+    const uint8_t* basePtr = static_cast<const uint8_t*>(data);
+    const uint8_t* ptr = basePtr;
     uint32_t version;
     memcpy(&version, ptr, sizeof(version));
     ptr += sizeof(version);
     int remaining = sizeInBytes - static_cast<int>(sizeof(version));
     
-    if (version != 1)
-        return;
+    uint8_t curInstr = 1, curSmp = 0, editPattern = 0, curOctave = 4;
+    int16_t songPos = 0;
+    const uint8_t* modulePtr = nullptr;
+    uint32_t moduleSize = 0;
     
-    // Config
-    if (remaining < static_cast<int>(sizeof(ft2_plugin_config_t)))
-        return;
-    memcpy(&instance->config, ptr, sizeof(ft2_plugin_config_t));
-    ft2_config_apply(instance, &instance->config);
-    ptr += sizeof(ft2_plugin_config_t);
-    remaining -= static_cast<int>(sizeof(ft2_plugin_config_t));
-    
-    // Editor state (6 bytes)
-    if (remaining < 6)
-        return;
-    uint8_t curInstr = *ptr++;
-    uint8_t curSmp = *ptr++;
-    uint8_t editPattern = *ptr++;
-    uint8_t curOctave = *ptr++;
-    int16_t songPos;
-    memcpy(&songPos, ptr, sizeof(songPos));
-    ptr += sizeof(songPos);
-    remaining -= 6;
-    
-    // Module size
-    if (remaining < 4)
-        return;
-    uint32_t moduleSize;
-    memcpy(&moduleSize, ptr, sizeof(moduleSize));
-    ptr += sizeof(moduleSize);
-    remaining -= static_cast<int>(sizeof(moduleSize));
-    
-    // Module data
-    if (moduleSize > 0 && remaining >= static_cast<int>(moduleSize))
+    if (version == 1)
     {
-        ft2_load_module(instance, ptr, moduleSize);
+        // Version 1: Config size not stored, struct size may have changed
+        // Scan for XM signature to find module data
+        static const char xmSig[] = "Extended Module: ";
+        const int sigLen = 17;
+        
+        for (int i = 0; i <= sizeInBytes - sigLen; i++)
+        {
+            if (memcmp(basePtr + i, xmSig, sigLen) == 0)
+            {
+                // Found XM signature - work backwards to get module size
+                // Module size is stored 4 bytes before the module data
+                if (i >= 4)
+                {
+                    memcpy(&moduleSize, basePtr + i - 4, sizeof(moduleSize));
+                    // Validate: moduleSize should match remaining data
+                    int expectedEnd = i + static_cast<int>(moduleSize);
+                    if (expectedEnd <= sizeInBytes && moduleSize > 0)
+                    {
+                        modulePtr = basePtr + i;
+                        // Try to get editor state (6 bytes before module size)
+                        if (i >= 10)
+                        {
+                            const uint8_t* edPtr = basePtr + i - 10;
+                            curInstr = edPtr[0];
+                            curSmp = edPtr[1];
+                            editPattern = edPtr[2];
+                            curOctave = edPtr[3];
+                            memcpy(&songPos, edPtr + 4, sizeof(songPos));
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        // Config uses defaults for v1 (already initialized in instance)
+    }
+    else if (version == 2)
+    {
+        // Version 2: Config size is stored
+        if (remaining < 4)
+            return;
+        uint32_t savedConfigSize;
+        memcpy(&savedConfigSize, ptr, sizeof(savedConfigSize));
+        ptr += sizeof(savedConfigSize);
+        remaining -= 4;
+        
+        if (remaining < static_cast<int>(savedConfigSize))
+            return;
+        
+        // Read only what we can handle, leave new fields at defaults
+        uint32_t copySize = std::min(savedConfigSize, static_cast<uint32_t>(sizeof(ft2_plugin_config_t)));
+        memcpy(&instance->config, ptr, copySize);
+        ft2_config_apply(instance, &instance->config);
+        ptr += savedConfigSize;  // Skip full saved size
+        remaining -= static_cast<int>(savedConfigSize);
+        
+        // Editor state (6 bytes)
+        if (remaining < 6)
+            return;
+        curInstr = *ptr++;
+        curSmp = *ptr++;
+        editPattern = *ptr++;
+        curOctave = *ptr++;
+        memcpy(&songPos, ptr, sizeof(songPos));
+        ptr += sizeof(songPos);
+        remaining -= 6;
+        
+        // Module size
+        if (remaining < 4)
+            return;
+        memcpy(&moduleSize, ptr, sizeof(moduleSize));
+        ptr += sizeof(moduleSize);
+        remaining -= 4;
+        
+        if (moduleSize > 0 && remaining >= static_cast<int>(moduleSize))
+            modulePtr = ptr;
+    }
+    else
+    {
+        // Unknown version
+        return;
+    }
+    
+    // Load module if found
+    if (modulePtr != nullptr && moduleSize > 0)
+    {
+        ft2_load_module(instance, modulePtr, moduleSize);
         
         // Restore editor state
         instance->editor.curInstr = curInstr;
