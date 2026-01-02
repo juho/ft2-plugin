@@ -304,38 +304,7 @@ void pbDiskOpListDown(struct ft2_instance_t *inst);
 /* ========== SCROLLBAR CALLBACKS ========== */
 void sbPosEd(struct ft2_instance_t *inst, uint32_t pos);
 void sbSampleList(struct ft2_instance_t *inst, uint32_t pos);
-void sbInstVol(struct ft2_instance_t *inst, uint32_t pos);
-void sbInstPan(struct ft2_instance_t *inst, uint32_t pos);
-void sbInstFtune(struct ft2_instance_t *inst, uint32_t pos);
-void sbInstFadeout(struct ft2_instance_t *inst, uint32_t pos);
-void sbInstVibSpeed(struct ft2_instance_t *inst, uint32_t pos);
-void sbInstVibDepth(struct ft2_instance_t *inst, uint32_t pos);
-void sbInstVibSweep(struct ft2_instance_t *inst, uint32_t pos);
-void sbInstExtMidiCh(struct ft2_instance_t *inst, uint32_t pos);
-void sbInstExtMidiPrg(struct ft2_instance_t *inst, uint32_t pos);
-void sbInstExtMidiBend(struct ft2_instance_t *inst, uint32_t pos);
 void sbSampScroll(struct ft2_instance_t *inst, uint32_t pos);
-
-/* ========== CHECKBOX CALLBACKS ========== */
-void cbInstVEnv(struct ft2_instance_t *inst);
-void cbInstVEnvSus(struct ft2_instance_t *inst);
-void cbInstVEnvLoop(struct ft2_instance_t *inst);
-void cbInstPEnv(struct ft2_instance_t *inst);
-void cbInstPEnvSus(struct ft2_instance_t *inst);
-void cbInstPEnvLoop(struct ft2_instance_t *inst);
-void cbInstExtMidi(struct ft2_instance_t *inst);
-void cbInstExtMute(struct ft2_instance_t *inst);
-
-/* ========== RADIO BUTTON CALLBACKS ========== */
-void rbInstWaveSine(struct ft2_instance_t *inst);
-void rbInstWaveSquare(struct ft2_instance_t *inst);
-void rbInstWaveRampDown(struct ft2_instance_t *inst);
-void rbInstWaveRampUp(struct ft2_instance_t *inst);
-void rbSampNoLoop(struct ft2_instance_t *inst);
-void rbSampForwardLoop(struct ft2_instance_t *inst);
-void rbSampPingPongLoop(struct ft2_instance_t *inst);
-void rbSamp8Bit(struct ft2_instance_t *inst);
-void rbSamp16Bit(struct ft2_instance_t *inst);
 
 #ifdef __cplusplus
 }

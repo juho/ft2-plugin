@@ -106,8 +106,9 @@ void ft2_widgets_mouse_down(ft2_widgets_t *widgets, struct ft2_instance_t *inst,
  * @param widgets Widget state container
  * @param x Mouse X coordinate
  * @param y Mouse Y coordinate
+ * @param inst FT2 instance for callbacks
  */
-void ft2_widgets_mouse_down_right(ft2_widgets_t *widgets, int x, int y);
+void ft2_widgets_mouse_down_right(ft2_widgets_t *widgets, int x, int y, struct ft2_instance_t *inst);
 
 /**
  * Handle left mouse button release.
@@ -127,8 +128,11 @@ void ft2_widgets_mouse_up(ft2_widgets_t *widgets, int x, int y, struct ft2_insta
  * @param x Mouse X coordinate
  * @param y Mouse Y coordinate
  * @param inst FT2 instance for callbacks
+ * @param video Video context for redrawing
+ * @param bmp Bitmap assets for redrawing
  */
-void ft2_widgets_mouse_up_right(ft2_widgets_t *widgets, int x, int y, struct ft2_instance_t *inst);
+void ft2_widgets_mouse_up_right(ft2_widgets_t *widgets, int x, int y, struct ft2_instance_t *inst,
+	struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 
 /**
  * Handle mouse movement.

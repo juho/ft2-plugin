@@ -559,7 +559,10 @@ void ft2_ui_mouse_press(ft2_ui_t *ui, void *inst, int x, int y, bool leftButton,
 	}
 
 	/* Try widgets (normal mode) */
-	ft2_widgets_mouse_down(&ui->widgets, ft2inst, &ui->video, x, y, false);
+	if (rightButton)
+		ft2_widgets_mouse_down_right(&ui->widgets, x, y, ft2inst);
+	else
+		ft2_widgets_mouse_down(&ui->widgets, ft2inst, &ui->video, x, y, false);
 	
 	/* If a widget was hit, don't process other areas */
 	if (getLastUsedWidget() != -1)
@@ -658,7 +661,10 @@ void ft2_ui_mouse_release(ft2_ui_t *ui, void *inst, int x, int y, int button)
 	ui->input.mouseDragging = false;
 	ui->input.pattMarkDragging = false;
 	
-	ft2_widgets_mouse_up(&ui->widgets, x, y, ft2inst, &ui->video, bmp);
+	if (button == MOUSE_BUTTON_RIGHT)
+		ft2_widgets_mouse_up_right(&ui->widgets, x, y, ft2inst, &ui->video, bmp);
+	else
+		ft2_widgets_mouse_up(&ui->widgets, x, y, ft2inst, &ui->video, bmp);
 
 	/* Handle sample editor mouse up */
 	if (ft2inst != NULL && ft2inst->uiState.sampleEditorShown)

@@ -76,18 +76,6 @@ void ft2_instr_ed_mouse_click(ft2_instrument_editor_t *editor, int x, int y, int
 void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y);
 void ft2_instr_ed_mouse_up(ft2_instrument_editor_t *editor);
 
-/* Envelope editing */
-void ft2_instr_ed_add_env_point(ft2_instrument_editor_t *editor, bool volEnv);
-void ft2_instr_ed_del_env_point(ft2_instrument_editor_t *editor, bool volEnv);
-void ft2_instr_ed_set_sustain(ft2_instrument_editor_t *editor, bool volEnv, int point);
-void ft2_instr_ed_set_loop_start(ft2_instrument_editor_t *editor, bool volEnv, int point);
-void ft2_instr_ed_set_loop_end(ft2_instrument_editor_t *editor, bool volEnv, int point);
-
-/* Instrument operations */
-void ft2_instr_ed_copy(ft2_instrument_editor_t *editor);
-void ft2_instr_ed_paste(ft2_instrument_editor_t *editor);
-void ft2_instr_ed_clear(ft2_instrument_editor_t *editor);
-
 /* Visibility */
 void showInstEditor(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 void hideInstEditor(struct ft2_instance_t *inst);
@@ -100,95 +88,104 @@ void hideInstEditorExt(struct ft2_instance_t *inst);
 void toggleInstEditorExt(struct ft2_instance_t *inst);
 void drawInstEditorExt(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 
-/* MIDI controls */
-void midiChDown(struct ft2_instance_t *inst);
-void midiChUp(struct ft2_instance_t *inst);
-void midiPrgDown(struct ft2_instance_t *inst);
-void midiPrgUp(struct ft2_instance_t *inst);
-void midiBendDown(struct ft2_instance_t *inst);
-void midiBendUp(struct ft2_instance_t *inst);
-
 /* Envelope preset helpers */
 void setStdVolEnvelope(struct ft2_instance_t *inst, uint8_t num);
 void setStdPanEnvelope(struct ft2_instance_t *inst, uint8_t num);
 void setOrStoreVolEnvPreset(struct ft2_instance_t *inst, uint8_t num);
 void setOrStorePanEnvPreset(struct ft2_instance_t *inst, uint8_t num);
 
-/* Volume envelope presets */
-void volPreDef1(struct ft2_instance_t *inst);
-void volPreDef2(struct ft2_instance_t *inst);
-void volPreDef3(struct ft2_instance_t *inst);
-void volPreDef4(struct ft2_instance_t *inst);
-void volPreDef5(struct ft2_instance_t *inst);
-void volPreDef6(struct ft2_instance_t *inst);
+/* Envelope preset button callbacks */
+void pbVolPreDef1(struct ft2_instance_t *inst);
+void pbVolPreDef2(struct ft2_instance_t *inst);
+void pbVolPreDef3(struct ft2_instance_t *inst);
+void pbVolPreDef4(struct ft2_instance_t *inst);
+void pbVolPreDef5(struct ft2_instance_t *inst);
+void pbVolPreDef6(struct ft2_instance_t *inst);
+void pbPanPreDef1(struct ft2_instance_t *inst);
+void pbPanPreDef2(struct ft2_instance_t *inst);
+void pbPanPreDef3(struct ft2_instance_t *inst);
+void pbPanPreDef4(struct ft2_instance_t *inst);
+void pbPanPreDef5(struct ft2_instance_t *inst);
+void pbPanPreDef6(struct ft2_instance_t *inst);
 
-/* Pan envelope presets */
-void panPreDef1(struct ft2_instance_t *inst);
-void panPreDef2(struct ft2_instance_t *inst);
-void panPreDef3(struct ft2_instance_t *inst);
-void panPreDef4(struct ft2_instance_t *inst);
-void panPreDef5(struct ft2_instance_t *inst);
-void panPreDef6(struct ft2_instance_t *inst);
+/* Envelope control callbacks */
+void pbVolEnvAdd(struct ft2_instance_t *inst);
+void pbVolEnvDel(struct ft2_instance_t *inst);
+void pbVolEnvSusUp(struct ft2_instance_t *inst);
+void pbVolEnvSusDown(struct ft2_instance_t *inst);
+void pbVolEnvRepSUp(struct ft2_instance_t *inst);
+void pbVolEnvRepSDown(struct ft2_instance_t *inst);
+void pbVolEnvRepEUp(struct ft2_instance_t *inst);
+void pbVolEnvRepEDown(struct ft2_instance_t *inst);
+void pbPanEnvAdd(struct ft2_instance_t *inst);
+void pbPanEnvDel(struct ft2_instance_t *inst);
+void pbPanEnvSusUp(struct ft2_instance_t *inst);
+void pbPanEnvSusDown(struct ft2_instance_t *inst);
+void pbPanEnvRepSUp(struct ft2_instance_t *inst);
+void pbPanEnvRepSDown(struct ft2_instance_t *inst);
+void pbPanEnvRepEUp(struct ft2_instance_t *inst);
+void pbPanEnvRepEDown(struct ft2_instance_t *inst);
 
-/* Relative note controls */
-void relativeNoteOctUp(struct ft2_instance_t *inst);
-void relativeNoteOctDown(struct ft2_instance_t *inst);
-void relativeNoteUp(struct ft2_instance_t *inst);
-void relativeNoteDown(struct ft2_instance_t *inst);
+/* Sample parameter button callbacks */
+void pbInstVolDown(struct ft2_instance_t *inst);
+void pbInstVolUp(struct ft2_instance_t *inst);
+void pbInstPanDown(struct ft2_instance_t *inst);
+void pbInstPanUp(struct ft2_instance_t *inst);
+void pbInstFtuneDown(struct ft2_instance_t *inst);
+void pbInstFtuneUp(struct ft2_instance_t *inst);
+void pbInstFadeoutDown(struct ft2_instance_t *inst);
+void pbInstFadeoutUp(struct ft2_instance_t *inst);
+void pbInstVibSpeedDown(struct ft2_instance_t *inst);
+void pbInstVibSpeedUp(struct ft2_instance_t *inst);
+void pbInstVibDepthDown(struct ft2_instance_t *inst);
+void pbInstVibDepthUp(struct ft2_instance_t *inst);
+void pbInstVibSweepDown(struct ft2_instance_t *inst);
+void pbInstVibSweepUp(struct ft2_instance_t *inst);
 
-/* Volume envelope controls */
-void volEnvAdd(struct ft2_instance_t *inst);
-void volEnvDel(struct ft2_instance_t *inst);
-void volEnvSusUp(struct ft2_instance_t *inst);
-void volEnvSusDown(struct ft2_instance_t *inst);
-void volEnvRepSUp(struct ft2_instance_t *inst);
-void volEnvRepSDown(struct ft2_instance_t *inst);
-void volEnvRepEUp(struct ft2_instance_t *inst);
-void volEnvRepEDown(struct ft2_instance_t *inst);
+/* Relative note button callbacks */
+void pbInstOctUp(struct ft2_instance_t *inst);
+void pbInstOctDown(struct ft2_instance_t *inst);
+void pbInstHalftoneUp(struct ft2_instance_t *inst);
+void pbInstHalftoneDown(struct ft2_instance_t *inst);
 
-/* Pan envelope controls */
-void panEnvAdd(struct ft2_instance_t *inst);
-void panEnvDel(struct ft2_instance_t *inst);
-void panEnvSusUp(struct ft2_instance_t *inst);
-void panEnvSusDown(struct ft2_instance_t *inst);
-void panEnvRepSUp(struct ft2_instance_t *inst);
-void panEnvRepSDown(struct ft2_instance_t *inst);
-void panEnvRepEUp(struct ft2_instance_t *inst);
-void panEnvRepEDown(struct ft2_instance_t *inst);
+/* Instrument editor exit */
+void pbInstExit(struct ft2_instance_t *inst);
 
-/* Sample parameter controls */
-void volDown(struct ft2_instance_t *inst);
-void volUp(struct ft2_instance_t *inst);
-void panDown(struct ft2_instance_t *inst);
-void panUp(struct ft2_instance_t *inst);
-void ftuneDown(struct ft2_instance_t *inst);
-void ftuneUp(struct ft2_instance_t *inst);
-void fadeoutDown(struct ft2_instance_t *inst);
-void fadeoutUp(struct ft2_instance_t *inst);
-void vibSpeedDown(struct ft2_instance_t *inst);
-void vibSpeedUp(struct ft2_instance_t *inst);
-void vibDepthDown(struct ft2_instance_t *inst);
-void vibDepthUp(struct ft2_instance_t *inst);
-void vibSweepDown(struct ft2_instance_t *inst);
-void vibSweepUp(struct ft2_instance_t *inst);
+/* Instrument editor extension button callbacks */
+void pbInstExtMidiChDown(struct ft2_instance_t *inst);
+void pbInstExtMidiChUp(struct ft2_instance_t *inst);
+void pbInstExtMidiPrgDown(struct ft2_instance_t *inst);
+void pbInstExtMidiPrgUp(struct ft2_instance_t *inst);
+void pbInstExtMidiBendDown(struct ft2_instance_t *inst);
+void pbInstExtMidiBendUp(struct ft2_instance_t *inst);
 
-/* Vibrato type */
-void rbVibWaveSine(struct ft2_instance_t *inst);
-void rbVibWaveSquare(struct ft2_instance_t *inst);
-void rbVibWaveRampDown(struct ft2_instance_t *inst);
-void rbVibWaveRampUp(struct ft2_instance_t *inst);
+/* Instrument scrollbar callbacks */
+void sbInstVol(struct ft2_instance_t *inst, uint32_t pos);
+void sbInstPan(struct ft2_instance_t *inst, uint32_t pos);
+void sbInstFtune(struct ft2_instance_t *inst, uint32_t pos);
+void sbInstFadeout(struct ft2_instance_t *inst, uint32_t pos);
+void sbInstVibSpeed(struct ft2_instance_t *inst, uint32_t pos);
+void sbInstVibDepth(struct ft2_instance_t *inst, uint32_t pos);
+void sbInstVibSweep(struct ft2_instance_t *inst, uint32_t pos);
+void sbInstExtMidiCh(struct ft2_instance_t *inst, uint32_t pos);
+void sbInstExtMidiPrg(struct ft2_instance_t *inst, uint32_t pos);
+void sbInstExtMidiBend(struct ft2_instance_t *inst, uint32_t pos);
 
-/* Envelope enable checkboxes */
-void cbVEnv(struct ft2_instance_t *inst);
-void cbVEnvSus(struct ft2_instance_t *inst);
-void cbVEnvLoop(struct ft2_instance_t *inst);
-void cbPEnv(struct ft2_instance_t *inst);
-void cbPEnvSus(struct ft2_instance_t *inst);
-void cbPEnvLoop(struct ft2_instance_t *inst);
+/* Instrument checkbox callbacks */
+void cbInstVEnv(struct ft2_instance_t *inst);
+void cbInstVEnvSus(struct ft2_instance_t *inst);
+void cbInstVEnvLoop(struct ft2_instance_t *inst);
+void cbInstPEnv(struct ft2_instance_t *inst);
+void cbInstPEnvSus(struct ft2_instance_t *inst);
+void cbInstPEnvLoop(struct ft2_instance_t *inst);
+void cbInstExtMidi(struct ft2_instance_t *inst);
+void cbInstExtMute(struct ft2_instance_t *inst);
 
-/* MIDI checkboxes */
-void cbInstMidiEnable(struct ft2_instance_t *inst);
-void cbInstMuteComputer(struct ft2_instance_t *inst);
+/* Instrument radio button callbacks */
+void rbInstWaveSine(struct ft2_instance_t *inst);
+void rbInstWaveSquare(struct ft2_instance_t *inst);
+void rbInstWaveRampDown(struct ft2_instance_t *inst);
+void rbInstWaveRampUp(struct ft2_instance_t *inst);
 
 #ifdef __cplusplus
 }

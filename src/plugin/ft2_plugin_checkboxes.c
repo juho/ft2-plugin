@@ -66,8 +66,8 @@ checkBox_t checkBoxes[NUM_CHECKBOXES] =
 
 	/* Instrument editor extension */
 	/*x,   y,   w,   h,  callback */
-	{   3, 112, 148, 12, cbInstMidiEnable },
-	{ 172, 112, 103, 12, cbInstMuteComputer },
+	{   3, 112, 148, 12, cbInstExtMidi },
+	{ 172, 112, 103, 12, cbInstExtMute },
 
 	/* Sample effects */
 	/*x,   y,   w,  h,  callback */

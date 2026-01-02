@@ -1494,183 +1494,6 @@ void ft2_instr_ed_mouse_up(ft2_instrument_editor_t *editor)
 	editor->draggingPiano = false;
 }
 
-static ft2_instr_t *getCurrentInstr(ft2_instrument_editor_t *editor)
-{
-	if (editor == NULL || editor->instance == NULL)
-		return NULL;
-	
-	ft2_instance_t *inst = editor->instance;
-	int16_t curInstr = inst->editor.curInstr;
-	
-	if (curInstr <= 0 || curInstr >= 128)
-		return NULL;
-	
-	return inst->replayer.instr[curInstr];
-}
-
-void ft2_instr_ed_add_env_point(ft2_instrument_editor_t *editor, bool volEnv)
-{
-	ft2_instr_t *ins = getCurrentInstr(editor);
-	if (ins == NULL)
-		return;
-	
-	uint8_t *length = volEnv ? &ins->volEnvLength : &ins->panEnvLength;
-	int16_t (*points)[2] = volEnv ? ins->volEnvPoints : ins->panEnvPoints;
-	
-	if (*length >= 12)
-		return;
-	
-	/* Add point at the end */
-	int16_t lastX = (*length > 0) ? points[*length - 1][0] : 0;
-	int16_t lastY = (*length > 0) ? points[*length - 1][1] : (volEnv ? 64 : 32);
-	
-	points[*length][0] = lastX + 16;
-	points[*length][1] = lastY;
-	(*length)++;
-}
-
-void ft2_instr_ed_del_env_point(ft2_instrument_editor_t *editor, bool volEnv)
-{
-	ft2_instr_t *ins = getCurrentInstr(editor);
-	if (ins == NULL)
-		return;
-	
-	uint8_t *length = volEnv ? &ins->volEnvLength : &ins->panEnvLength;
-	
-	if (*length > 2)
-		(*length)--;
-}
-
-void ft2_instr_ed_set_sustain(ft2_instrument_editor_t *editor, bool volEnv, int point)
-{
-	ft2_instr_t *ins = getCurrentInstr(editor);
-	if (ins == NULL || point < 0)
-		return;
-	
-	uint8_t *sustain = volEnv ? &ins->volEnvSustain : &ins->panEnvSustain;
-	uint8_t length = volEnv ? ins->volEnvLength : ins->panEnvLength;
-	
-	if (point < length)
-		*sustain = (uint8_t)point;
-}
-
-void ft2_instr_ed_set_loop_start(ft2_instrument_editor_t *editor, bool volEnv, int point)
-{
-	ft2_instr_t *ins = getCurrentInstr(editor);
-	if (ins == NULL || point < 0)
-		return;
-	
-	uint8_t *loopStart = volEnv ? &ins->volEnvLoopStart : &ins->panEnvLoopStart;
-	uint8_t *loopEnd = volEnv ? &ins->volEnvLoopEnd : &ins->panEnvLoopEnd;
-	uint8_t length = volEnv ? ins->volEnvLength : ins->panEnvLength;
-	
-	if (point < length)
-	{
-		*loopStart = (uint8_t)point;
-		if (*loopEnd < *loopStart)
-			*loopEnd = *loopStart;
-	}
-}
-
-void ft2_instr_ed_set_loop_end(ft2_instrument_editor_t *editor, bool volEnv, int point)
-{
-	ft2_instr_t *ins = getCurrentInstr(editor);
-	if (ins == NULL || point < 0)
-		return;
-	
-	uint8_t *loopStart = volEnv ? &ins->volEnvLoopStart : &ins->panEnvLoopStart;
-	uint8_t *loopEnd = volEnv ? &ins->volEnvLoopEnd : &ins->panEnvLoopEnd;
-	uint8_t length = volEnv ? ins->volEnvLength : ins->panEnvLength;
-	
-	if (point < length)
-	{
-		*loopEnd = (uint8_t)point;
-		if (*loopStart > *loopEnd)
-			*loopStart = *loopEnd;
-	}
-}
-
-/* Instrument clipboard */
-static ft2_instr_t instrClipboard;
-static bool clipboardValid = false;
-
-void ft2_instr_ed_copy(ft2_instrument_editor_t *editor)
-{
-	ft2_instr_t *ins = getCurrentInstr(editor);
-	if (ins == NULL)
-		return;
-	
-	memcpy(&instrClipboard, ins, sizeof(ft2_instr_t));
-	
-	/* Don't copy sample pointers */
-	for (int i = 0; i < 16; i++)
-	{
-		instrClipboard.smp[i].dataPtr = NULL;
-		instrClipboard.smp[i].origDataPtr = NULL;
-	}
-	
-	clipboardValid = true;
-}
-
-void ft2_instr_ed_paste(ft2_instrument_editor_t *editor)
-{
-	if (!clipboardValid)
-		return;
-	
-	ft2_instr_t *ins = getCurrentInstr(editor);
-	if (ins == NULL)
-		return;
-	
-	/* Copy envelope data only */
-	ins->volEnvLength = instrClipboard.volEnvLength;
-	ins->panEnvLength = instrClipboard.panEnvLength;
-	ins->volEnvSustain = instrClipboard.volEnvSustain;
-	ins->volEnvLoopStart = instrClipboard.volEnvLoopStart;
-	ins->volEnvLoopEnd = instrClipboard.volEnvLoopEnd;
-	ins->panEnvSustain = instrClipboard.panEnvSustain;
-	ins->panEnvLoopStart = instrClipboard.panEnvLoopStart;
-	ins->panEnvLoopEnd = instrClipboard.panEnvLoopEnd;
-	ins->volEnvFlags = instrClipboard.volEnvFlags;
-	ins->panEnvFlags = instrClipboard.panEnvFlags;
-	
-	memcpy(ins->volEnvPoints, instrClipboard.volEnvPoints, sizeof(ins->volEnvPoints));
-	memcpy(ins->panEnvPoints, instrClipboard.panEnvPoints, sizeof(ins->panEnvPoints));
-	
-	ins->autoVibType = instrClipboard.autoVibType;
-	ins->autoVibSweep = instrClipboard.autoVibSweep;
-	ins->autoVibDepth = instrClipboard.autoVibDepth;
-	ins->autoVibRate = instrClipboard.autoVibRate;
-	ins->fadeout = instrClipboard.fadeout;
-}
-
-void ft2_instr_ed_clear(ft2_instrument_editor_t *editor)
-{
-	ft2_instr_t *ins = getCurrentInstr(editor);
-	if (ins == NULL)
-		return;
-	
-	/* Clear envelope data */
-	ins->volEnvLength = 0;
-	ins->panEnvLength = 0;
-	ins->volEnvSustain = 0;
-	ins->volEnvLoopStart = 0;
-	ins->volEnvLoopEnd = 0;
-	ins->panEnvSustain = 0;
-	ins->panEnvLoopStart = 0;
-	ins->panEnvLoopEnd = 0;
-	ins->volEnvFlags = 0;
-	ins->panEnvFlags = 0;
-	
-	memset(ins->volEnvPoints, 0, sizeof(ins->volEnvPoints));
-	memset(ins->panEnvPoints, 0, sizeof(ins->panEnvPoints));
-	
-	ins->autoVibType = 0;
-	ins->autoVibSweep = 0;
-	ins->autoVibDepth = 0;
-	ins->autoVibRate = 0;
-	ins->fadeout = 0;
-}
-
 /* ============ VISIBILITY FUNCTIONS ============ */
 
 void showInstEditor(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
@@ -2079,823 +1902,850 @@ static ft2_instr_t *getInstrForInst(ft2_instance_t *inst)
 	return inst->replayer.instr[curInstr];
 }
 
-void midiChDown(ft2_instance_t *inst)
+/* Helper to get current sample */
+static ft2_sample_t *getCurSmp(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->midiChannel > 0)
-		ins->midiChannel--;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void midiChUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->midiChannel < 15)
-		ins->midiChannel++;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void midiPrgDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->midiProgram > 0)
-		ins->midiProgram--;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void midiPrgUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->midiProgram < 127)
-		ins->midiProgram++;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void midiBendDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->midiBend > 0)
-		ins->midiBend--;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void midiBendUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->midiBend < 36)
-		ins->midiBend++;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-/* ============ VOLUME ENVELOPE PRESETS ============ */
-
-void volPreDef1(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 1: Flat volume */
-	ins->volEnvLength = 2;
-	ins->volEnvPoints[0][0] = 0;  ins->volEnvPoints[0][1] = 64;
-	ins->volEnvPoints[1][0] = 324; ins->volEnvPoints[1][1] = 64;
-	ins->volEnvFlags |= ENV_ENABLED;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void volPreDef2(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 2: Decay */
-	ins->volEnvLength = 2;
-	ins->volEnvPoints[0][0] = 0;  ins->volEnvPoints[0][1] = 64;
-	ins->volEnvPoints[1][0] = 324; ins->volEnvPoints[1][1] = 0;
-	ins->volEnvFlags |= ENV_ENABLED;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void volPreDef3(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 3: Attack-Decay */
-	ins->volEnvLength = 3;
-	ins->volEnvPoints[0][0] = 0;   ins->volEnvPoints[0][1] = 0;
-	ins->volEnvPoints[1][0] = 16;  ins->volEnvPoints[1][1] = 64;
-	ins->volEnvPoints[2][0] = 324; ins->volEnvPoints[2][1] = 0;
-	ins->volEnvFlags |= ENV_ENABLED;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void volPreDef4(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 4: ADSR */
-	ins->volEnvLength = 4;
-	ins->volEnvPoints[0][0] = 0;   ins->volEnvPoints[0][1] = 0;
-	ins->volEnvPoints[1][0] = 16;  ins->volEnvPoints[1][1] = 64;
-	ins->volEnvPoints[2][0] = 64;  ins->volEnvPoints[2][1] = 32;
-	ins->volEnvPoints[3][0] = 324; ins->volEnvPoints[3][1] = 0;
-	ins->volEnvFlags |= ENV_ENABLED;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void volPreDef5(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 5: With sustain */
-	ins->volEnvLength = 3;
-	ins->volEnvPoints[0][0] = 0;   ins->volEnvPoints[0][1] = 0;
-	ins->volEnvPoints[1][0] = 16;  ins->volEnvPoints[1][1] = 64;
-	ins->volEnvPoints[2][0] = 324; ins->volEnvPoints[2][1] = 64;
-	ins->volEnvSustain = 1;
-	ins->volEnvFlags |= ENV_ENABLED | ENV_SUSTAIN;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void volPreDef6(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 6: Triangle loop */
-	ins->volEnvLength = 3;
-	ins->volEnvPoints[0][0] = 0;  ins->volEnvPoints[0][1] = 64;
-	ins->volEnvPoints[1][0] = 64; ins->volEnvPoints[1][1] = 0;
-	ins->volEnvPoints[2][0] = 128; ins->volEnvPoints[2][1] = 64;
-	ins->volEnvLoopStart = 0;
-	ins->volEnvLoopEnd = 2;
-	ins->volEnvFlags |= ENV_ENABLED | ENV_LOOP;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-/* ============ PAN ENVELOPE PRESETS ============ */
-
-void panPreDef1(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 1: Center */
-	ins->panEnvLength = 2;
-	ins->panEnvPoints[0][0] = 0;   ins->panEnvPoints[0][1] = 32;
-	ins->panEnvPoints[1][0] = 324; ins->panEnvPoints[1][1] = 32;
-	ins->panEnvFlags |= ENV_ENABLED;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void panPreDef2(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 2: Sweep right */
-	ins->panEnvLength = 2;
-	ins->panEnvPoints[0][0] = 0;   ins->panEnvPoints[0][1] = 0;
-	ins->panEnvPoints[1][0] = 324; ins->panEnvPoints[1][1] = 64;
-	ins->panEnvFlags |= ENV_ENABLED;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void panPreDef3(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 3: Sweep left */
-	ins->panEnvLength = 2;
-	ins->panEnvPoints[0][0] = 0;   ins->panEnvPoints[0][1] = 64;
-	ins->panEnvPoints[1][0] = 324; ins->panEnvPoints[1][1] = 0;
-	ins->panEnvFlags |= ENV_ENABLED;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void panPreDef4(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 4: Ping pong */
-	ins->panEnvLength = 3;
-	ins->panEnvPoints[0][0] = 0;   ins->panEnvPoints[0][1] = 0;
-	ins->panEnvPoints[1][0] = 64;  ins->panEnvPoints[1][1] = 64;
-	ins->panEnvPoints[2][0] = 128; ins->panEnvPoints[2][1] = 0;
-	ins->panEnvLoopStart = 0;
-	ins->panEnvLoopEnd = 2;
-	ins->panEnvFlags |= ENV_ENABLED | ENV_LOOP;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void panPreDef5(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 5: Fast sweep */
-	ins->panEnvLength = 2;
-	ins->panEnvPoints[0][0] = 0;  ins->panEnvPoints[0][1] = 0;
-	ins->panEnvPoints[1][0] = 32; ins->panEnvPoints[1][1] = 64;
-	ins->panEnvFlags |= ENV_ENABLED;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void panPreDef6(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	/* Preset 6: Tremolo */
-	ins->panEnvLength = 4;
-	ins->panEnvPoints[0][0] = 0;  ins->panEnvPoints[0][1] = 32;
-	ins->panEnvPoints[1][0] = 16; ins->panEnvPoints[1][1] = 64;
-	ins->panEnvPoints[2][0] = 32; ins->panEnvPoints[2][1] = 32;
-	ins->panEnvPoints[3][0] = 48; ins->panEnvPoints[3][1] = 0;
-	ins->panEnvLoopStart = 0;
-	ins->panEnvLoopEnd = 3;
-	ins->panEnvFlags |= ENV_ENABLED | ENV_LOOP;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-/* ============ RELATIVE NOTE CONTROLS ============ */
-
-static ft2_sample_t *getCurrentSample(ft2_instance_t *inst)
-{
-	if (inst == NULL)
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL || inst->editor.curSmp >= 16)
 		return NULL;
-	
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return NULL;
-	
-	uint8_t curSmp = inst->editor.curSmp;
-	if (curSmp >= 16)
-		return NULL;
-	
-	return &ins->smp[curSmp];
+	return &instr->smp[inst->editor.curSmp];
 }
 
-void relativeNoteOctUp(ft2_instance_t *inst)
-{
-	ft2_sample_t *s = getCurrentSample(inst);
-	if (s == NULL)
-		return;
-	
-	if (s->relativeNote <= 71 - 12)
-		s->relativeNote += 12;
-	
-	inst->uiState.updateInstEditor = true;
-}
+/* ============ INSTRUMENT EDITOR CALLBACKS ============ */
 
-void relativeNoteOctDown(ft2_instance_t *inst)
-{
-	ft2_sample_t *s = getCurrentSample(inst);
-	if (s == NULL)
-		return;
-	
-	if (s->relativeNote >= -48 + 12)
-		s->relativeNote -= 12;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void relativeNoteUp(ft2_instance_t *inst)
-{
-	ft2_sample_t *s = getCurrentSample(inst);
-	if (s == NULL)
-		return;
-	
-	if (s->relativeNote < 71)
-		s->relativeNote++;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void relativeNoteDown(ft2_instance_t *inst)
-{
-	ft2_sample_t *s = getCurrentSample(inst);
-	if (s == NULL)
-		return;
-	
-	if (s->relativeNote > -48)
-		s->relativeNote--;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-/* ============ VOLUME ENVELOPE CONTROLS ============ */
-
-void volEnvAdd(ft2_instance_t *inst)
+/* Envelope presets - left-click recalls, right-click stores */
+void pbVolPreDef1(ft2_instance_t *inst) { setOrStoreVolEnvPreset(inst, 0); }
+void pbVolPreDef2(ft2_instance_t *inst) { setOrStoreVolEnvPreset(inst, 1); }
+void pbVolPreDef3(ft2_instance_t *inst) { setOrStoreVolEnvPreset(inst, 2); }
+void pbVolPreDef4(ft2_instance_t *inst) { setOrStoreVolEnvPreset(inst, 3); }
+void pbVolPreDef5(ft2_instance_t *inst) { setOrStoreVolEnvPreset(inst, 4); }
+void pbVolPreDef6(ft2_instance_t *inst) { setOrStoreVolEnvPreset(inst, 5); }
+void pbPanPreDef1(ft2_instance_t *inst) { setOrStorePanEnvPreset(inst, 0); }
+void pbPanPreDef2(ft2_instance_t *inst) { setOrStorePanEnvPreset(inst, 1); }
+void pbPanPreDef3(ft2_instance_t *inst) { setOrStorePanEnvPreset(inst, 2); }
+void pbPanPreDef4(ft2_instance_t *inst) { setOrStorePanEnvPreset(inst, 3); }
+void pbPanPreDef5(ft2_instance_t *inst) { setOrStorePanEnvPreset(inst, 4); }
+void pbPanPreDef6(ft2_instance_t *inst) { setOrStorePanEnvPreset(inst, 5); }
+/* Volume envelope controls */
+void pbVolEnvAdd(ft2_instance_t *inst)
 {
 	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL || ins->volEnvLength >= 12)
+	if (inst->editor.curInstr == 0 || ins == NULL)
 		return;
+	
+	const int16_t ant = ins->volEnvLength;
+	if (ant >= 12)
+		return;
+	
+	int16_t i = (int16_t)inst->editor.currVolEnvPoint;
+	if (i < 0 || i >= ant)
+	{
+		i = ant - 1;
+		if (i < 0)
+			i = 0;
+	}
+	
+	/* Check if there's enough space between adjacent points */
+	if (i < ant - 1 && ins->volEnvPoints[i+1][0] - ins->volEnvPoints[i][0] < 2)
+		return;
+	
+	if (ins->volEnvPoints[i][0] >= 323)
+		return;
+	
+	/* Shift all points after i down by one */
+	for (int16_t j = ant; j > i; j--)
+	{
+		ins->volEnvPoints[j][0] = ins->volEnvPoints[j-1][0];
+		ins->volEnvPoints[j][1] = ins->volEnvPoints[j-1][1];
+	}
+	
+	/* Update sustain/loop indices */
+	if (ins->volEnvSustain > i)
+		ins->volEnvSustain++;
+	if (ins->volEnvLoopStart > i)
+		ins->volEnvLoopStart++;
+	if (ins->volEnvLoopEnd > i)
+		ins->volEnvLoopEnd++;
+	
+	/* Calculate new point position */
+	if (i < ant - 1)
+	{
+		ins->volEnvPoints[i+1][0] = (ins->volEnvPoints[i][0] + ins->volEnvPoints[i+2][0]) / 2;
+		ins->volEnvPoints[i+1][1] = (ins->volEnvPoints[i][1] + ins->volEnvPoints[i+2][1]) / 2;
+	}
+	else
+	{
+		ins->volEnvPoints[i+1][0] = ins->volEnvPoints[i][0] + 10;
+		ins->volEnvPoints[i+1][1] = ins->volEnvPoints[i][1];
+	}
+	
+	if (ins->volEnvPoints[i+1][0] > 324)
+		ins->volEnvPoints[i+1][0] = 324;
 	
 	ins->volEnvLength++;
 	inst->uiState.updateInstEditor = true;
 }
 
-void volEnvDel(ft2_instance_t *inst)
+void pbVolEnvDel(ft2_instance_t *inst)
 {
 	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL || ins->volEnvLength <= 2)
+	if (ins == NULL || inst->editor.curInstr == 0 || ins->volEnvLength <= 2)
 		return;
 	
-	ins->volEnvLength--;
-	inst->uiState.updateInstEditor = true;
-}
-
-void volEnvSusUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
+	int16_t i = (int16_t)inst->editor.currVolEnvPoint;
+	if (i < 0 || i >= ins->volEnvLength)
 		return;
 	
-	if (ins->volEnvSustain < ins->volEnvLength - 1)
-		ins->volEnvSustain++;
+	/* Shift all points after i up by one */
+	for (int16_t j = i; j < ins->volEnvLength; j++)
+	{
+		ins->volEnvPoints[j][0] = ins->volEnvPoints[j+1][0];
+		ins->volEnvPoints[j][1] = ins->volEnvPoints[j+1][1];
+	}
 	
-	inst->uiState.updateInstEditor = true;
-}
-
-void volEnvSusDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->volEnvSustain > 0)
+	/* Update sustain/loop indices */
+	if (ins->volEnvSustain > i)
 		ins->volEnvSustain--;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void volEnvRepSUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->volEnvLoopStart < ins->volEnvLoopEnd)
-		ins->volEnvLoopStart++;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void volEnvRepSDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->volEnvLoopStart > 0)
+	if (ins->volEnvLoopStart > i)
 		ins->volEnvLoopStart--;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void volEnvRepEUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->volEnvLoopEnd < ins->volEnvLength - 1)
-		ins->volEnvLoopEnd++;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void volEnvRepEDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->volEnvLoopEnd > ins->volEnvLoopStart)
+	if (ins->volEnvLoopEnd > i)
 		ins->volEnvLoopEnd--;
 	
+	/* Ensure first point always at X=0 */
+	ins->volEnvPoints[0][0] = 0;
+	ins->volEnvLength--;
+	
+	/* Clamp indices to valid range */
+	if (ins->volEnvSustain >= ins->volEnvLength)
+		ins->volEnvSustain = ins->volEnvLength - 1;
+	if (ins->volEnvLoopStart >= ins->volEnvLength)
+		ins->volEnvLoopStart = ins->volEnvLength - 1;
+	if (ins->volEnvLoopEnd >= ins->volEnvLength)
+		ins->volEnvLoopEnd = ins->volEnvLength - 1;
+	
+	/* Update current point selection */
+	if (ins->volEnvLength == 0)
+		inst->editor.currVolEnvPoint = 0;
+	else if (inst->editor.currVolEnvPoint >= ins->volEnvLength)
+		inst->editor.currVolEnvPoint = ins->volEnvLength - 1;
+	
 	inst->uiState.updateInstEditor = true;
 }
 
-/* ============ PAN ENVELOPE CONTROLS ============ */
+void pbVolEnvSusUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
+		return;
+	
+	if (instr->volEnvSustain < instr->volEnvLength - 1)
+	{
+		instr->volEnvSustain++;
+		inst->uiState.updateInstEditor = true;
+	}
+}
 
-void panEnvAdd(ft2_instance_t *inst)
+void pbVolEnvSusDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
+		return;
+	
+	if (instr->volEnvSustain > 0)
+	{
+		instr->volEnvSustain--;
+		inst->uiState.updateInstEditor = true;
+	}
+}
+
+void pbVolEnvRepSUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
+		return;
+	
+	if (instr->volEnvLoopStart < instr->volEnvLoopEnd)
+	{
+		instr->volEnvLoopStart++;
+		inst->uiState.updateInstEditor = true;
+	}
+}
+
+void pbVolEnvRepSDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
+		return;
+	
+	if (instr->volEnvLoopStart > 0)
+	{
+		instr->volEnvLoopStart--;
+		inst->uiState.updateInstEditor = true;
+	}
+}
+
+void pbVolEnvRepEUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
+		return;
+	
+	if (instr->volEnvLoopEnd < instr->volEnvLength - 1)
+	{
+		instr->volEnvLoopEnd++;
+		inst->uiState.updateInstEditor = true;
+	}
+}
+
+void pbVolEnvRepEDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
+		return;
+	
+	if (instr->volEnvLoopEnd > instr->volEnvLoopStart)
+	{
+		instr->volEnvLoopEnd--;
+		inst->uiState.updateInstEditor = true;
+	}
+}
+
+/* Pan envelope controls */
+void pbPanEnvAdd(ft2_instance_t *inst)
 {
 	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL || ins->panEnvLength >= 12)
+	if (ins == NULL || inst->editor.curInstr == 0)
 		return;
+	
+	const int16_t ant = ins->panEnvLength;
+	if (ant >= 12)
+		return;
+	
+	int16_t i = (int16_t)inst->editor.currPanEnvPoint;
+	if (i < 0 || i >= ant)
+	{
+		i = ant - 1;
+		if (i < 0)
+			i = 0;
+	}
+	
+	/* Check if there's enough space between adjacent points */
+	if (i < ant - 1 && ins->panEnvPoints[i+1][0] - ins->panEnvPoints[i][0] < 2)
+		return;
+	
+	if (ins->panEnvPoints[i][0] >= 323)
+		return;
+	
+	/* Shift all points after i down by one */
+	for (int16_t j = ant; j > i; j--)
+	{
+		ins->panEnvPoints[j][0] = ins->panEnvPoints[j-1][0];
+		ins->panEnvPoints[j][1] = ins->panEnvPoints[j-1][1];
+	}
+	
+	/* Update sustain/loop indices */
+	if (ins->panEnvSustain > i)
+		ins->panEnvSustain++;
+	if (ins->panEnvLoopStart > i)
+		ins->panEnvLoopStart++;
+	if (ins->panEnvLoopEnd > i)
+		ins->panEnvLoopEnd++;
+	
+	/* Calculate new point position */
+	if (i < ant - 1)
+	{
+		ins->panEnvPoints[i+1][0] = (ins->panEnvPoints[i][0] + ins->panEnvPoints[i+2][0]) / 2;
+		ins->panEnvPoints[i+1][1] = (ins->panEnvPoints[i][1] + ins->panEnvPoints[i+2][1]) / 2;
+	}
+	else
+	{
+		ins->panEnvPoints[i+1][0] = ins->panEnvPoints[i][0] + 10;
+		ins->panEnvPoints[i+1][1] = ins->panEnvPoints[i][1];
+	}
+	
+	if (ins->panEnvPoints[i+1][0] > 324)
+		ins->panEnvPoints[i+1][0] = 324;
 	
 	ins->panEnvLength++;
 	inst->uiState.updateInstEditor = true;
 }
 
-void panEnvDel(ft2_instance_t *inst)
+void pbPanEnvDel(ft2_instance_t *inst)
 {
 	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL || ins->panEnvLength <= 2)
+	if (ins == NULL || inst->editor.curInstr == 0 || ins->panEnvLength <= 2)
 		return;
 	
-	ins->panEnvLength--;
-	inst->uiState.updateInstEditor = true;
-}
-
-void panEnvSusUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
+	int16_t i = (int16_t)inst->editor.currPanEnvPoint;
+	if (i < 0 || i >= ins->panEnvLength)
 		return;
 	
-	if (ins->panEnvSustain < ins->panEnvLength - 1)
-		ins->panEnvSustain++;
+	/* Shift all points after i up by one */
+	for (int16_t j = i; j < ins->panEnvLength; j++)
+	{
+		ins->panEnvPoints[j][0] = ins->panEnvPoints[j+1][0];
+		ins->panEnvPoints[j][1] = ins->panEnvPoints[j+1][1];
+	}
 	
-	inst->uiState.updateInstEditor = true;
-}
-
-void panEnvSusDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->panEnvSustain > 0)
+	/* Update sustain/loop indices */
+	if (ins->panEnvSustain > i)
 		ins->panEnvSustain--;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void panEnvRepSUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->panEnvLoopStart < ins->panEnvLoopEnd)
-		ins->panEnvLoopStart++;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void panEnvRepSDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->panEnvLoopStart > 0)
+	if (ins->panEnvLoopStart > i)
 		ins->panEnvLoopStart--;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void panEnvRepEUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->panEnvLoopEnd < ins->panEnvLength - 1)
-		ins->panEnvLoopEnd++;
-	
-	inst->uiState.updateInstEditor = true;
-}
-
-void panEnvRepEDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->panEnvLoopEnd > ins->panEnvLoopStart)
+	if (ins->panEnvLoopEnd > i)
 		ins->panEnvLoopEnd--;
 	
+	/* Ensure first point always at X=0 */
+	ins->panEnvPoints[0][0] = 0;
+	ins->panEnvLength--;
+	
+	/* Clamp indices to valid range */
+	if (ins->panEnvSustain >= ins->panEnvLength)
+		ins->panEnvSustain = ins->panEnvLength - 1;
+	if (ins->panEnvLoopStart >= ins->panEnvLength)
+		ins->panEnvLoopStart = ins->panEnvLength - 1;
+	if (ins->panEnvLoopEnd >= ins->panEnvLength)
+		ins->panEnvLoopEnd = ins->panEnvLength - 1;
+	
+	/* Update current point selection */
+	if (ins->panEnvLength == 0)
+		inst->editor.currPanEnvPoint = 0;
+	else if (inst->editor.currPanEnvPoint >= ins->panEnvLength)
+		inst->editor.currPanEnvPoint = ins->panEnvLength - 1;
+	
 	inst->uiState.updateInstEditor = true;
 }
 
-/* ============ SAMPLE PARAMETER CONTROLS ============ */
-
-void volDown(ft2_instance_t *inst)
+void pbPanEnvSusUp(ft2_instance_t *inst)
 {
-	ft2_sample_t *s = getCurrentSample(inst);
-	if (s == NULL)
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
 		return;
 	
-	if (s->volume > 0)
-		s->volume--;
-	
-	inst->uiState.updateInstEditor = true;
+	if (instr->panEnvSustain < instr->panEnvLength - 1)
+	{
+		instr->panEnvSustain++;
+		inst->uiState.updateInstEditor = true;
+	}
 }
 
-void volUp(ft2_instance_t *inst)
+void pbPanEnvSusDown(ft2_instance_t *inst)
 {
-	ft2_sample_t *s = getCurrentSample(inst);
-	if (s == NULL)
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
 		return;
 	
-	if (s->volume < 64)
-		s->volume++;
-	
-	inst->uiState.updateInstEditor = true;
+	if (instr->panEnvSustain > 0)
+	{
+		instr->panEnvSustain--;
+		inst->uiState.updateInstEditor = true;
+	}
 }
 
-void panDown(ft2_instance_t *inst)
+void pbPanEnvRepSUp(ft2_instance_t *inst)
 {
-	ft2_sample_t *s = getCurrentSample(inst);
-	if (s == NULL)
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
 		return;
 	
-	if (s->panning > 0)
-		s->panning--;
-	
-	inst->uiState.updateInstEditor = true;
+	if (instr->panEnvLoopStart < instr->panEnvLoopEnd)
+	{
+		instr->panEnvLoopStart++;
+		inst->uiState.updateInstEditor = true;
+	}
 }
 
-void panUp(ft2_instance_t *inst)
+void pbPanEnvRepSDown(ft2_instance_t *inst)
 {
-	ft2_sample_t *s = getCurrentSample(inst);
-	if (s == NULL)
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
 		return;
 	
-	if (s->panning < 255)
-		s->panning++;
-	
-	inst->uiState.updateInstEditor = true;
+	if (instr->panEnvLoopStart > 0)
+	{
+		instr->panEnvLoopStart--;
+		inst->uiState.updateInstEditor = true;
+	}
 }
 
-void ftuneDown(ft2_instance_t *inst)
+void pbPanEnvRepEUp(ft2_instance_t *inst)
 {
-	ft2_sample_t *s = getCurrentSample(inst);
-	if (s == NULL)
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
 		return;
 	
-	if (s->finetune > -128)
-		s->finetune--;
-	
-	inst->uiState.updateInstEditor = true;
+	if (instr->panEnvLoopEnd < instr->panEnvLength - 1)
+	{
+		instr->panEnvLoopEnd++;
+		inst->uiState.updateInstEditor = true;
+	}
 }
 
-void ftuneUp(ft2_instance_t *inst)
+void pbPanEnvRepEDown(ft2_instance_t *inst)
 {
-	ft2_sample_t *s = getCurrentSample(inst);
-	if (s == NULL)
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL)
 		return;
 	
-	if (s->finetune < 127)
-		s->finetune++;
-	
-	inst->uiState.updateInstEditor = true;
+	if (instr->panEnvLoopEnd > instr->panEnvLoopStart)
+	{
+		instr->panEnvLoopEnd--;
+		inst->uiState.updateInstEditor = true;
+	}
 }
 
-void fadeoutDown(ft2_instance_t *inst)
+/* Sample parameter buttons - these adjust scrollbar positions */
+void pbInstVolDown(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->fadeout > 0)
-		ins->fadeout--;
-	
-	inst->uiState.updateInstEditor = true;
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	if (smp->volume > 0)
+	{
+		smp->volume--;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void fadeoutUp(ft2_instance_t *inst)
+void pbInstVolUp(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->fadeout < 0xFFF)
-		ins->fadeout++;
-	
-	inst->uiState.updateInstEditor = true;
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	if (smp->volume < 64)
+	{
+		smp->volume++;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void vibSpeedDown(ft2_instance_t *inst)
+void pbInstPanDown(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->autoVibRate > 0)
-		ins->autoVibRate--;
-	
-	inst->uiState.updateInstEditor = true;
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	if (smp->panning > 0)
+	{
+		smp->panning--;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void vibSpeedUp(ft2_instance_t *inst)
+void pbInstPanUp(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->autoVibRate < 255)
-		ins->autoVibRate++;
-	
-	inst->uiState.updateInstEditor = true;
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	if (smp->panning < 255)
+	{
+		smp->panning++;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void vibDepthDown(ft2_instance_t *inst)
+void pbInstFtuneDown(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->autoVibDepth > 0)
-		ins->autoVibDepth--;
-	
-	inst->uiState.updateInstEditor = true;
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	if (smp->finetune > -128)
+	{
+		smp->finetune--;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void vibDepthUp(ft2_instance_t *inst)
+void pbInstFtuneUp(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->autoVibDepth < 15)
-		ins->autoVibDepth++;
-	
-	inst->uiState.updateInstEditor = true;
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	if (smp->finetune < 127)
+	{
+		smp->finetune++;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void vibSweepDown(ft2_instance_t *inst)
+void pbInstFadeoutDown(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->autoVibSweep > 0)
-		ins->autoVibSweep--;
-	
-	inst->uiState.updateInstEditor = true;
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->fadeout > 0)
+	{
+		instr->fadeout--;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void vibSweepUp(ft2_instance_t *inst)
+void pbInstFadeoutUp(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	if (ins->autoVibSweep < 255)
-		ins->autoVibSweep++;
-	
-	inst->uiState.updateInstEditor = true;
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->fadeout < 0xFFF)
+	{
+		instr->fadeout++;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-/* ============ VIBRATO TYPE ============ */
-
-void rbVibWaveSine(ft2_instance_t *inst)
+void pbInstVibSpeedDown(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->autoVibType = 0;
-	inst->uiState.updateInstEditor = true;
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->autoVibRate > 0)
+	{
+		instr->autoVibRate--;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void rbVibWaveSquare(ft2_instance_t *inst)
+void pbInstVibSpeedUp(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->autoVibType = 1;
-	inst->uiState.updateInstEditor = true;
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->autoVibRate < 0x3F)
+	{
+		instr->autoVibRate++;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void rbVibWaveRampDown(ft2_instance_t *inst)
+void pbInstVibDepthDown(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->autoVibType = 2;
-	inst->uiState.updateInstEditor = true;
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->autoVibDepth > 0)
+	{
+		instr->autoVibDepth--;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void rbVibWaveRampUp(ft2_instance_t *inst)
+void pbInstVibDepthUp(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->autoVibType = 3;
-	inst->uiState.updateInstEditor = true;
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->autoVibDepth < 0x0F)
+	{
+		instr->autoVibDepth++;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-/* ============ ENVELOPE ENABLE CHECKBOXES ============ */
-
-void cbVEnv(ft2_instance_t *inst)
+void pbInstVibSweepDown(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->volEnvFlags ^= ENV_ENABLED;
-	inst->uiState.updateInstEditor = true;
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->autoVibSweep > 0)
+	{
+		instr->autoVibSweep--;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void cbVEnvSus(ft2_instance_t *inst)
+void pbInstVibSweepUp(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->volEnvFlags ^= ENV_SUSTAIN;
-	inst->uiState.updateInstEditor = true;
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->autoVibSweep < 0xFF)
+	{
+		instr->autoVibSweep++;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void cbVEnvLoop(ft2_instance_t *inst)
+/* Relative note */
+void pbInstOctUp(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->volEnvFlags ^= ENV_LOOP;
-	inst->uiState.updateInstEditor = true;
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	if (smp->relativeNote <= 71 - 12)
+		smp->relativeNote += 12;
+	else
+		smp->relativeNote = 71;
+	ft2_song_mark_modified(inst);
 }
 
-void cbPEnv(ft2_instance_t *inst)
+void pbInstOctDown(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->panEnvFlags ^= ENV_ENABLED;
-	inst->uiState.updateInstEditor = true;
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	if (smp->relativeNote >= -48 + 12)
+		smp->relativeNote -= 12;
+	else
+		smp->relativeNote = -48;
+	ft2_song_mark_modified(inst);
 }
 
-void cbPEnvSus(ft2_instance_t *inst)
+void pbInstHalftoneUp(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->panEnvFlags ^= ENV_SUSTAIN;
-	inst->uiState.updateInstEditor = true;
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	if (smp->relativeNote < 71)
+	{
+		smp->relativeNote++;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-void cbPEnvLoop(ft2_instance_t *inst)
+void pbInstHalftoneDown(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->panEnvFlags ^= ENV_LOOP;
-	inst->uiState.updateInstEditor = true;
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	if (smp->relativeNote > -48)
+	{
+		smp->relativeNote--;
+		ft2_song_mark_modified(inst);
+	}
 }
 
-/* ============ MIDI CHECKBOXES ============ */
-
-void cbInstMidiEnable(ft2_instance_t *inst)
+/* Exit */
+void pbInstExit(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->midiOn = !ins->midiOn;
-	inst->uiState.updateInstEditor = true;
+	if (inst == NULL) return;
+	exitInstEditor(inst);
 }
 
-void cbInstMuteComputer(ft2_instance_t *inst)
+/* ========== INSTRUMENT EDITOR EXTENSION CALLBACKS ========== */
+
+void pbInstExtMidiChDown(ft2_instance_t *inst)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL)
-		return;
-	
-	ins->mute = !ins->mute;
-	inst->uiState.updateInstEditor = true;
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->midiChannel > 0)
+	{
+		instr->midiChannel--;
+		ft2_song_mark_modified(inst);
+	}
 }
+
+void pbInstExtMidiChUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->midiChannel < 15)
+	{
+		instr->midiChannel++;
+		ft2_song_mark_modified(inst);
+	}
+}
+
+void pbInstExtMidiPrgDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->midiProgram > 0)
+	{
+		instr->midiProgram--;
+		ft2_song_mark_modified(inst);
+	}
+}
+
+void pbInstExtMidiPrgUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->midiProgram < 127)
+	{
+		instr->midiProgram++;
+		ft2_song_mark_modified(inst);
+	}
+}
+
+void pbInstExtMidiBendDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->midiBend > 0)
+	{
+		instr->midiBend--;
+		ft2_song_mark_modified(inst);
+	}
+}
+
+void pbInstExtMidiBendUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	if (instr->midiBend < 36)
+	{
+		instr->midiBend++;
+		ft2_song_mark_modified(inst);
+	}
+}
+
+
+/* Instrument scrollbar callbacks */
+void sbInstVol(ft2_instance_t *inst, uint32_t pos)
+{
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	smp->volume = (uint8_t)pos;
+	ft2_song_mark_modified(inst);
+}
+
+void sbInstPan(ft2_instance_t *inst, uint32_t pos)
+{
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	smp->panning = (uint8_t)pos;
+	ft2_song_mark_modified(inst);
+}
+
+void sbInstFtune(ft2_instance_t *inst, uint32_t pos)
+{
+	ft2_sample_t *smp = getCurSmp(inst);
+	if (smp == NULL) return;
+	smp->finetune = (int8_t)(pos - 128);
+	ft2_song_mark_modified(inst);
+}
+
+void sbInstFadeout(ft2_instance_t *inst, uint32_t pos)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->fadeout = (uint16_t)pos;
+	ft2_song_mark_modified(inst);
+}
+
+void sbInstVibSpeed(ft2_instance_t *inst, uint32_t pos)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->autoVibRate = (uint8_t)pos;
+	ft2_song_mark_modified(inst);
+}
+
+void sbInstVibDepth(ft2_instance_t *inst, uint32_t pos)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->autoVibDepth = (uint8_t)pos;
+	ft2_song_mark_modified(inst);
+}
+
+void sbInstVibSweep(ft2_instance_t *inst, uint32_t pos)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->autoVibSweep = (uint8_t)pos;
+	ft2_song_mark_modified(inst);
+}
+
+void sbInstExtMidiCh(ft2_instance_t *inst, uint32_t pos)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->midiChannel = (uint8_t)pos;
+	ft2_song_mark_modified(inst);
+}
+
+void sbInstExtMidiPrg(ft2_instance_t *inst, uint32_t pos)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->midiProgram = (int16_t)pos;
+	ft2_song_mark_modified(inst);
+}
+
+void sbInstExtMidiBend(ft2_instance_t *inst, uint32_t pos)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->midiBend = (int16_t)pos;
+	ft2_song_mark_modified(inst);
+}
+
+/* Instrument checkbox callbacks */
+void cbInstVEnv(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->volEnvFlags ^= FT2_ENV_ENABLED;
+	ft2_song_mark_modified(inst);
+}
+
+void cbInstVEnvSus(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->volEnvFlags ^= FT2_ENV_SUSTAIN;
+	ft2_song_mark_modified(inst);
+}
+
+void cbInstVEnvLoop(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->volEnvFlags ^= FT2_ENV_LOOP;
+	ft2_song_mark_modified(inst);
+}
+
+void cbInstPEnv(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->panEnvFlags ^= FT2_ENV_ENABLED;
+	ft2_song_mark_modified(inst);
+}
+
+void cbInstPEnvSus(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->panEnvFlags ^= FT2_ENV_SUSTAIN;
+	ft2_song_mark_modified(inst);
+}
+
+void cbInstPEnvLoop(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->panEnvFlags ^= FT2_ENV_LOOP;
+	ft2_song_mark_modified(inst);
+}
+
+void cbInstExtMidi(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->midiOn ^= 1;
+	ft2_song_mark_modified(inst);
+}
+
+void cbInstExtMute(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->mute ^= 1;
+	ft2_song_mark_modified(inst);
+}
+
+/* Instrument radio button callbacks */
+void rbInstWaveSine(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->autoVibType = 0;
+	ft2_song_mark_modified(inst);
+}
+
+void rbInstWaveSquare(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->autoVibType = 1;
+	ft2_song_mark_modified(inst);
+}
+
+void rbInstWaveRampDown(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->autoVibType = 2;
+	ft2_song_mark_modified(inst);
+}
+
+void rbInstWaveRampUp(ft2_instance_t *inst)
+{
+	ft2_instr_t *instr = getInstrForInst(inst);
+	if (instr == NULL) return;
+	instr->autoVibType = 3;
+	ft2_song_mark_modified(inst);
+}
+

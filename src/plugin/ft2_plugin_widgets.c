@@ -53,6 +53,7 @@ static struct {
 	bool rightButtonPressed;
 	bool leftButtonReleased;
 	bool rightButtonReleased;
+	bool rightClickTrackedObject;
 	int16_t lastUsedObjectID;
 	int8_t lastUsedObjectType;
 	bool firstTimePressingButton;
@@ -197,7 +198,9 @@ void ft2_widgets_mouse_down(ft2_widgets_t *widgets, struct ft2_instance_t *inst,
 	mouse.x = x;
 	mouse.y = y;
 	mouse.leftButtonPressed = true;
+	/* Clear both released flags on any button down - matches standalone behavior */
 	mouse.leftButtonReleased = false;
+	mouse.rightButtonReleased = false;
 
 	/* Don't reset if already tracking an object */
 	if (mouse.lastUsedObjectType != OBJECT_NONE)
@@ -253,14 +256,31 @@ void ft2_widgets_mouse_down(ft2_widgets_t *widgets, struct ft2_instance_t *inst,
 		return;
 }
 
-void ft2_widgets_mouse_down_right(ft2_widgets_t *widgets, int x, int y)
+void ft2_widgets_mouse_down_right(ft2_widgets_t *widgets, int x, int y, struct ft2_instance_t *inst)
 {
-	(void)widgets;
-
 	mouse.x = x;
 	mouse.y = y;
 	mouse.rightButtonPressed = true;
+	/* Clear both released flags on any button down - matches standalone behavior */
+	mouse.leftButtonReleased = false;
 	mouse.rightButtonReleased = false;
+
+	/* Don't track new object if left button is already tracking */
+	if (mouse.lastUsedObjectType != OBJECT_NONE)
+		return;
+
+	if (widgets == NULL)
+		return;
+
+	/* Only test pushbuttons for right-click (for predef envelope save) */
+	int16_t pbID = testPushButtonMouseDown(widgets, inst, x, y, false);
+	if (pbID >= 0)
+	{
+		mouse.lastUsedObjectID = pbID;
+		mouse.lastUsedObjectType = OBJECT_PUSHBUTTON;
+		mouse.rightClickTrackedObject = true;
+		return;
+	}
 }
 
 void ft2_widgets_mouse_up(ft2_widgets_t *widgets, int x, int y, struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp)
@@ -315,15 +335,26 @@ void ft2_widgets_mouse_up(ft2_widgets_t *widgets, int x, int y, struct ft2_insta
 	mouse.lastUsedObjectType = OBJECT_NONE;
 }
 
-void ft2_widgets_mouse_up_right(ft2_widgets_t *widgets, int x, int y, struct ft2_instance_t *inst)
+void ft2_widgets_mouse_up_right(ft2_widgets_t *widgets, int x, int y, struct ft2_instance_t *inst,
+	struct ft2_video_t *video, const struct ft2_bmp_t *bmp)
 {
-	(void)widgets;
-	(void)x;
-	(void)y;
-	(void)inst;
-
+	mouse.x = x;
+	mouse.y = y;
 	mouse.rightButtonPressed = false;
 	mouse.rightButtonReleased = true;
+
+	/* If left button is still pressed, don't release the object */
+	if (mouse.leftButtonPressed)
+		return;
+
+	/* Handle right-click release for pushbuttons (for predef envelope save) */
+	if (mouse.rightClickTrackedObject && mouse.lastUsedObjectType == OBJECT_PUSHBUTTON)
+	{
+		testPushButtonMouseRelease(widgets, inst, video, bmp, x, y, mouse.lastUsedObjectID, true);
+		mouse.lastUsedObjectID = OBJECT_ID_NONE;
+		mouse.lastUsedObjectType = OBJECT_NONE;
+		mouse.rightClickTrackedObject = false;
+	}
 }
 
 void ft2_widgets_mouse_move(ft2_widgets_t *widgets, int x, int y)
