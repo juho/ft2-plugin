@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.27 (Jan 3, 2026)
+
+- Refactor: Derive editor from inst->ui.
+
 ## 1.0.26 (Jan 3, 2026)
 
 - Refactor: Move function pointers to use *inst parameter.

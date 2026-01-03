@@ -86,6 +86,12 @@ typedef struct ft2_ui_t
 	bool paletteInitialized;
 } ft2_ui_t;
 
+/* Helper macros to derive editor pointers from instance */
+#define FT2_UI(inst)         ((ft2_ui_t*)(inst)->ui)
+#define FT2_SAMPLE_ED(inst)  (&FT2_UI(inst)->sampleEditor)
+#define FT2_INSTR_ED(inst)   (&FT2_UI(inst)->instrEditor)
+#define FT2_PATTERN_ED(inst) (&FT2_UI(inst)->patternEditor)
+
 void ft2_ui_init(ft2_ui_t *ui);
 void ft2_ui_shutdown(ft2_ui_t *ui);
 void ft2_ui_set_screen(ft2_ui_t *ui, ft2_ui_screen screen);

@@ -1445,9 +1445,9 @@ static ft2_sample_t *getCurSample(ft2_instance_t *inst)
 
 void pbSampScrollLeft(ft2_instance_t *inst)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed == NULL || inst == NULL)
+	if (inst == NULL || inst->ui == NULL)
 		return;
+	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
 	
 	ft2_sample_t *s = getCurSample(inst);
 	if (s == NULL)
@@ -1471,9 +1471,9 @@ void pbSampScrollLeft(ft2_instance_t *inst)
 
 void pbSampScrollRight(ft2_instance_t *inst)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed == NULL || inst == NULL)
+	if (inst == NULL || inst->ui == NULL)
 		return;
+	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
 	
 	ft2_sample_t *s = getCurSample(inst);
 	if (s == NULL)
@@ -1551,8 +1551,10 @@ void pbSampPlayRange(ft2_instance_t *inst)
 		return;
 	
 	/* Only play if there's a valid range selected - matches standalone behavior */
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed == NULL || !ed->hasRange || ed->rangeStart == ed->rangeEnd)
+	if (inst->ui == NULL)
+		return;
+	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
+	if (!ed->hasRange || ed->rangeStart == ed->rangeEnd)
 		return;
 	
 	uint8_t ch = inst->cursor.ch;
@@ -1582,9 +1584,9 @@ void pbSampPlayDisplay(ft2_instance_t *inst)
 	uint8_t smp = inst->editor.curSmp;
 	uint8_t note = inst->editor.smpEd_NoteNr + 1;
 	
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed != NULL)
+	if (inst->ui != NULL)
 	{
+		ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
 		ft2_instance_play_sample(inst, note, instr, smp, ch, 64, ed->scrPos, ed->viewSize);
 	}
 	else
@@ -1596,60 +1598,44 @@ void pbSampPlayDisplay(ft2_instance_t *inst)
 
 void pbSampShowRange(ft2_instance_t *inst)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed != NULL)
-		ft2_sample_ed_show_range(ed, inst);
+	ft2_sample_ed_show_range(inst);
 }
 
 void pbSampRangeAll(ft2_instance_t *inst)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed != NULL)
-		ft2_sample_ed_range_all(ed, inst);
+	ft2_sample_ed_range_all(inst);
 }
 
 void pbSampClrRange(ft2_instance_t *inst)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed != NULL)
-		ft2_sample_ed_clear_selection(ed, inst);
+	ft2_sample_ed_clear_selection(inst);
 }
 
 void pbSampZoomOut(ft2_instance_t *inst)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed != NULL)
-		ft2_sample_ed_zoom_out(ed, SAMPLE_AREA_WIDTH / 2, inst); /* Center zoom for button press */
+	ft2_sample_ed_zoom_out(inst, SAMPLE_AREA_WIDTH / 2); /* Center zoom for button press */
 }
 
 void pbSampShowAll(ft2_instance_t *inst)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed != NULL)
-		ft2_sample_ed_show_all(ed, inst);
+	ft2_sample_ed_show_all(inst);
 }
 
 void pbSampSaveRng(ft2_instance_t *inst) { (void)inst; }
 
 void pbSampCut(ft2_instance_t *inst)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed != NULL)
-		ft2_sample_ed_cut(ed, inst);
+	ft2_sample_ed_cut(inst);
 }
 
 void pbSampCopy(ft2_instance_t *inst)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed != NULL)
-		ft2_sample_ed_copy(ed, inst);
+	ft2_sample_ed_copy(inst);
 }
 
 void pbSampPaste(ft2_instance_t *inst)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed != NULL)
-		ft2_sample_ed_paste(ed, inst);
+	ft2_sample_ed_paste(inst);
 }
 
 void pbSampCrop(ft2_instance_t *inst)
@@ -1702,7 +1688,7 @@ void pbSampFxAddBass(ft2_instance_t *inst) { pbSfxAddBass(inst); }
 void pbSampFxAddTreble(ft2_instance_t *inst) { pbSfxAddTreble(inst); }
 void pbSampFxSetAmp(ft2_instance_t *inst) { pbSfxSetAmp(inst); }
 void pbSampFxUndo(ft2_instance_t *inst) { pbSfxUndo(inst); }
-void pbSampFxXFade(ft2_instance_t *inst) { ft2_sample_ed_crossfade_loop(ft2_sample_ed_get_current(), inst); }
+void pbSampFxXFade(ft2_instance_t *inst) { ft2_sample_ed_crossfade_loop(inst); }
 void pbSampFxBack(ft2_instance_t *inst) { hideSampleEffectsScreen(inst); }
 void cbSampFxNorm(ft2_instance_t *inst) { cbSfxNormalization(inst); }
 
@@ -2091,9 +2077,9 @@ void sbChanScroll(ft2_instance_t *inst, uint32_t pos)
 
 void sbSampScroll(ft2_instance_t *inst, uint32_t pos)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
-	if (ed == NULL || inst == NULL)
+	if (inst == NULL || inst->ui == NULL)
 		return;
+	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
 	
 	ed->scrPos = (int32_t)pos;
 	inst->uiState.updateSampleEditor = true;

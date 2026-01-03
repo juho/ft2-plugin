@@ -377,7 +377,7 @@ static void applyVolumeToSample(void)
 		return;
 	
 	/* Get range from sample editor */
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
+	ft2_sample_editor_t *ed = (inst != NULL && inst->ui != NULL) ? FT2_SAMPLE_ED(inst) : NULL;
 	int32_t x1, x2;
 	
 	if (ed != NULL && ed->hasRange && ed->rangeStart < ed->rangeEnd)
@@ -474,7 +474,8 @@ static double calculateMaxScale(void)
 	if (s == NULL || s->dataPtr == NULL || s->length == 0)
 		return 100.0;
 	
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
+	ft2_instance_t *inst = state.instance;
+	ft2_sample_editor_t *ed = (inst != NULL && inst->ui != NULL) ? FT2_SAMPLE_ED(inst) : NULL;
 	int32_t x1, x2;
 	
 	if (ed != NULL && ed->hasRange && ed->rangeStart < ed->rangeEnd)

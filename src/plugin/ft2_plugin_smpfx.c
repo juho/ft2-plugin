@@ -74,9 +74,9 @@ static ft2_sample_t *getSmpFxCurSample(ft2_instance_t *inst)
 }
 
 /* Get the sample editor range (x1, x2). If no range selected, returns whole sample. */
-static void getSmpFxRange(ft2_sample_t *s, int32_t *x1, int32_t *x2)
+static void getSmpFxRange(ft2_instance_t *inst, ft2_sample_t *s, int32_t *x1, int32_t *x2)
 {
-	ft2_sample_editor_t *ed = ft2_sample_ed_get_current();
+	ft2_sample_editor_t *ed = (inst != NULL && inst->ui != NULL) ? FT2_SAMPLE_ED(inst) : NULL;
 	
 	if (ed != NULL && ed->hasRange && ed->rangeEnd > ed->rangeStart)
 	{
@@ -606,7 +606,7 @@ static void applyLowPassFilter(ft2_instance_t *inst, int32_t cutoff)
 	lastLpCutoff = cutoff;
 
 	int32_t x1, x2;
-	getSmpFxRange(s, &x1, &x2);
+	getSmpFxRange(inst, s, &x1, &x2);
 	
 	setupResoLpFilter(s, &f, cutoff, filterResonance, false);
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
@@ -627,7 +627,7 @@ static void applyHighPassFilter(ft2_instance_t *inst, int32_t cutoff)
 	lastHpCutoff = cutoff;
 
 	int32_t x1, x2;
-	getSmpFxRange(s, &x1, &x2);
+	getSmpFxRange(inst, s, &x1, &x2);
 	
 	setupResoHpFilter(s, &f, cutoff, filterResonance, false);
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
@@ -663,7 +663,7 @@ void pbSfxSubBass(ft2_instance_t *inst)
 		return;
 
 	int32_t x1, x2;
-	getSmpFxRange(s, &x1, &x2);
+	getSmpFxRange(inst, s, &x1, &x2);
 	
 	setupResoHpFilter(s, &f, 0.001, 0, true);
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
@@ -681,7 +681,7 @@ void pbSfxAddBass(ft2_instance_t *inst)
 		return;
 
 	int32_t x1, x2;
-	getSmpFxRange(s, &x1, &x2);
+	getSmpFxRange(inst, s, &x1, &x2);
 	const int32_t len = x2 - x1;
 	if (len <= 0) return;
 
@@ -762,7 +762,7 @@ void pbSfxSubTreble(ft2_instance_t *inst)
 		return;
 
 	int32_t x1, x2;
-	getSmpFxRange(s, &x1, &x2);
+	getSmpFxRange(inst, s, &x1, &x2);
 	
 	setupResoLpFilter(s, &f, 0.33, 0, true);
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
@@ -780,7 +780,7 @@ void pbSfxAddTreble(ft2_instance_t *inst)
 		return;
 
 	int32_t x1, x2;
-	getSmpFxRange(s, &x1, &x2);
+	getSmpFxRange(inst, s, &x1, &x2);
 	const int32_t len = x2 - x1;
 	if (len <= 0) return;
 
@@ -859,7 +859,7 @@ void pbSfxSetAmp(ft2_instance_t *inst)
 		return;
 
 	int32_t x1, x2;
-	getSmpFxRange(s, &x1, &x2);
+	getSmpFxRange(inst, s, &x1, &x2);
 	const int32_t len = x2 - x1;
 	if (len <= 0) return;
 

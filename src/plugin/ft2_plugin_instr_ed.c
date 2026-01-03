@@ -197,17 +197,7 @@ static const uint8_t noteTab2[96] =
 };
 
 /* Current instrument editor for callbacks */
-static ft2_instrument_editor_t *currentInstrEditor = NULL;
-
-void ft2_instr_ed_set_current(ft2_instrument_editor_t *editor)
-{
-	currentInstrEditor = editor;
-}
-
-ft2_instrument_editor_t *ft2_instr_ed_get_current(void)
-{
-	return currentInstrEditor;
-}
+/* Global pointer removed - use FT2_INSTR_ED(inst) macro instead */
 
 /* ============ STATIC DRAWING FUNCTIONS ============ */
 

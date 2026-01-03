@@ -72,46 +72,44 @@ typedef struct ft2_sample_editor_t
 } ft2_sample_editor_t;
 
 void ft2_sample_ed_init(ft2_sample_editor_t *editor, struct ft2_video_t *video);
-void ft2_sample_ed_set_current(ft2_sample_editor_t *editor);
-ft2_sample_editor_t *ft2_sample_ed_get_current(void);
-void ft2_sample_ed_set_sample(ft2_sample_editor_t *editor, int instr, int sample, struct ft2_instance_t *inst);
-void ft2_sample_ed_draw(ft2_sample_editor_t *editor, const struct ft2_bmp_t *bmp, struct ft2_instance_t *inst);
-void ft2_sample_ed_draw_waveform(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_draw_range(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_draw_loop_points(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_draw_pos_line(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
+void ft2_sample_ed_set_sample(struct ft2_instance_t *inst, int instr, int sample);
+void ft2_sample_ed_draw(struct ft2_instance_t *inst);
+void ft2_sample_ed_draw_waveform(struct ft2_instance_t *inst);
+void ft2_sample_ed_draw_range(struct ft2_instance_t *inst);
+void ft2_sample_ed_draw_loop_points(struct ft2_instance_t *inst);
+void ft2_sample_ed_draw_pos_line(struct ft2_instance_t *inst);
 
 /* View control */
-void ft2_sample_ed_zoom_in(ft2_sample_editor_t *editor, int32_t mouseX, struct ft2_instance_t *inst);
-void ft2_sample_ed_zoom_out(ft2_sample_editor_t *editor, int32_t mouseX, struct ft2_instance_t *inst);
-void ft2_sample_ed_show_all(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_show_loop(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_show_range(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
+void ft2_sample_ed_zoom_in(struct ft2_instance_t *inst, int32_t mouseX);
+void ft2_sample_ed_zoom_out(struct ft2_instance_t *inst, int32_t mouseX);
+void ft2_sample_ed_show_all(struct ft2_instance_t *inst);
+void ft2_sample_ed_show_loop(struct ft2_instance_t *inst);
+void ft2_sample_ed_show_range(struct ft2_instance_t *inst);
 
 /* Selection */
-void ft2_sample_ed_set_selection(ft2_sample_editor_t *editor, int32_t start, int32_t end, struct ft2_instance_t *inst);
-void ft2_sample_ed_clear_selection(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_range_all(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
+void ft2_sample_ed_set_selection(struct ft2_instance_t *inst, int32_t start, int32_t end);
+void ft2_sample_ed_clear_selection(struct ft2_instance_t *inst);
+void ft2_sample_ed_range_all(struct ft2_instance_t *inst);
 
 /* Mouse handling */
-void ft2_sample_ed_mouse_click(ft2_sample_editor_t *editor, int x, int y, int button, struct ft2_instance_t *inst);
-void ft2_sample_ed_mouse_drag(ft2_sample_editor_t *editor, int x, int y, bool shiftPressed, struct ft2_instance_t *inst);
-void ft2_sample_ed_mouse_up(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
+void ft2_sample_ed_mouse_click(struct ft2_instance_t *inst, int x, int y, int button);
+void ft2_sample_ed_mouse_drag(struct ft2_instance_t *inst, int x, int y, bool shiftPressed);
+void ft2_sample_ed_mouse_up(struct ft2_instance_t *inst);
 
 /* Sample operations */
-void ft2_sample_ed_cut(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_copy(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_paste(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_delete(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_reverse(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_normalize(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_fade_in(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_fade_out(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
-void ft2_sample_ed_crossfade_loop(ft2_sample_editor_t *editor, struct ft2_instance_t *inst);
+void ft2_sample_ed_cut(struct ft2_instance_t *inst);
+void ft2_sample_ed_copy(struct ft2_instance_t *inst);
+void ft2_sample_ed_paste(struct ft2_instance_t *inst);
+void ft2_sample_ed_delete(struct ft2_instance_t *inst);
+void ft2_sample_ed_reverse(struct ft2_instance_t *inst);
+void ft2_sample_ed_normalize(struct ft2_instance_t *inst);
+void ft2_sample_ed_fade_in(struct ft2_instance_t *inst);
+void ft2_sample_ed_fade_out(struct ft2_instance_t *inst);
+void ft2_sample_ed_crossfade_loop(struct ft2_instance_t *inst);
 
 /* Coordinate conversion */
-int32_t ft2_sample_scr2SmpPos(ft2_sample_editor_t *editor, int32_t x, struct ft2_instance_t *inst);
-int32_t ft2_sample_smpPos2Scr(ft2_sample_editor_t *editor, int32_t pos, struct ft2_instance_t *inst);
+int32_t ft2_sample_scr2SmpPos(struct ft2_instance_t *inst, int32_t x);
+int32_t ft2_sample_smpPos2Scr(struct ft2_instance_t *inst, int32_t pos);
 
 /* Visibility */
 void showSampleEditor(struct ft2_instance_t *inst);

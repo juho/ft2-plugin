@@ -59,8 +59,6 @@ typedef struct ft2_instrument_editor_t
 } ft2_instrument_editor_t;
 
 void ft2_instr_ed_init(ft2_instrument_editor_t *editor, struct ft2_video_t *video);
-void ft2_instr_ed_set_current(ft2_instrument_editor_t *editor);
-ft2_instrument_editor_t *ft2_instr_ed_get_current(void);
 void ft2_instr_ed_draw(ft2_instrument_editor_t *editor, const struct ft2_bmp_t *bmp, struct ft2_instance_t *inst);
 void ft2_instr_ed_draw_vol_env(ft2_instrument_editor_t *editor, struct ft2_instance_t *inst);
 void ft2_instr_ed_draw_pan_env(ft2_instrument_editor_t *editor, struct ft2_instance_t *inst);
