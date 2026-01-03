@@ -61,8 +61,8 @@ private:
     // OpenGL context
     juce::OpenGLContext openGLContext;
     
-    // UI state
-    ft2_ui_t ui;
+    // UI state (allocated by C code for correct memory layout)
+    ft2_ui_t* ui = nullptr;
     
     // OpenGL texture for framebuffer
     GLuint framebufferTexture = 0;

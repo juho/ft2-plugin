@@ -1,5 +1,8 @@
 #include "PluginEditor.h"
 
+#if defined(_WIN32)
+#pragma pack(push, 8)
+#endif
 extern "C" {
 #include "ft2_plugin_diskop.h"
 #include "ft2_plugin_loader.h"
@@ -9,6 +12,9 @@ extern "C" {
 #include "ft2_plugin_instr_ed.h"
 #include "ft2_plugin_pattern_ed.h"
 }
+#if defined(_WIN32)
+#pragma pack(pop)
+#endif
 
 // Use JUCE's OpenGL namespace
 using namespace ::juce::gl;
@@ -17,13 +23,13 @@ using namespace ::juce::gl;
 FT2PluginEditor::FT2PluginEditor (FT2PluginProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    // Initialize UI system
-    ft2_ui_init(&ui);
+    // Create UI system (allocated in C for correct memory layout)
+    ui = ft2_ui_create();
     
     // Link the UI to the instance for multi-instance support
     auto* inst = audioProcessor.getInstance();
     if (inst != nullptr)
-        inst->ui = &ui;
+        inst->ui = ui;
     
     // Set the window size (2x upscale by default)
     setSize (FT2_SCREEN_W * upscaleFactor, FT2_SCREEN_H * upscaleFactor);
@@ -62,7 +68,8 @@ FT2PluginEditor::~FT2PluginEditor()
     // Must detach before destroying
     openGLContext.detach();
     stopTimer();
-    ft2_ui_shutdown(&ui);
+    ft2_ui_destroy(ui);
+    ui = nullptr;
 }
 
 //==============================================================================
@@ -111,7 +118,7 @@ void FT2PluginEditor::renderOpenGL()
         return;
     
     // Get framebuffer pointer
-    const uint32_t* framebuffer = ft2_ui_get_framebuffer(&ui);
+    const uint32_t* framebuffer = ft2_ui_get_framebuffer(ui);
     if (framebuffer == nullptr)
         return;
     
@@ -885,10 +892,10 @@ void FT2PluginEditor::timerCallback()
     }
 
     // Update UI
-    ft2_ui_update(&ui, audioProcessor.getInstance());
+    ft2_ui_update(ui, audioProcessor.getInstance());
     
     // Draw UI to the framebuffer
-    ft2_ui_draw(&ui, audioProcessor.getInstance());
+    ft2_ui_draw(ui, audioProcessor.getInstance());
     
     // Trigger OpenGL repaint after framebuffer is fully updated
     openGLContext.triggerRepaint();
@@ -922,7 +929,7 @@ void FT2PluginEditor::mouseDown(const juce::MouseEvent& e)
     bool leftDown = e.mods.isLeftButtonDown();
     bool rightDown = e.mods.isRightButtonDown();
     
-    ft2_ui_mouse_press(&ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, leftDown, rightDown);
+    ft2_ui_mouse_press(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, leftDown, rightDown);
 }
 
 void FT2PluginEditor::mouseUp(const juce::MouseEvent& e)
@@ -936,26 +943,26 @@ void FT2PluginEditor::mouseUp(const juce::MouseEvent& e)
     else if (e.mods.isRightButtonDown()) button = 2;
     else if (e.mods.isMiddleButtonDown()) button = 3;
     
-    ft2_ui_mouse_release(&ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, button);
+    ft2_ui_mouse_release(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, button);
 }
 
 void FT2PluginEditor::mouseDrag(const juce::MouseEvent& e)
 {
     auto ft2Pos = screenToFT2(e.getPosition());
-    ft2_ui_mouse_move(&ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y);
+    ft2_ui_mouse_move(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y);
 }
 
 void FT2PluginEditor::mouseMove(const juce::MouseEvent& e)
 {
     auto ft2Pos = screenToFT2(e.getPosition());
-    ft2_ui_mouse_move(&ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y);
+    ft2_ui_mouse_move(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y);
 }
 
 void FT2PluginEditor::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
 {
     auto ft2Pos = screenToFT2(e.getPosition());
     int delta = (int)(wheel.deltaY * 120.0f); // Convert to standard wheel units
-    ft2_ui_mouse_wheel(&ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, delta);
+    ft2_ui_mouse_wheel(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, delta);
 }
 
 bool FT2PluginEditor::keyPressed(const juce::KeyPress& key)
@@ -998,24 +1005,24 @@ bool FT2PluginEditor::keyPressed(const juce::KeyPress& key)
     juce::juce_wchar textChar = key.getTextCharacter();
     if (textChar >= 32 && textChar <= 126)
     {
-        ft2_ui_text_input(&ui, static_cast<char>(textChar));
+        ft2_ui_text_input(ui, static_cast<char>(textChar));
     }
     
-    ft2_ui_key_press(&ui, audioProcessor.getInstance(), ft2Key, modifiers);
+    ft2_ui_key_press(ui, audioProcessor.getInstance(), ft2Key, modifiers);
     return true; // Mark as handled
 }
 
 bool FT2PluginEditor::keyStateChanged(bool isKeyDown)
 {
-    if (!isKeyDown)
+    if (!isKeyDown && ui != nullptr)
     {
         // A key was released - find which one(s) by comparing tracked state vs actual
         for (int key = 0; key < 512; key++)
         {
-            if (ui.input.keyDown[key] && !juce::KeyPress::isKeyCurrentlyDown(key))
+            if (ui->input.keyDown[key] && !juce::KeyPress::isKeyCurrentlyDown(key))
             {
                 int modifiers = getModifiers(juce::ModifierKeys::getCurrentModifiers());
-                ft2_ui_key_release(&ui, audioProcessor.getInstance(), key, modifiers);
+                ft2_ui_key_release(ui, audioProcessor.getInstance(), key, modifiers);
             }
         }
     }

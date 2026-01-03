@@ -94,6 +94,19 @@ typedef struct ft2_ui_t
 #define FT2_VIDEO(inst)      (&FT2_UI(inst)->video)
 #define FT2_BMP(inst)        (&FT2_UI(inst)->bmp)
 
+/**
+ * Allocate and initialize a new UI instance.
+ * @return Pointer to new UI, or NULL on failure.
+ * @note The struct is allocated in C code to ensure correct memory layout.
+ */
+ft2_ui_t* ft2_ui_create(void);
+
+/**
+ * Destroy and free a UI instance.
+ * @param ui UI instance to destroy (may be NULL).
+ */
+void ft2_ui_destroy(ft2_ui_t* ui);
+
 void ft2_ui_init(ft2_ui_t *ui);
 void ft2_ui_shutdown(ft2_ui_t *ui);
 void ft2_ui_set_screen(ft2_ui_t *ui, ft2_ui_screen screen);

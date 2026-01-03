@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.30 (Jan 3, 2026)
+
+- Fix: ABI structs between C/C++, add belt and suspenders.
+
 ## 1.0.29 (Jan 3, 2026)
 
 - Fix: MSVC packing guards.

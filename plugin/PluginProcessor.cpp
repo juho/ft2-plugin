@@ -1,6 +1,9 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#if defined(_WIN32)
+#pragma pack(push, 8)
+#endif
 extern "C" {
 #include "../src/plugin/ft2_plugin_config.h"
 #include "../src/plugin/ft2_plugin_replayer.h"
@@ -8,6 +11,9 @@ extern "C" {
 #include "../src/plugin/ft2_plugin_diskop.h"
 #include "../src/plugin/ft2_plugin_loader.h"
 }
+#if defined(_WIN32)
+#pragma pack(pop)
+#endif
 
 FT2PluginProcessor::FT2PluginProcessor()
     : AudioProcessor([]()

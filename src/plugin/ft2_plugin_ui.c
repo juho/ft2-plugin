@@ -15,6 +15,7 @@
  * - Bottom editors (pattern/sample/instrument) ALWAYS draw when visible
  */
 
+#include <stdlib.h>
 #include <string.h>
 #include "ft2_plugin_ui.h"
 #include "ft2_plugin_video.h"
@@ -50,6 +51,23 @@ static const char *screenNames[FT2_NUM_SCREENS] = {
 	"Pattern", "Sample", "Instr", "Config", "Disk Op", "About"
 };
 #endif
+
+ft2_ui_t* ft2_ui_create(void)
+{
+	ft2_ui_t* ui = (ft2_ui_t*)calloc(1, sizeof(ft2_ui_t));
+	if (ui != NULL)
+		ft2_ui_init(ui);
+	return ui;
+}
+
+void ft2_ui_destroy(ft2_ui_t* ui)
+{
+	if (ui != NULL)
+	{
+		ft2_ui_shutdown(ui);
+		free(ui);
+	}
+}
 
 void ft2_ui_init(ft2_ui_t *ui)
 {

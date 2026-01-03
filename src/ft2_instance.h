@@ -19,6 +19,9 @@
 extern "C" {
 #endif
 
+/* Forward declaration for UI struct (defined in ft2_plugin_ui.h) */
+struct ft2_ui_t;
+
 /* 
  * Constants matching ft2_replayer.h to avoid SDL2 dependency.
  */
@@ -621,7 +624,7 @@ typedef struct ft2_instance_t
 	ft2_timemap_t timemap;                  /* DAW position sync time map */
 	ft2_midi_queue_t midiOutQueue;          /* MIDI output event queue */
 
-	void *ui;  /* Pointer to ft2_ui_t (opaque to avoid circular include) */
+	struct ft2_ui_t *ui;  /* UI state (allocated by ft2_ui_create) */
 
 	uint32_t sampleRate;
 	float fAudioNormalizeMul;
