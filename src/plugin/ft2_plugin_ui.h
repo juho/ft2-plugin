@@ -91,6 +91,8 @@ typedef struct ft2_ui_t
 #define FT2_SAMPLE_ED(inst)  (&FT2_UI(inst)->sampleEditor)
 #define FT2_INSTR_ED(inst)   (&FT2_UI(inst)->instrEditor)
 #define FT2_PATTERN_ED(inst) (&FT2_UI(inst)->patternEditor)
+#define FT2_VIDEO(inst)      (&FT2_UI(inst)->video)
+#define FT2_BMP(inst)        (&FT2_UI(inst)->bmp)
 
 void ft2_ui_init(ft2_ui_t *ui);
 void ft2_ui_shutdown(ft2_ui_t *ui);

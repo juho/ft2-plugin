@@ -70,7 +70,7 @@ void ft2_ui_init(ft2_ui_t *ui)
 	/* Initialize components */
 	ft2_pattern_ed_init(&ui->patternEditor, &ui->video);
 	ft2_sample_ed_init(&ui->sampleEditor, &ui->video);
-	ft2_instr_ed_init(&ui->instrEditor, &ui->video);
+	ft2_instr_ed_init(&ui->instrEditor);
 	ft2_scopes_init(&ui->scopes);
 	ft2_widgets_init(&ui->widgets);
 	ft2_about_init();
@@ -174,7 +174,7 @@ void ft2_ui_draw(ft2_ui_t *ui, void *inst)
 		else if (ft2inst->uiState.instEditorExtShown)
 		{
 			/* Draw instrument editor extended panel (replaces scopes) */
-			drawInstEditorExt(ft2inst, video, bmp);
+			drawInstEditorExt(ft2inst);
 		}
 		else if (ft2inst->uiState.scopesShown)
 	{
@@ -207,7 +207,7 @@ void ft2_ui_draw(ft2_ui_t *ui, void *inst)
 			}
 			else if (ft2inst->uiState.instEditorShown)
 			{
-				ft2_instr_ed_draw(&ui->instrEditor, bmp, ft2inst);
+				ft2_instr_ed_draw(ft2inst);
 			}
 
 			/* Always draw visible widgets - widget visibility handles what gets drawn */
@@ -416,7 +416,7 @@ static void handleRedrawing(ft2_ui_t *ui, ft2_instance_t *inst)
 		if (inst->uiState.updateInstEditor)
 		{
 			inst->uiState.updateInstEditor = false;
-			ft2_instr_ed_draw(&ui->instrEditor, bmp, inst);
+			ft2_instr_ed_draw(inst);
 		}
 	}
 	
@@ -619,7 +619,7 @@ void ft2_ui_mouse_press(ft2_ui_t *ui, void *inst, int x, int y, bool leftButton,
 		/* Instrument editor covers y >= 173 to y <= 399 */
 		if (y >= 173)
 		{
-			ft2_instr_ed_mouse_click(&ui->instrEditor, x, y, button, ft2inst);
+			ft2_instr_ed_mouse_click(ft2inst, x, y, button);
 			ui->input.mouseDragging = true;
 		}
 	}
@@ -664,7 +664,7 @@ void ft2_ui_mouse_release(ft2_ui_t *ui, void *inst, int x, int y, int button)
 	/* Handle instrument editor mouse up */
 	if (ft2inst != NULL && ft2inst->uiState.instEditorShown)
 	{
-		ft2_instr_ed_mouse_up(&ui->instrEditor, ft2inst);
+		ft2_instr_ed_mouse_up(ft2inst);
 	}
 }
 
@@ -694,7 +694,7 @@ void ft2_ui_mouse_move(ft2_ui_t *ui, void *inst, int x, int y)
 	/* Handle instrument editor mouse drag */
 	if (ft2inst != NULL && ft2inst->uiState.instEditorShown && ui->input.mouseDragging)
 	{
-		ft2_instr_ed_mouse_drag(&ui->instrEditor, x, y, ft2inst);
+		ft2_instr_ed_mouse_drag(ft2inst, x, y);
 	}
 }
 

@@ -548,12 +548,8 @@ void pbDiskOp(ft2_instance_t *inst)
 
 void pbInstEd(ft2_instance_t *inst)
 {
-	if (inst == NULL) return;
-	
-	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui == NULL) return;
-	
-	toggleInstEditor(inst, &ui->video, &ui->bmp);
+	if (inst == NULL || inst->ui == NULL) return;
+	toggleInstEditor(inst);
 }
 
 void pbSmpEd(ft2_instance_t *inst)

@@ -374,9 +374,14 @@ static void pianoNumberOut(ft2_video_t *video, const ft2_bmp_t *bmp, uint16_t xP
 }
 
 /* Write sample number on piano key - exact match to standalone writePianoNumber() */
-static void writePianoNumber(ft2_instrument_editor_t *ed, const ft2_bmp_t *bmp, uint8_t note, uint8_t key, uint8_t octave, ft2_instance_t *inst)
+static void writePianoNumber(ft2_instance_t *inst, uint8_t note, uint8_t key, uint8_t octave)
 {
-	if (ed == NULL || ed->video == NULL || inst == NULL)
+	if (inst == NULL || inst->ui == NULL)
+		return;
+
+	ft2_video_t *video = FT2_VIDEO(inst);
+	const ft2_bmp_t *bmp = FT2_BMP(inst);
+	if (video == NULL || video->frameBuffer == NULL)
 		return;
 
 	int16_t curInstr = inst->editor.curInstr;
@@ -392,58 +397,29 @@ static void writePianoNumber(ft2_instrument_editor_t *ed, const ft2_bmp_t *bmp, 
 	const uint16_t x = keyDigitXPos[key] + (octave * 77);
 
 	if (keyIsBlackTab[key])
-		pianoNumberOut(ed->video, bmp, x, 361, PAL_FORGRND, PAL_BCKGRND, number);
+		pianoNumberOut(video, bmp, x, 361, PAL_FORGRND, PAL_BCKGRND, number);
 	else
-		pianoNumberOut(ed->video, bmp, x, 385, PAL_BCKGRND, PAL_FORGRND, number);
+		pianoNumberOut(video, bmp, x, 385, PAL_BCKGRND, PAL_FORGRND, number);
 }
 
 /* Draw a white piano key - exact match to standalone using bitmap */
-static void drawWhitePianoKey(ft2_instrument_editor_t *ed, int key, int octave, bool keyDown, const ft2_bmp_t *bmp)
+static void drawWhitePianoKey(ft2_video_t *video, int key, int octave, bool keyDown, const ft2_bmp_t *bmp)
 {
-	if (ed == NULL || ed->video == NULL)
+	if (video == NULL || video->frameBuffer == NULL)
 		return;
-
-	ft2_video_t *video = ed->video;
 	const uint16_t x = keyXPos[key] + (octave * 77);
-
-	/* Use bitmap if available - exact match to standalone */
-	if (bmp != NULL && bmp->whitePianoKeys != NULL)
-	{
-		const uint8_t *src = &bmp->whitePianoKeys[(keyDown * (11*46*3)) + whiteKeysBmpOrder[key]];
-		blit(video, x, 351, src, 11, 46);
-	}
-	else
-	{
-		/* Fallback: draw simple key */
-	uint8_t color = keyDown ? PAL_BUTTONS : PAL_BCKGRND;
-		fillRect(video, x, 351, 11, 46, color);
-		vLine(video, x, 351, 46, PAL_DSKTOP2);
-		vLine(video, x + 10, 351, 46, PAL_DSKTOP2);
-		hLine(video, x, 396, 11, PAL_DSKTOP2);
-	}
+	const uint8_t *src = &bmp->whitePianoKeys[(keyDown * (11*46*3)) + whiteKeysBmpOrder[key]];
+	blit(video, x, 351, src, 11, 46);
 }
 
 /* Draw a black piano key - exact match to standalone using bitmap */
-static void drawBlackPianoKey(ft2_instrument_editor_t *ed, int key, int octave, bool keyDown, const ft2_bmp_t *bmp)
+static void drawBlackPianoKey(ft2_video_t *video, int key, int octave, bool keyDown, const ft2_bmp_t *bmp)
 {
-	if (ed == NULL || ed->video == NULL)
+	if (video == NULL || video->frameBuffer == NULL)
 		return;
-
-	ft2_video_t *video = ed->video;
 	const uint16_t x = keyXPos[key] + (octave * 77);
-
-	/* Use bitmap if available - exact match to standalone */
-	if (bmp != NULL && bmp->blackPianoKeys != NULL)
-	{
-		const uint8_t *src = &bmp->blackPianoKeys[keyDown * (7*27)];
-		blit(video, x, 351, src, 7, 27);
-	}
-	else
-	{
-		/* Fallback: draw simple key */
-	uint8_t color = keyDown ? PAL_BUTTONS : PAL_DSKTOP2;
-		fillRect(video, x, 351, 7, 27, color);
-	}
+	const uint8_t *src = &bmp->blackPianoKeys[keyDown * (7*27)];
+	blit(video, x, 351, src, 7, 27);
 }
 
 /* ============ ENVELOPE COORDINATE DISPLAY ============ */
@@ -506,13 +482,12 @@ static void drawPanEnvCoords(ft2_video_t *video, const ft2_bmp_t *bmp, int16_t t
 
 /* ============ PUBLIC FUNCTIONS ============ */
 
-void ft2_instr_ed_init(ft2_instrument_editor_t *editor, ft2_video_t *video)
+void ft2_instr_ed_init(ft2_instrument_editor_t *editor)
 {
 	if (editor == NULL)
 		return;
 
 	memset(editor, 0, sizeof(ft2_instrument_editor_t));
-	editor->video = video;
 	editor->draggingVolEnv = false;
 	editor->draggingPanEnv = false;
 	memset(editor->pianoKeyStatus, 0, sizeof(editor->pianoKeyStatus));
@@ -567,12 +542,14 @@ static void envelopeVertLine(ft2_video_t *video, int32_t envNum, int32_t x, int3
 	}
 }
 
-void ft2_instr_ed_draw_envelope(ft2_instrument_editor_t *ed, int envNum, ft2_instance_t *inst)
+void ft2_instr_ed_draw_envelope(ft2_instance_t *inst, int envNum)
 {
-	if (ed == NULL || ed->video == NULL || inst == NULL)
+	if (inst == NULL || inst->ui == NULL)
 		return;
 
-	ft2_video_t *video = ed->video;
+	ft2_video_t *video = FT2_VIDEO(inst);
+	if (video == NULL || video->frameBuffer == NULL)
+		return;
 
 	/* Clear envelope area - exact match to standalone */
 	int32_t baseY = (envNum == 0) ? 189 : 276;
@@ -714,29 +691,28 @@ void ft2_instr_ed_draw_envelope(ft2_instrument_editor_t *ed, int envNum, ft2_ins
 	}
 }
 
-void ft2_instr_ed_draw_vol_env(ft2_instrument_editor_t *editor, ft2_instance_t *inst)
+void ft2_instr_ed_draw_vol_env(ft2_instance_t *inst)
 {
-	ft2_instr_ed_draw_envelope(editor, 0, inst);
+	ft2_instr_ed_draw_envelope(inst, 0);
 }
 
-void ft2_instr_ed_draw_pan_env(ft2_instrument_editor_t *editor, ft2_instance_t *inst)
+void ft2_instr_ed_draw_pan_env(ft2_instance_t *inst)
 {
-	ft2_instr_ed_draw_envelope(editor, 1, inst);
+	ft2_instr_ed_draw_envelope(inst, 1);
 }
 
-void ft2_instr_ed_draw_note_map(ft2_instrument_editor_t *ed, const ft2_bmp_t *bmp, ft2_instance_t *inst)
+void ft2_instr_ed_draw_note_map(ft2_instance_t *inst)
 {
-	if (ed == NULL || ed->video == NULL || inst == NULL)
+	if (inst == NULL || inst->ui == NULL)
 		return;
 
-	/* Note-to-sample map is shown in the right side of the instrument editor */
-	/* For now, just draw a placeholder */
-	ft2_video_t *video = ed->video;
+	ft2_video_t *video = FT2_VIDEO(inst);
+	const ft2_bmp_t *bmp = FT2_BMP(inst);
+	if (video == NULL || video->frameBuffer == NULL)
+		return;
 	
 	drawFramework(video, 400, 189, 232, 67, FRAMEWORK_TYPE2);
-	
-	if (bmp != NULL)
-		textOutShadow(video, bmp, 404, 193, PAL_FORGRND, PAL_DSKTOP2, "Note-Sample Map");
+	textOutShadow(video, bmp, 404, 193, PAL_FORGRND, PAL_DSKTOP2, "Note-Sample Map");
 
 	/* Get instrument */
 	int16_t curInstr = inst->editor.curInstr;
@@ -751,9 +727,15 @@ void ft2_instr_ed_draw_note_map(ft2_instrument_editor_t *ed, const ft2_bmp_t *bm
 	/* Real FT2 shows a bar graph of sample assignments */
 }
 
-void ft2_instr_ed_draw_piano(ft2_instrument_editor_t *ed, const ft2_bmp_t *bmp, ft2_instance_t *inst)
+void ft2_instr_ed_draw_piano(ft2_instance_t *inst)
 {
-	if (ed == NULL || ed->video == NULL)
+	if (inst == NULL || inst->ui == NULL)
+		return;
+
+	ft2_instrument_editor_t *ed = FT2_INSTR_ED(inst);
+	ft2_video_t *video = FT2_VIDEO(inst);
+	const ft2_bmp_t *bmp = FT2_BMP(inst);
+	if (video == NULL || video->frameBuffer == NULL)
 		return;
 
 	/* Clear piano key status */
@@ -766,23 +748,24 @@ void ft2_instr_ed_draw_piano(ft2_instrument_editor_t *ed, const ft2_bmp_t *bmp, 
 		const uint8_t octave = noteTab2[i];
 
 		if (keyIsBlackTab[key])
-			drawBlackPianoKey(ed, key, octave, false, bmp);
+			drawBlackPianoKey(video, key, octave, false, bmp);
 		else
-			drawWhitePianoKey(ed, key, octave, false, bmp);
+			drawWhitePianoKey(video, key, octave, false, bmp);
 
-		writePianoNumber(ed, bmp, i, key, octave, inst);
+		writePianoNumber(inst, i, key, octave);
 	}
 }
 
 /* Update instrument editor - draw values and set widget states */
-void updateInstEditor(ft2_instrument_editor_t *editor, const ft2_bmp_t *bmp, ft2_instance_t *inst)
+void updateInstEditor(ft2_instance_t *inst)
 {
-	if (editor == NULL || editor->video == NULL || inst == NULL)
+	if (inst == NULL || inst->ui == NULL)
 		return;
 
-	ft2_video_t *video = editor->video;
-	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
+	ft2_video_t *video = FT2_VIDEO(inst);
+	const ft2_bmp_t *bmp = FT2_BMP(inst);
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
+	if (video == NULL || video->frameBuffer == NULL)
 		return;
 
 	/* Get current instrument and sample from instance editor state */
@@ -1030,12 +1013,15 @@ void updateInstEditor(ft2_instrument_editor_t *editor, const ft2_bmp_t *bmp, ft2
 	}
 }
 
-void ft2_instr_ed_draw(ft2_instrument_editor_t *editor, const ft2_bmp_t *bmp, ft2_instance_t *inst)
+void ft2_instr_ed_draw(ft2_instance_t *inst)
 {
-	if (editor == NULL || editor->video == NULL || inst == NULL)
+	if (inst == NULL || inst->ui == NULL)
 		return;
 
-	ft2_video_t *video = editor->video;
+	ft2_video_t *video = FT2_VIDEO(inst);
+	const ft2_bmp_t *bmp = FT2_BMP(inst);
+	if (video == NULL || video->frameBuffer == NULL)
+		return;
 
 	/* Read current instrument/sample from instance editor state */
 	int16_t curInstr = inst->editor.curInstr;
@@ -1060,45 +1046,39 @@ void ft2_instr_ed_draw(ft2_instrument_editor_t *editor, const ft2_bmp_t *bmp, ft
 	drawFramework(video, 593, 296,  36,  15, FRAMEWORK_TYPE2);
 
 	/* Draw text labels - exact match to standalone showInstEditor() */
-	if (bmp != NULL)
-	{
-		textOutShadow(video, bmp, 20,  176, PAL_FORGRND, PAL_DSKTOP2, "Volume envelope:");
-		textOutShadow(video, bmp, 153, 176, PAL_FORGRND, PAL_DSKTOP2, "Predef.");
-		textOutShadow(video, bmp, 358, 194, PAL_FORGRND, PAL_DSKTOP2, "Sustain:");
-		textOutShadow(video, bmp, 342, 206, PAL_FORGRND, PAL_DSKTOP2, "Point");
-		textOutShadow(video, bmp, 358, 219, PAL_FORGRND, PAL_DSKTOP2, "Env.loop:");
-		textOutShadow(video, bmp, 342, 233, PAL_FORGRND, PAL_DSKTOP2, "Start");
-		textOutShadow(video, bmp, 342, 247, PAL_FORGRND, PAL_DSKTOP2, "End");
-		textOutShadow(video, bmp, 20,  263, PAL_FORGRND, PAL_DSKTOP2, "Panning envelope:");
-		textOutShadow(video, bmp, 152, 263, PAL_FORGRND, PAL_DSKTOP2, "Predef.");
-		textOutShadow(video, bmp, 358, 281, PAL_FORGRND, PAL_DSKTOP2, "Sustain:");
-		textOutShadow(video, bmp, 342, 293, PAL_FORGRND, PAL_DSKTOP2, "Point");
-		textOutShadow(video, bmp, 358, 306, PAL_FORGRND, PAL_DSKTOP2, "Env.loop:");
-		textOutShadow(video, bmp, 342, 320, PAL_FORGRND, PAL_DSKTOP2, "Start");
-		textOutShadow(video, bmp, 342, 334, PAL_FORGRND, PAL_DSKTOP2, "End");
-		textOutShadow(video, bmp, 443, 177, PAL_FORGRND, PAL_DSKTOP2, "Volume");
-		textOutShadow(video, bmp, 443, 191, PAL_FORGRND, PAL_DSKTOP2, "Panning");
-		textOutShadow(video, bmp, 443, 205, PAL_FORGRND, PAL_DSKTOP2, "F.tune");
-		textOutShadow(video, bmp, 442, 222, PAL_FORGRND, PAL_DSKTOP2, "Fadeout");
-		textOutShadow(video, bmp, 442, 236, PAL_FORGRND, PAL_DSKTOP2, "Vib.speed");
-		textOutShadow(video, bmp, 442, 250, PAL_FORGRND, PAL_DSKTOP2, "Vib.depth");
-		textOutShadow(video, bmp, 442, 264, PAL_FORGRND, PAL_DSKTOP2, "Vib.sweep");
-		textOutShadow(video, bmp, 442, 299, PAL_FORGRND, PAL_DSKTOP2, "C-4=");
-		textOutShadow(video, bmp, 537, 299, PAL_FORGRND, PAL_DSKTOP2, "Rel. note");
+	textOutShadow(video, bmp, 20,  176, PAL_FORGRND, PAL_DSKTOP2, "Volume envelope:");
+	textOutShadow(video, bmp, 153, 176, PAL_FORGRND, PAL_DSKTOP2, "Predef.");
+	textOutShadow(video, bmp, 358, 194, PAL_FORGRND, PAL_DSKTOP2, "Sustain:");
+	textOutShadow(video, bmp, 342, 206, PAL_FORGRND, PAL_DSKTOP2, "Point");
+	textOutShadow(video, bmp, 358, 219, PAL_FORGRND, PAL_DSKTOP2, "Env.loop:");
+	textOutShadow(video, bmp, 342, 233, PAL_FORGRND, PAL_DSKTOP2, "Start");
+	textOutShadow(video, bmp, 342, 247, PAL_FORGRND, PAL_DSKTOP2, "End");
+	textOutShadow(video, bmp, 20,  263, PAL_FORGRND, PAL_DSKTOP2, "Panning envelope:");
+	textOutShadow(video, bmp, 152, 263, PAL_FORGRND, PAL_DSKTOP2, "Predef.");
+	textOutShadow(video, bmp, 358, 281, PAL_FORGRND, PAL_DSKTOP2, "Sustain:");
+	textOutShadow(video, bmp, 342, 293, PAL_FORGRND, PAL_DSKTOP2, "Point");
+	textOutShadow(video, bmp, 358, 306, PAL_FORGRND, PAL_DSKTOP2, "Env.loop:");
+	textOutShadow(video, bmp, 342, 320, PAL_FORGRND, PAL_DSKTOP2, "Start");
+	textOutShadow(video, bmp, 342, 334, PAL_FORGRND, PAL_DSKTOP2, "End");
+	textOutShadow(video, bmp, 443, 177, PAL_FORGRND, PAL_DSKTOP2, "Volume");
+	textOutShadow(video, bmp, 443, 191, PAL_FORGRND, PAL_DSKTOP2, "Panning");
+	textOutShadow(video, bmp, 443, 205, PAL_FORGRND, PAL_DSKTOP2, "F.tune");
+	textOutShadow(video, bmp, 442, 222, PAL_FORGRND, PAL_DSKTOP2, "Fadeout");
+	textOutShadow(video, bmp, 442, 236, PAL_FORGRND, PAL_DSKTOP2, "Vib.speed");
+	textOutShadow(video, bmp, 442, 250, PAL_FORGRND, PAL_DSKTOP2, "Vib.depth");
+	textOutShadow(video, bmp, 442, 264, PAL_FORGRND, PAL_DSKTOP2, "Vib.sweep");
+	textOutShadow(video, bmp, 442, 299, PAL_FORGRND, PAL_DSKTOP2, "C-4=");
+	textOutShadow(video, bmp, 537, 299, PAL_FORGRND, PAL_DSKTOP2, "Rel. note");
 
-		/* Draw vibrato waveforms */
-		if (bmp->vibratoWaveforms != NULL)
-		{
-			blitFast(video, 455, 279, &bmp->vibratoWaveforms[0*(12*10)], 12, 10);
-			blitFast(video, 485, 279, &bmp->vibratoWaveforms[1*(12*10)], 12, 10);
-			blitFast(video, 515, 279, &bmp->vibratoWaveforms[2*(12*10)], 12, 10);
-			blitFast(video, 545, 279, &bmp->vibratoWaveforms[3*(12*10)], 12, 10);
-		}
-	}
+	/* Draw vibrato waveforms */
+	blitFast(video, 455, 279, &bmp->vibratoWaveforms[0*(12*10)], 12, 10);
+	blitFast(video, 485, 279, &bmp->vibratoWaveforms[1*(12*10)], 12, 10);
+	blitFast(video, 515, 279, &bmp->vibratoWaveforms[2*(12*10)], 12, 10);
+	blitFast(video, 545, 279, &bmp->vibratoWaveforms[3*(12*10)], 12, 10);
 
 	/* Draw envelopes */
-	ft2_instr_ed_draw_vol_env(editor, inst);
-	ft2_instr_ed_draw_pan_env(editor, inst);
+	ft2_instr_ed_draw_vol_env(inst);
+	ft2_instr_ed_draw_pan_env(inst);
 
 	/* Draw envelope coordinates (tick/value display) */
 	{
@@ -1139,17 +1119,18 @@ void ft2_instr_ed_draw(ft2_instrument_editor_t *editor, const ft2_bmp_t *bmp, ft
 	}
 
 	/* Draw piano */
-	ft2_instr_ed_draw_piano(editor, bmp, inst);
+	ft2_instr_ed_draw_piano(inst);
 
 	/* Call update to draw value displays */
-	updateInstEditor(editor, bmp, inst);
+	updateInstEditor(inst);
 }
 
-void ft2_instr_ed_mouse_click(ft2_instrument_editor_t *editor, int x, int y, int button, ft2_instance_t *inst)
+void ft2_instr_ed_mouse_click(ft2_instance_t *inst, int x, int y, int button)
 {
-	if (editor == NULL || inst == NULL)
+	if (inst == NULL || inst->ui == NULL)
 		return;
 
+	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
 	editor->lastMouseX = x;
 	editor->lastMouseY = y;
 
@@ -1268,10 +1249,12 @@ void ft2_instr_ed_mouse_click(ft2_instrument_editor_t *editor, int x, int y, int
 	(void)button;
 }
 
-void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y, ft2_instance_t *inst)
+void ft2_instr_ed_mouse_drag(ft2_instance_t *inst, int x, int y)
 {
-	if (editor == NULL || inst == NULL)
+	if (inst == NULL || inst->ui == NULL)
 		return;
+
+	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
 
 	/* Handle piano dragging - assign samples to keys */
 	if (editor->draggingPiano)
@@ -1464,12 +1447,12 @@ void ft2_instr_ed_mouse_drag(ft2_instrument_editor_t *editor, int x, int y, ft2_
 	}
 }
 
-void ft2_instr_ed_mouse_up(ft2_instrument_editor_t *editor, ft2_instance_t *inst)
+void ft2_instr_ed_mouse_up(ft2_instance_t *inst)
 {
-	if (editor == NULL)
+	if (inst == NULL || inst->ui == NULL)
 		return;
 
-	(void)inst; /* Unused, but kept for API consistency */
+	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
 	editor->draggingVolEnv = false;
 	editor->draggingPanEnv = false;
 	editor->draggingPiano = false;
@@ -1477,12 +1460,14 @@ void ft2_instr_ed_mouse_up(ft2_instrument_editor_t *editor, ft2_instance_t *inst
 
 /* ============ VISIBILITY FUNCTIONS ============ */
 
-void showInstEditor(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+void showInstEditor(ft2_instance_t *inst)
 {
 	if (inst == NULL || inst->ui == NULL)
 		return;
 
-	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
+	ft2_video_t *video = FT2_VIDEO(inst);
+	const ft2_bmp_t *bmp = FT2_BMP(inst);
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
 
 	/* Hide other bottom screens (matching standalone) */
 	if (inst->uiState.extendedPatternEditor)
@@ -1672,7 +1657,7 @@ void hideInstEditor(ft2_instance_t *inst)
 	hideRadioButtonGroup(widgets, RB_GROUP_INST_WAVEFORM);
 }
 
-void toggleInstEditor(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+void toggleInstEditor(ft2_instance_t *inst)
 {
 	if (inst == NULL)
 		return;
@@ -1690,7 +1675,7 @@ void toggleInstEditor(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 	else
 	{
 		inst->uiState.patternEditorShown = false;
-		showInstEditor(inst, video, bmp);
+		showInstEditor(inst);
 	}
 }
 
@@ -1807,12 +1792,14 @@ static void drawMIDIBend(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp
 	textOutFixed(video, bmp, 156, 160, PAL_FORGRND, PAL_DESKTOP, instExtDec2StrTab[val]);
 }
 
-void drawInstEditorExt(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+void drawInstEditorExt(ft2_instance_t *inst)
 {
-	if (inst == NULL || video == NULL || inst->ui == NULL)
+	if (inst == NULL || inst->ui == NULL)
 		return;
 
-	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
+	ft2_video_t *video = FT2_VIDEO(inst);
+	const ft2_bmp_t *bmp = FT2_BMP(inst);
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
 	ft2_instr_t *ins = getInstrForInst(inst);
 
 	/* Draw frameworks - matches standalone ft2_inst_ed.c:2638-2640 */
