@@ -121,6 +121,13 @@ target_compile_definitions(FT2Plugin
     FT2_PLUGIN_VERSION="${PROJECT_VERSION}"
 )
 
+# MSVC: Generate map file and debug symbols for crash debugging
+if(MSVC)
+    target_compile_options(ft2_core PRIVATE /Zi)
+    target_compile_options(FT2Plugin PRIVATE /Zi)
+    target_link_options(FT2Plugin PRIVATE /MAP /DEBUG)
+endif()
+
 target_link_libraries(FT2Plugin
     PRIVATE
     ft2_core

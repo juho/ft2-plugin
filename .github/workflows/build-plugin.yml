@@ -116,6 +116,14 @@ jobs:
           name: FT2-Plugin-${{ needs.version.outputs.version }}-VST3-Windows
           path: plugin/build/FT2Plugin_artefacts/Release/VST3/*.vst3
 
+      - name: Upload Debug Symbols (PDB + MAP)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FT2-Plugin-${{ needs.version.outputs.version }}-Debug-Symbols-Windows
+          path: |
+            plugin/build/**/*.pdb
+            plugin/build/**/*.map
+
   release:
     needs: [version, build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
