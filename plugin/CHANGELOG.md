@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.40 (Jan 4, 2026)
+
+- Fix: Remove debug symbols, fix MSVC not generating exit condition in for loop for instrument editor.
+
 ## 1.0.30 (Jan 3, 2026)
 
 - Fix: ABI structs between C/C++, add belt and suspenders.
