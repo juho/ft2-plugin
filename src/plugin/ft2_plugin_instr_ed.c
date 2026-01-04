@@ -570,15 +570,45 @@ void ft2_instr_ed_draw_envelope(ft2_instance_t *inst, int envNum)
 	int32_t baseY = (envNum == 0) ? 189 : 276;
 	clearRect(video, 5, baseY, 333, 67);
 
-	/* Draw dotted x/y lines - exact match to standalone */
-	for (int32_t i = 0; i <= 32; i++)
-		envelopePixel(video, envNum, 5, 1 + i * 2, PAL_PATTEXT);
-	for (int32_t i = 0; i <= 8; i++)
-		envelopePixel(video, envNum, 4, 1 + i * 8, PAL_PATTEXT);
-	for (int32_t i = 0; i <= 162; i++)
-		envelopePixel(video, envNum, 8 + i * 2, 65, PAL_PATTEXT);
-	for (int32_t i = 0; i <= 6; i++)
-		envelopePixel(video, envNum, 8 + i * 50, 66, PAL_PATTEXT);
+	/* Draw dotted x/y lines - exact match to standalone
+	 * NOTE: Using while(true)+break pattern to avoid MSVC optimizer bug
+	 * that miscompiles for(i=0; i<=N; i++) loops into infinite loops */
+	{
+		int32_t i = 0;
+		while (true)
+		{
+			envelopePixel(video, envNum, 5, 1 + i * 2, PAL_PATTEXT);
+			if (i == 32) break;
+			i++;
+		}
+	}
+	{
+		int32_t i = 0;
+		while (true)
+		{
+			envelopePixel(video, envNum, 4, 1 + i * 8, PAL_PATTEXT);
+			if (i == 8) break;
+			i++;
+		}
+	}
+	{
+		int32_t i = 0;
+		while (true)
+		{
+			envelopePixel(video, envNum, 8 + i * 2, 65, PAL_PATTEXT);
+			if (i == 162) break;
+			i++;
+		}
+	}
+	{
+		int32_t i = 0;
+		while (true)
+		{
+			envelopePixel(video, envNum, 8 + i * 50, 66, PAL_PATTEXT);
+			if (i == 6) break;
+			i++;
+		}
+	}
 
 	/* Draw center line on pan envelope */
 	if (envNum == 1)

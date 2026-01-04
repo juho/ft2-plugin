@@ -116,43 +116,6 @@ jobs:
           name: FT2-Plugin-${{ needs.version.outputs.version }}-VST3-Windows
           path: plugin/build/FT2Plugin_artefacts/Release/VST3/*.vst3
 
-      - name: Upload Debug Symbols (PDB + MAP)
-        uses: actions/upload-artifact@v4
-        with:
-          name: FT2-Plugin-${{ needs.version.outputs.version }}-Debug-Symbols-Windows
-          path: |
-            plugin/build/**/*.pdb
-            plugin/build/**/*.map
-
-  build-windows-debug:
-    needs: version
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Configure CMake (Debug)
-        run: cmake -B plugin/build -S plugin -DCMAKE_BUILD_TYPE=Debug
-
-      - name: Build (Debug)
-        run: cmake --build plugin/build --config Debug --parallel
-
-      - name: Upload VST3 (Debug)
-        uses: actions/upload-artifact@v4
-        with:
-          name: FT2-Plugin-${{ needs.version.outputs.version }}-VST3-Windows-Debug
-          path: plugin/build/FT2Plugin_artefacts/Debug/VST3/*.vst3
-
-      - name: Upload Debug Symbols (PDB + MAP)
-        uses: actions/upload-artifact@v4
-        with:
-          name: FT2-Plugin-${{ needs.version.outputs.version }}-Debug-Symbols-Windows-Debug
-          path: |
-            plugin/build/**/*.pdb
-            plugin/build/**/*.map
-
   release:
     needs: [version, build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
