@@ -214,109 +214,100 @@ static void envelopePixel(ft2_video_t *video, int32_t envNum, int32_t x, int32_t
 		video->frameBuffer[(screenY * SCREEN_W) + x] = video->palette[paletteIndex];
 }
 
-/* Draw a line in the envelope area - exact match to standalone envelopeLine() */
+/* Draw a line in the envelope area using array indexing (safer than pointer arithmetic) */
 static void envelopeLine(ft2_video_t *video, int32_t envNum, int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint8_t pal)
 {
 	if (video == NULL || video->frameBuffer == NULL)
 		return;
 
-	/* Clamp coordinates - exact match to standalone */
+	/* Clamp coordinates */
 	if (y1 < 0) y1 = 0; if (y1 > 66) y1 = 66;
 	if (y2 < 0) y2 = 0; if (y2 > 66) y2 = 66;
 	if (x1 < 0) x1 = 0; if (x1 > 335) x1 = 335;
 	if (x2 < 0) x2 = 0; if (x2 > 335) x2 = 335;
 
-	if (envNum == 0) /* volume envelope */
-	{
-		y1 += 189;
-		y2 += 189;
-	}
-	else /* panning envelope */
-	{
-		y1 += 276;
-		y2 += 276;
-	}
+	/* Add envelope Y offset */
+	const int32_t baseY = (envNum == 0) ? 189 : 276;
+	int32_t iy1 = y1 + baseY;
+	int32_t iy2 = y2 + baseY;
+	int32_t ix1 = x1;
+	int32_t ix2 = x2;
 
-	const int16_t dx = x2 - x1;
-	const uint16_t ax = (dx < 0 ? -dx : dx) << 1;
-	const int16_t sx = (dx > 0) ? 1 : ((dx < 0) ? -1 : 0);
-	const int16_t dy = y2 - y1;
-	const uint16_t ay = (dy < 0 ? -dy : dy) << 1;
-	const int16_t sy = (dy > 0) ? 1 : ((dy < 0) ? -1 : 0);
-	int16_t x = x1;
-	int16_t y = y1;
+	/* Use int32_t for all Bresenham variables to avoid overflow issues */
+	const int32_t dx = ix2 - ix1;
+	const int32_t ax = ABS(dx) * 2;
+	const int32_t sx = SGN(dx);
+	const int32_t dy = iy2 - iy1;
+	const int32_t ay = ABS(dy) * 2;
+	const int32_t sy = SGN(dy);
+	int32_t x = ix1;
+	int32_t y = iy1;
 
 	const uint32_t pal1 = video->palette[PAL_BLCKMRK];
 	const uint32_t pal2 = video->palette[PAL_BLCKTXT];
 	const uint32_t pixVal = video->palette[pal];
-	const int32_t pitch = sy * SCREEN_W;
 
-	uint32_t *dst32 = &video->frameBuffer[(y * SCREEN_W) + x];
-	uint32_t *fbEnd = video->frameBuffer + (SCREEN_W * SCREEN_H);
-
-	/* Draw line - exact match to standalone Bresenham implementation */
+	/* Draw line using array indexing (like sampleLine in sample editor) */
 	if (ax > ay)
 	{
-		int16_t d = ay - (ax >> 1);
+		int32_t d = ay - (ax / 2);
 		while (true)
 		{
-			/* Safety bounds check */
-			if (dst32 < video->frameBuffer || dst32 >= fbEnd)
-				return;
-
-			/* Invert certain colors - exact match to standalone */
-			if (*dst32 != pal2)
+			/* Bounds check using coordinates, then array index */
+			if (x >= 0 && x < SCREEN_W && y >= 0 && y < SCREEN_H)
 			{
-				if (*dst32 == pal1)
-					*dst32 = pal2;
-				else
-					*dst32 = pixVal;
+				uint32_t *pixel = &video->frameBuffer[(y * SCREEN_W) + x];
+				if (*pixel != pal2)
+				{
+					if (*pixel == pal1)
+						*pixel = pal2;
+					else
+						*pixel = pixVal;
+				}
 			}
 
-			if (x == x2)
+			if (x == ix2)
 				break;
 
 			if (d >= 0)
 			{
+				y += sy;
 				d -= ax;
-				dst32 += pitch;
 			}
 
 			x += sx;
 			d += ay;
-			dst32 += sx;
 		}
 	}
 	else
 	{
-		int16_t d = ax - (ay >> 1);
+		int32_t d = ax - (ay / 2);
 		while (true)
 		{
-			/* Safety bounds check */
-			if (dst32 < video->frameBuffer || dst32 >= fbEnd)
-				return;
-
-			/* Invert certain colors - exact match to standalone */
-			if (*dst32 != pal2)
+			/* Bounds check using coordinates, then array index */
+			if (x >= 0 && x < SCREEN_W && y >= 0 && y < SCREEN_H)
 			{
-				if (*dst32 == pal1)
-					*dst32 = pal2;
-				else
-					*dst32 = pixVal;
+				uint32_t *pixel = &video->frameBuffer[(y * SCREEN_W) + x];
+				if (*pixel != pal2)
+				{
+					if (*pixel == pal1)
+						*pixel = pal2;
+					else
+						*pixel = pixVal;
+				}
 			}
 
-			if (y == y2)
+			if (y == iy2)
 				break;
 
 			if (d >= 0)
 			{
+				x += sx;
 				d -= ay;
-				dst32 += sx;
 			}
 
 			y += sy;
 			d += ax;
-			dst32 += pitch;
 		}
 	}
 }
