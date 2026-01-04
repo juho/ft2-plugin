@@ -34,10 +34,11 @@ FT2PluginEditor::FT2PluginEditor (FT2PluginProcessor& p)
     {
         inst->ui = ui;
         
-        // Restore widget visibility state from persisted uiState flags.
-        // This is needed because the UI is destroyed when the editor closes,
-        // but the uiState flags persist in the processor.
-        ft2_ui_restore_state(ui, inst);
+        // Request full redraw on first frame - the render loop will handle
+        // showing the correct widgets based on persisted uiState flags.
+        // We don't call show* functions here because they draw to framebuffer,
+        // which is unsafe during construction on Windows.
+        inst->uiState.needsFullRedraw = true;
     }
     
     // Set the window size (2x upscale by default)

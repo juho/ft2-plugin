@@ -119,62 +119,6 @@ void ft2_ui_shutdown(ft2_ui_t *ui)
 	ft2_textbox_free();
 }
 
-void ft2_ui_restore_state(ft2_ui_t *ui, ft2_instance_t *inst)
-{
-	if (ui == NULL || inst == NULL)
-		return;
-
-	ft2_video_t *video = &ui->video;
-	const ft2_bmp_t *bmp = ui->bmpLoaded ? &ui->bmp : NULL;
-
-	/* Restore bottom screen widget visibility based on persisted state.
-	 * These are mutually exclusive - only one bottom screen can be active. */
-	if (inst->uiState.instEditorShown)
-	{
-		showInstEditor(inst);
-	}
-	else if (inst->uiState.sampleEditorShown)
-	{
-		showSampleEditor(inst);
-	}
-	else if (inst->uiState.patternEditorShown)
-	{
-		showPatternEditor(inst);
-	}
-
-	/* Restore sample editor ext if it was open */
-	if (inst->uiState.sampleEditorExtShown)
-		showSampleEditorExt(inst);
-
-	/* Restore instrument editor ext if it was open */
-	if (inst->uiState.instEditorExtShown)
-		showInstEditorExt(inst);
-
-	/* Restore transpose if it was open */
-	if (inst->uiState.transposeShown)
-		showTranspose(inst);
-
-	/* Restore top screen overlays */
-	if (inst->uiState.configScreenShown)
-		showConfigScreen(inst);
-
-	if (inst->uiState.diskOpShown && bmp != NULL)
-		showDiskOpScreen(inst, video, bmp);
-
-	if (inst->uiState.helpScreenShown && bmp != NULL)
-		showHelpScreen(inst, video, bmp);
-
-	if (inst->uiState.trimScreenShown && bmp != NULL)
-		showTrimScreen(inst, video, bmp);
-
-	if (inst->uiState.advEditShown && bmp != NULL)
-		showAdvEdit(inst, video, bmp);
-
-	/* Force a full redraw to ensure everything is painted correctly */
-	ui->needsFullRedraw = true;
-	inst->uiState.needsFullRedraw = true;
-}
-
 void ft2_ui_set_screen(ft2_ui_t *ui, ft2_ui_screen screen)
 {
 	if (ui == NULL || screen >= FT2_NUM_SCREENS)

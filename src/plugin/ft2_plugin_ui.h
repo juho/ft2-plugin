@@ -109,7 +109,6 @@ void ft2_ui_destroy(ft2_ui_t* ui);
 
 void ft2_ui_init(ft2_ui_t *ui);
 void ft2_ui_shutdown(ft2_ui_t *ui);
-void ft2_ui_restore_state(ft2_ui_t *ui, struct ft2_instance_t *inst);
 void ft2_ui_set_screen(ft2_ui_t *ui, ft2_ui_screen screen);
 void ft2_ui_draw(ft2_ui_t *ui, void *inst);
 void ft2_ui_update(ft2_ui_t *ui, void *inst);
