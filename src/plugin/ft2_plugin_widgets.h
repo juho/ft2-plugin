@@ -58,6 +58,7 @@ typedef struct ft2_widgets_t
 	bool pushButtonVisible[NUM_PUSHBUTTONS];
 	bool pushButtonDisabled[NUM_PUSHBUTTONS];
 	uint8_t pushButtonState[NUM_PUSHBUTTONS];
+	bool pushButtonLocked[NUM_PUSHBUTTONS];  /* Stays pressed until another in group clicked */
 
 	/* Per-instance checkbox state */
 	bool checkBoxVisible[NUM_CHECKBOXES];

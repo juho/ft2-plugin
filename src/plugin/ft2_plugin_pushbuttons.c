@@ -448,7 +448,10 @@ void drawPushButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, co
 		return;
 
 	pushButton_t *b = &widgets->pushButtons[pushButtonID];
-	uint8_t state = widgets->pushButtonState[pushButtonID];
+	/* Use locked state if set, otherwise use normal state */
+	uint8_t state = widgets->pushButtonLocked[pushButtonID]
+		? PUSHBUTTON_PRESSED
+		: widgets->pushButtonState[pushButtonID];
 	uint16_t x = b->x;
 	uint16_t y = b->y;
 	uint16_t w = b->w;

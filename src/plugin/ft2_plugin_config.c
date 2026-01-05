@@ -80,6 +80,7 @@ void ft2_config_init(ft2_plugin_config_t *config)
 	config->allowFxxSpeedChanges = true;
 	config->savedSpeed = 6;  /* Default speed */
 	config->savedBpm = 125;  /* Default BPM */
+	config->lockedSpeed = 6; /* Default locked speed */
 
 	/* MIDI Input */
 	config->midiEnabled = true;
@@ -1564,9 +1565,9 @@ void cbAllowFxxSpeedChanges(ft2_instance_t *inst)
 	}
 	else
 	{
-		/* Disabling: save current speed and lock to 6 */
+		/* Disabling: save current speed and lock to lockedSpeed */
 		inst->config.savedSpeed = inst->replayer.song.speed;
-		inst->replayer.song.speed = 6;
+		inst->replayer.song.speed = inst->config.lockedSpeed;
 	}
 
 	/* Invalidate timemap since speed handling changes affect timing */

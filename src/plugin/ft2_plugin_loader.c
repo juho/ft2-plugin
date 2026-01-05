@@ -898,7 +898,7 @@ bool ft2_load_module(ft2_instance_t *inst, const uint8_t *data, uint32_t dataSiz
 		if (!inst->config.allowFxxSpeedChanges)
 		{
 			inst->config.savedSpeed = inst->replayer.song.speed;
-			inst->replayer.song.speed = 6;
+			inst->replayer.song.speed = inst->config.lockedSpeed;
 		}
 
 		/* Apply BPM config: if BPM sync enabled, save module BPM for later restore */

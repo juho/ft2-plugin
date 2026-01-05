@@ -132,6 +132,7 @@ typedef struct ft2_plugin_config_t
 	bool allowFxxSpeedChanges;  /* Allow Fxx speed effects (param < 0x20). Default: false */
 	uint16_t savedSpeed;        /* Saved speed when Fxx changes disabled, restored when enabled */
 	uint16_t savedBpm;          /* Saved BPM when DAW sync enabled, restored when disabled */
+	uint8_t lockedSpeed;        /* Speed when Fxx changes disabled: 3 or 6 */
 
 	/* MIDI Input settings */
 	bool midiEnabled;           /* Enable MIDI input processing */

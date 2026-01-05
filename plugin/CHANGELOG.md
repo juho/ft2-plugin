@@ -5,6 +5,7 @@
 - Feat: Add drive buttons on Windows to disk operation screen.
 - Feat: Show "original" BPM in parentheses when DAW sync is active.
 - Feat: Update "original" BPM whenever Fxx BPM changes are encountered in pattern data.
+- Feat: Allow depressing pushbuttons for 'tabs', can switch speed between 6 and 3 when Fxx speed changes are disabled.
 
 ## 1.0.40 (Jan 4, 2026)
 

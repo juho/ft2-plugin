@@ -271,9 +271,23 @@ void pbSpeedUp(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
 
-	/* Ignore if Fxx speed changes are disabled */
-	if (!inst->config.allowFxxSpeedChanges) return;
+	if (!inst->config.allowFxxSpeedChanges)
+	{
+		/* Toggle tab mode: select speed 6 */
+		inst->config.lockedSpeed = 6;
+		inst->replayer.song.speed = 6;
+		ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
+		if (ui != NULL)
+		{
+			ui->widgets.pushButtonLocked[PB_SPEED_UP] = true;
+			ui->widgets.pushButtonLocked[PB_SPEED_DOWN] = false;
+		}
+		inst->uiState.updatePosSections = true;
+		inst->uiState.needsFullRedraw = true;
+		return;
+	}
 
+	/* Normal increment behavior */
 	if (inst->replayer.song.speed < 31)
 	{
 		inst->replayer.song.speed++;
@@ -285,9 +299,23 @@ void pbSpeedDown(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
 
-	/* Ignore if Fxx speed changes are disabled */
-	if (!inst->config.allowFxxSpeedChanges) return;
+	if (!inst->config.allowFxxSpeedChanges)
+	{
+		/* Toggle tab mode: select speed 3 */
+		inst->config.lockedSpeed = 3;
+		inst->replayer.song.speed = 3;
+		ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
+		if (ui != NULL)
+		{
+			ui->widgets.pushButtonLocked[PB_SPEED_UP] = false;
+			ui->widgets.pushButtonLocked[PB_SPEED_DOWN] = true;
+		}
+		inst->uiState.updatePosSections = true;
+		inst->uiState.needsFullRedraw = true;
+		return;
+	}
 
+	/* Normal decrement behavior */
 	if (inst->replayer.song.speed > 1)
 	{
 		inst->replayer.song.speed--;
