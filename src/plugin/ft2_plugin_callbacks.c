@@ -795,16 +795,22 @@ void pbAbout(ft2_instance_t *inst)
 	inst->uiState.aboutScreenShown = true;
 	inst->uiState.needsFullRedraw = true;
 	inst->uiState.scopesShown = false;
+	
+	/* Request update dialog if update is available */
+	inst->uiState.requestShowUpdateDialog = true;
 }
 
 void pbExitAbout(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
 	
-	/* Hide the exit button */
+	/* Hide the about buttons */
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
 	if (widgets != NULL)
+	{
+		hidePushButton(widgets, PB_GITHUB_ABOUT);
 		hidePushButton(widgets, PB_EXIT_ABOUT);
+	}
 	
 	inst->uiState.aboutScreenShown = false;
 	inst->uiState.scopesShown = true;
@@ -814,6 +820,12 @@ void pbExitAbout(ft2_instance_t *inst)
 	inst->uiState.needsFullRedraw = true;
 	inst->uiState.updatePosSections = true;
 	inst->uiState.updateInstrSwitcher = true;
+}
+
+void pbGitHubAbout(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	inst->uiState.requestOpenGitHub = true;
 }
 
 void pbNibbles(ft2_instance_t *inst)
@@ -2267,6 +2279,7 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_HELP_SCROLL_UP].callbackFuncOnDown = pbHelpScrollUp;
 	widgets->pushButtons[PB_HELP_SCROLL_DOWN].callbackFuncOnDown = pbHelpScrollDown;
 	widgets->pushButtons[PB_ABOUT].callbackFuncOnUp = pbAbout;
+	widgets->pushButtons[PB_GITHUB_ABOUT].callbackFuncOnUp = pbGitHubAbout;
 	widgets->pushButtons[PB_EXIT_ABOUT].callbackFuncOnUp = pbExitAbout;
 	widgets->pushButtons[PB_NIBBLES].callbackFuncOnUp = pbNibbles;
 	widgets->pushButtons[PB_KILL].callbackFuncOnUp = pbKill;

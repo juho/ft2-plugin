@@ -922,6 +922,28 @@ void FT2PluginEditor::timerCallback()
     // Poll config action requests (reset/load/save global config)
     audioProcessor.pollConfigRequests();
 
+    // Handle about screen requests
+    ft2_instance_t* inst = audioProcessor.getInstance();
+    if (inst != nullptr)
+    {
+        // Handle GitHub button request
+        if (inst->uiState.requestOpenGitHub)
+        {
+            inst->uiState.requestOpenGitHub = false;
+            juce::URL("https://github.com/juho/ft2-plugin").launchInDefaultBrowser();
+        }
+        
+        // Handle update dialog request (when about screen is opened)
+        if (inst->uiState.requestShowUpdateDialog)
+        {
+            inst->uiState.requestShowUpdateDialog = false;
+            if (updateChecker.isCheckComplete() && updateChecker.isUpdateAvailable())
+            {
+                showUpdateDialog();
+            }
+        }
+    }
+
     // Check if update dialog should be shown (once per release)
     if (!updateDialogShown && updateChecker.isCheckComplete())
     {

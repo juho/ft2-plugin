@@ -117,8 +117,9 @@ const pushButton_t pushButtonsTemplate[NUM_PUSHBUTTONS] =
 	{ 55, 155, 52, 16, 0, 0, "Block",   NULL,    NULL,       NULL },
 
 	/* About */
-	/*x, y,   w,  h,  p, d, text #1, text #2, funcOnDown, funcOnUp */
-	{ 4, 153, 59, 16, 0, 0, "Exit",  NULL,    NULL,       NULL },
+	/*x, y,   w,  h,  p, d, text #1,  text #2, funcOnDown, funcOnUp */
+	{ 4, 136, 59, 16, 0, 0, "GitHub", NULL,    NULL,       NULL },
+	{ 4, 153, 59, 16, 0, 0, "Exit",   NULL,    NULL,       NULL },
 
 	/* Help */
 	/*x,   y,   w,  h,  p, d, text #1,           text #2, funcOnDown, funcOnUp */

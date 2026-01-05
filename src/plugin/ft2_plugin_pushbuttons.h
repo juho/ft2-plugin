@@ -114,6 +114,7 @@ enum
 	PB_REMAP_BLOCK,
 
 	/* About */
+	PB_GITHUB_ABOUT,
 	PB_EXIT_ABOUT,
 
 	/* Help */

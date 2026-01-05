@@ -389,6 +389,10 @@ typedef struct ft2_ui_state_t
 	bool requestLoadGlobalConfig;
 	bool requestSaveGlobalConfig;
 
+	/* About screen request flags (set by C, handled by JUCE) */
+	bool requestOpenGitHub;
+	bool requestShowUpdateDialog;
+
 	/* Backup flags for extended pattern editor */
 	bool _aboutScreenShown, _helpScreenShown, _configScreenShown, _diskOpShown;
 	bool _nibblesShown, _transposeShown, _instEditorShown;

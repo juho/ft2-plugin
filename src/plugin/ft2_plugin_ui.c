@@ -448,7 +448,8 @@ static void handleRedrawing(ft2_ui_t *ui, ft2_instance_t *inst)
 	
 	/* Draw mode text (Edit/Play) - matches original FT2 */
 	if (bmp != NULL && !inst->uiState.diskOpShown && !inst->uiState.aboutScreenShown &&
-	    !inst->uiState.configScreenShown && !inst->uiState.helpScreenShown)
+	    !inst->uiState.configScreenShown && !inst->uiState.helpScreenShown &&
+	    !inst->uiState.nibblesShown)
 	{
 		const char *str = NULL;
 		

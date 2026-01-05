@@ -1,5 +1,10 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.43
+
+- Fix: Pattern playback state redrawing on top of Nibbles.
+- Feat: Add Github button and automatic update checking in the About screen.
+
 ## 1.0.42 (Jan 5, 2026)
 
 - Feat: Auto-detect Speed 3 on module load, use it if Fxx speed changes are disabled. Otherwise use Speed 6.

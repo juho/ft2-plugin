@@ -369,9 +369,12 @@ void ft2_about_show(ft2_widgets_t *widgets, ft2_video_t *video, const ft2_bmp_t 
 	drawFramework(video, 0, 0, 632, 173, FRAMEWORK_TYPE1);
 	drawFramework(video, 2, 2, 628, 169, FRAMEWORK_TYPE2);
 
-	/* Show exit button */
+	/* Show buttons */
 	if (widgets != NULL)
+	{
+		showPushButton(widgets, video, bmp, PB_GITHUB_ABOUT);
 		showPushButton(widgets, video, bmp, PB_EXIT_ABOUT);
+	}
 
 	if (!useNewAboutScreen)
 	{
