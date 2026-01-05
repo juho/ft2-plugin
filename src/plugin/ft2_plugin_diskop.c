@@ -405,7 +405,7 @@ void drawDiskOpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 			if (i < inst->diskop.numDrives && inst->diskop.driveNames[i][0] != '\0')
 			{
 				/* Set button caption to drive name */
-				widgets->pushButtons[driveButtons[i]].text1 = inst->diskop.driveNames[i];
+				widgets->pushButtons[driveButtons[i]].caption = inst->diskop.driveNames[i];
 				showPushButton(widgets, video, bmp, driveButtons[i]);
 			}
 			else

@@ -456,8 +456,8 @@ void drawTopLeftMainScreen(struct ft2_instance_t *inst, struct ft2_video_t *vide
 	}
 
 	/* Always show speed buttons */
-	showPushButton(widgets, video, bmp, PB_SPEED_UP);
-	showPushButton(widgets, video, bmp, PB_SPEED_DOWN);
+		showPushButton(widgets, video, bmp, PB_SPEED_UP);
+		showPushButton(widgets, video, bmp, PB_SPEED_DOWN);
 
 	/* Set locked state when Fxx changes disabled (toggle tab mode) */
 	if (!inst->config.allowFxxSpeedChanges)
