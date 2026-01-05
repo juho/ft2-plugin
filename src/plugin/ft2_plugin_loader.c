@@ -894,10 +894,12 @@ bool ft2_load_module(ft2_instance_t *inst, const uint8_t *data, uint32_t dataSiz
 		inst->uiState.channelOffset = 0;
 		inst->uiState.updateChanScrollPos = true;
 
-		/* Apply speed config: if Fxx changes disabled, lock to 6 */
+		/* Apply speed config: if Fxx changes disabled, use module's speed if 3, else 6 */
 		if (!inst->config.allowFxxSpeedChanges)
 		{
 			inst->config.savedSpeed = inst->replayer.song.speed;
+			/* If module's native speed is 3, use it; otherwise default to 6 */
+			inst->config.lockedSpeed = (inst->config.savedSpeed == 3) ? 3 : 6;
 			inst->replayer.song.speed = inst->config.lockedSpeed;
 		}
 

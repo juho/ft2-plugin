@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.42 (Jan 5, 2026)
+
+- Feat: Auto-detect Speed 3 on module load, use it if Fxx speed changes are disabled. Otherwise use Speed 6.
+
 ## 1.0.41 (Jan 5, 2026)
 
 - Feat: Add drive buttons on Windows to disk operation screen.
