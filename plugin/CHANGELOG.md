@@ -3,6 +3,8 @@
 ## 1.0.41 (Jan 5, 2026)
 
 - Feat: Add drive buttons on Windows to disk operation screen.
+- Feat: Show "original" BPM in parentheses when DAW sync is active.
+- Feat: Update "original" BPM whenever Fxx BPM changes are encountered in pattern data.
 
 ## 1.0.40 (Jan 4, 2026)
 

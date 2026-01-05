@@ -219,6 +219,22 @@ void drawSongBPM(struct ft2_instance_t *inst, struct ft2_video_t *video,
 	/* Gray out when BPM is synced from DAW */
 	uint8_t fgColor = inst->config.syncBpmFromDAW ? PAL_DSKTOP2 : PAL_FORGRND;
 	textOutFixed(video, bmp, 145, 36, fgColor, PAL_DESKTOP, dec3StrTab[bpm]);
+
+	/* Show native BPM in parentheses when DAW sync is active */
+	if (inst->config.syncBpmFromDAW && inst->config.savedBpm > 0)
+	{
+		uint16_t nativeBpm = inst->config.savedBpm;
+		if (nativeBpm > 255) nativeBpm = 255;
+
+		char nativeStr[8];
+		snprintf(nativeStr, sizeof(nativeStr), "(%s)", dec3StrTab[nativeBpm]);
+		textOutFixed(video, bmp, 168, 36, fgColor, PAL_DESKTOP, nativeStr);
+	}
+	else
+	{
+		/* Clear the native BPM area when not showing it */
+		fillRect(video, 168, 36, 35, 8, PAL_DESKTOP);
+	}
 }
 
 void drawSongSpeed(struct ft2_instance_t *inst, struct ft2_video_t *video,

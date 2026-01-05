@@ -1044,12 +1044,15 @@ static void handleMoreEffects_TickZero(ft2_instance_t *inst, ft2_channel_t *ch)
 		case 0x0F: // Set speed/BPM
 			if (param >= 32)
 			{
+				/* Always track native BPM for display purposes */
+				inst->config.savedBpm = param;
+
 				/* Only apply BPM effect if not syncing BPM from DAW */
 				if (!inst->config.syncBpmFromDAW)
-			{
-				inst->replayer.song.BPM = param;
-				ft2_set_bpm(inst, param);
-				inst->uiState.updatePosSections = true;
+				{
+					inst->replayer.song.BPM = param;
+					ft2_set_bpm(inst, param);
+					inst->uiState.updatePosSections = true;
 				}
 			}
 			else if (inst->config.allowFxxSpeedChanges)
