@@ -1846,6 +1846,15 @@ void drawInstEditorExt(ft2_instance_t *inst)
 	ft2_video_t *video = FT2_VIDEO(inst);
 	const ft2_bmp_t *bmp = FT2_BMP(inst);
 	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
+
+	/* Allocate instrument if needed (same pattern as ft2_instr_ed_draw) */
+	int16_t curInstr = inst->editor.curInstr;
+	if (curInstr > 0 && curInstr <= 128)
+	{
+		if (inst->replayer.instr[curInstr] == NULL)
+			ft2_instance_alloc_instr(inst, curInstr);
+	}
+
 	ft2_instr_t *ins = getInstrForInst(inst);
 
 	/* Draw frameworks - matches standalone ft2_inst_ed.c:2638-2640 */

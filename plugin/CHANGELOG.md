@@ -1,6 +1,10 @@
 # Changelog for Fasttracker II Plugin
 
-## 1.0.43
+## 1.0.44 (Jan 5, 2026)
+
+- Feat: Allocate empty instrument when clicking on I.E.Ext.
+
+## 1.0.43 (Jan 5, 2026)
 
 - Fix: Pattern playback state redrawing on top of Nibbles.
 - Feat: Add Github button and automatic update checking in the About screen.
