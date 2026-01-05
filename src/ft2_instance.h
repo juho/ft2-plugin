@@ -540,6 +540,15 @@ typedef struct ft2_diskop_state_t
 	/* Error flags (set by JUCE when operations fail) */
 	volatile bool pathSetFailed;         /* Set path failed - path doesn't exist */
 	volatile bool makeDirFailed;         /* Make dir failed - already exists or access denied */
+
+#ifdef _WIN32
+	/* Drive button state (Windows only) */
+	#define FT2_DISKOP_MAX_DRIVES 7
+	char driveNames[FT2_DISKOP_MAX_DRIVES][4];  /* "C:", "D:", etc. */
+	uint8_t numDrives;
+	volatile int8_t requestDriveIndex;          /* -1 = none, 0-6 = drive to navigate to */
+	volatile bool requestEnumerateDrives;       /* Request JUCE to enumerate drives */
+#endif
 } ft2_diskop_state_t;
 
 /**

@@ -456,12 +456,8 @@ void drawTopLeftMainScreen(struct ft2_instance_t *inst, struct ft2_video_t *vide
 	showPushButton(widgets, video, bmp, PB_PATT_SHRINK);
 
 	/* Song/pattern labels */
-	/* Gray out BPM label if syncing from DAW */
-	textOutShadow(video, bmp, 116, 36,
-		inst->config.syncBpmFromDAW ? PAL_DSKTOP2 : PAL_FORGRND, PAL_DSKTOP2, "BPM");
-	/* Gray out Spd. label if Fxx speed changes are disabled */
-	textOutShadow(video, bmp, 116, 50,
-		inst->config.allowFxxSpeedChanges ? PAL_FORGRND : PAL_DSKTOP2, PAL_DSKTOP2, "Spd.");
+	textOutShadow(video, bmp, 116, 36, PAL_FORGRND, PAL_DSKTOP2, "BPM");
+	textOutShadow(video, bmp, 116, 50, PAL_FORGRND, PAL_DSKTOP2, "Spd.");
 	textOutShadow(video, bmp, 116, 64, PAL_FORGRND, PAL_DSKTOP2, "Add.");
 	textOutShadow(video, bmp, 210, 36, PAL_FORGRND, PAL_DSKTOP2, "Ptn.");
 	textOutShadow(video, bmp, 210, 50, PAL_FORGRND, PAL_DSKTOP2, "Ln.");

@@ -577,7 +577,7 @@ void ft2_instr_ed_draw_envelope(ft2_instance_t *inst, int envNum)
 		int32_t i = 0;
 		while (true)
 		{
-			envelopePixel(video, envNum, 5, 1 + i * 2, PAL_PATTEXT);
+		envelopePixel(video, envNum, 5, 1 + i * 2, PAL_PATTEXT);
 			if (i == 32) break;
 			i++;
 		}
@@ -586,7 +586,7 @@ void ft2_instr_ed_draw_envelope(ft2_instance_t *inst, int envNum)
 		int32_t i = 0;
 		while (true)
 		{
-			envelopePixel(video, envNum, 4, 1 + i * 8, PAL_PATTEXT);
+		envelopePixel(video, envNum, 4, 1 + i * 8, PAL_PATTEXT);
 			if (i == 8) break;
 			i++;
 		}
@@ -595,7 +595,7 @@ void ft2_instr_ed_draw_envelope(ft2_instance_t *inst, int envNum)
 		int32_t i = 0;
 		while (true)
 		{
-			envelopePixel(video, envNum, 8 + i * 2, 65, PAL_PATTEXT);
+		envelopePixel(video, envNum, 8 + i * 2, 65, PAL_PATTEXT);
 			if (i == 162) break;
 			i++;
 		}
@@ -604,7 +604,7 @@ void ft2_instr_ed_draw_envelope(ft2_instance_t *inst, int envNum)
 		int32_t i = 0;
 		while (true)
 		{
-			envelopePixel(video, envNum, 8 + i * 50, 66, PAL_PATTEXT);
+		envelopePixel(video, envNum, 8 + i * 50, 66, PAL_PATTEXT);
 			if (i == 6) break;
 			i++;
 		}

@@ -270,6 +270,12 @@ void showDiskOpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 		inst->diskop.requestGoHome = true; /* Start at home directory */
 	}
 
+#ifdef _WIN32
+	/* Request drive enumeration */
+	inst->diskop.requestEnumerateDrives = true;
+	inst->diskop.requestDriveIndex = -1;
+#endif
+
 	inst->uiState.needsFullRedraw = true;
 }
 
@@ -291,6 +297,15 @@ void hideDiskOpScreen(ft2_instance_t *inst)
 		hidePushButton(widgets, PB_DISKOP_PARENT);
 		hidePushButton(widgets, PB_DISKOP_ROOT);
 		hidePushButton(widgets, PB_DISKOP_HOME);
+#ifdef _WIN32
+		hidePushButton(widgets, PB_DISKOP_DRIVE1);
+		hidePushButton(widgets, PB_DISKOP_DRIVE2);
+		hidePushButton(widgets, PB_DISKOP_DRIVE3);
+		hidePushButton(widgets, PB_DISKOP_DRIVE4);
+		hidePushButton(widgets, PB_DISKOP_DRIVE5);
+		hidePushButton(widgets, PB_DISKOP_DRIVE6);
+		hidePushButton(widgets, PB_DISKOP_DRIVE7);
+#endif
 		hidePushButton(widgets, PB_DISKOP_LIST_UP);
 		hidePushButton(widgets, PB_DISKOP_LIST_DOWN);
 
@@ -378,6 +393,28 @@ void drawDiskOpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 	showPushButton(widgets, video, bmp, PB_DISKOP_PARENT);
 	showPushButton(widgets, video, bmp, PB_DISKOP_ROOT);
 	showPushButton(widgets, video, bmp, PB_DISKOP_HOME);
+#ifdef _WIN32
+	/* Show and update drive buttons based on enumerated drives */
+	{
+		const int driveButtons[FT2_DISKOP_MAX_DRIVES] = {
+			PB_DISKOP_DRIVE1, PB_DISKOP_DRIVE2, PB_DISKOP_DRIVE3, PB_DISKOP_DRIVE4,
+			PB_DISKOP_DRIVE5, PB_DISKOP_DRIVE6, PB_DISKOP_DRIVE7
+		};
+		for (int i = 0; i < FT2_DISKOP_MAX_DRIVES; i++)
+		{
+			if (i < inst->diskop.numDrives && inst->diskop.driveNames[i][0] != '\0')
+			{
+				/* Set button caption to drive name */
+				widgets->pushButtons[driveButtons[i]].text1 = inst->diskop.driveNames[i];
+				showPushButton(widgets, video, bmp, driveButtons[i]);
+			}
+			else
+			{
+				hidePushButton(widgets, driveButtons[i]);
+			}
+		}
+	}
+#endif
 	showPushButton(widgets, video, bmp, PB_DISKOP_SHOW_ALL);
 	showPushButton(widgets, video, bmp, PB_DISKOP_SET_PATH);
 	showPushButton(widgets, video, bmp, PB_DISKOP_LIST_UP);
@@ -564,6 +601,16 @@ void pbDiskOpHome(ft2_instance_t *inst)
 	inst->diskop.requestGoHome = true;
 	inst->uiState.needsFullRedraw = true;
 }
+
+#ifdef _WIN32
+void pbDiskOpDrive1(ft2_instance_t *inst) { if (inst) { inst->diskop.requestDriveIndex = 0; inst->uiState.needsFullRedraw = true; } }
+void pbDiskOpDrive2(ft2_instance_t *inst) { if (inst) { inst->diskop.requestDriveIndex = 1; inst->uiState.needsFullRedraw = true; } }
+void pbDiskOpDrive3(ft2_instance_t *inst) { if (inst) { inst->diskop.requestDriveIndex = 2; inst->uiState.needsFullRedraw = true; } }
+void pbDiskOpDrive4(ft2_instance_t *inst) { if (inst) { inst->diskop.requestDriveIndex = 3; inst->uiState.needsFullRedraw = true; } }
+void pbDiskOpDrive5(ft2_instance_t *inst) { if (inst) { inst->diskop.requestDriveIndex = 4; inst->uiState.needsFullRedraw = true; } }
+void pbDiskOpDrive6(ft2_instance_t *inst) { if (inst) { inst->diskop.requestDriveIndex = 5; inst->uiState.needsFullRedraw = true; } }
+void pbDiskOpDrive7(ft2_instance_t *inst) { if (inst) { inst->diskop.requestDriveIndex = 6; inst->uiState.needsFullRedraw = true; } }
+#endif
 
 void pbDiskOpRefresh(ft2_instance_t *inst)
 {

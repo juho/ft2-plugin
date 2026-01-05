@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.41 (Jan 5, 2026)
+
+- Feat: Add drive buttons on Windows to disk operation screen.
+
 ## 1.0.40 (Jan 4, 2026)
 
 - Fix: Remove debug symbols, fix MSVC not generating exit condition in for loop for instrument editor.

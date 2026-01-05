@@ -352,9 +352,19 @@ const pushButton_t pushButtonsTemplate[NUM_PUSHBUTTONS] =
 	{  70, 121, 58, 19, 0, 0, "Exit",            NULL,    NULL,       NULL },
 	{ 134,  16, 31, 12, 0, 0, "/",               NULL,    NULL,       NULL },
 	{ 134,   2, 31, 13, 0, 0, "../",             NULL,    NULL,       NULL },
-	{ 134,  30, 31, 12, 0, 0, "Home",            NULL,    NULL,       NULL },
+	{ 134,  30, 31, 12, 0, 0, "Hme",             NULL,    NULL,       NULL },
 	{ 335,   2, 18, 13, 1, 3, ARROW_UP_STRING,   NULL,    NULL,       NULL },
 	{ 335, 158, 18, 13, 1, 3, ARROW_DOWN_STRING, NULL,    NULL,       NULL },
+#ifdef _WIN32
+	/* Drive buttons (Windows only) */
+	{ 134,  43, 31, 13, 0, 0, NULL,            NULL,    NULL,       NULL },
+	{ 134,  57, 31, 13, 0, 0, NULL,            NULL,    NULL,       NULL },
+	{ 134,  71, 31, 13, 0, 0, NULL,            NULL,    NULL,       NULL },
+	{ 134,  85, 31, 13, 0, 0, NULL,            NULL,    NULL,       NULL },
+	{ 134,  99, 31, 13, 0, 0, NULL,            NULL,    NULL,       NULL },
+	{ 134, 113, 31, 13, 0, 0, NULL,            NULL,    NULL,       NULL },
+	{ 134, 127, 31, 13, 0, 0, NULL,            NULL,    NULL,       NULL },
+#endif
 
 	/* WAV renderer */
 	/*x,   y,   w,  h,  p, d, text #1,           text #2, funcOnDown, funcOnUp */

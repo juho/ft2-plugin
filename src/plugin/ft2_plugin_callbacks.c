@@ -2467,6 +2467,15 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_DISKOP_ROOT].callbackFuncOnUp = pbDiskOpRoot;
 	widgets->pushButtons[PB_DISKOP_PARENT].callbackFuncOnUp = pbDiskOpParent;
 	widgets->pushButtons[PB_DISKOP_HOME].callbackFuncOnUp = pbDiskOpHome;
+#ifdef _WIN32
+	widgets->pushButtons[PB_DISKOP_DRIVE1].callbackFuncOnUp = pbDiskOpDrive1;
+	widgets->pushButtons[PB_DISKOP_DRIVE2].callbackFuncOnUp = pbDiskOpDrive2;
+	widgets->pushButtons[PB_DISKOP_DRIVE3].callbackFuncOnUp = pbDiskOpDrive3;
+	widgets->pushButtons[PB_DISKOP_DRIVE4].callbackFuncOnUp = pbDiskOpDrive4;
+	widgets->pushButtons[PB_DISKOP_DRIVE5].callbackFuncOnUp = pbDiskOpDrive5;
+	widgets->pushButtons[PB_DISKOP_DRIVE6].callbackFuncOnUp = pbDiskOpDrive6;
+	widgets->pushButtons[PB_DISKOP_DRIVE7].callbackFuncOnUp = pbDiskOpDrive7;
+#endif
 	widgets->pushButtons[PB_DISKOP_LIST_UP].callbackFuncOnDown = pbDiskOpListUp;
 	widgets->pushButtons[PB_DISKOP_LIST_DOWN].callbackFuncOnDown = pbDiskOpListDown;
 

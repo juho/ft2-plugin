@@ -244,6 +244,37 @@ void FT2PluginEditor::processDiskOpRequests()
     if (!inst->uiState.diskOpShown)
         return;
 
+#ifdef _WIN32
+    // Enumerate drives when requested (Windows only)
+    if (diskop.requestEnumerateDrives)
+    {
+        diskop.requestEnumerateDrives = false;
+        juce::Array<juce::File> roots;
+        juce::File::findFileSystemRoots(roots);
+        
+        diskop.numDrives = juce::jmin((int)roots.size(), (int)FT2_DISKOP_MAX_DRIVES);
+        for (int i = 0; i < diskop.numDrives; i++)
+        {
+            juce::String driveName = roots[i].getFullPathName();
+            strncpy(diskop.driveNames[i], driveName.toRawUTF8(), 3);
+            diskop.driveNames[i][3] = '\0';
+        }
+        inst->uiState.needsFullRedraw = true;
+    }
+
+    // Handle drive navigation request (Windows only)
+    if (diskop.requestDriveIndex >= 0 && diskop.requestDriveIndex < diskop.numDrives)
+    {
+        int idx = diskop.requestDriveIndex;
+        diskop.requestDriveIndex = -1;
+        
+        // Navigate to drive root
+        strncpy(diskop.currentPath, diskop.driveNames[idx], FT2_PATH_MAX - 1);
+        diskop.currentPath[FT2_PATH_MAX - 1] = '\0';
+        diskop.requestReadDir = true;
+    }
+#endif
+
     // Handle navigation requests
     if (diskop.requestGoHome)
     {

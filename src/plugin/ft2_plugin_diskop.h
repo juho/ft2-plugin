@@ -29,6 +29,15 @@ void drawDiskOpScreen(ft2_instance_t *inst, struct ft2_video_t *video, const str
 void pbDiskOpParent(ft2_instance_t *inst);
 void pbDiskOpRoot(ft2_instance_t *inst);
 void pbDiskOpHome(ft2_instance_t *inst);
+#ifdef _WIN32
+void pbDiskOpDrive1(ft2_instance_t *inst);
+void pbDiskOpDrive2(ft2_instance_t *inst);
+void pbDiskOpDrive3(ft2_instance_t *inst);
+void pbDiskOpDrive4(ft2_instance_t *inst);
+void pbDiskOpDrive5(ft2_instance_t *inst);
+void pbDiskOpDrive6(ft2_instance_t *inst);
+void pbDiskOpDrive7(ft2_instance_t *inst);
+#endif
 void pbDiskOpRefresh(ft2_instance_t *inst);
 void pbDiskOpShowAll(ft2_instance_t *inst);
 void pbDiskOpSetPath(ft2_instance_t *inst);
