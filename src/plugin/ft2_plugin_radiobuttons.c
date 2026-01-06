@@ -72,12 +72,12 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 
 	/* Config audio interpolation */
 	/*x,   y,   w,   group,                               callback */
-	{ 390,  90, 108, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
-	{ 390, 104,  90, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
-	{ 390, 118, 109, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
-	{ 390, 132,  85, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
-	{ 390, 146,  94, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
-	{ 390, 160, 101, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
+	{ 114,  90, 108, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
+	{ 114, 104,  90, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
+	{ 114, 118, 109, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
+	{ 114, 132,  85, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
+	{ 114, 146,  94, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
+	{ 114, 160, 101, RB_GROUP_CONFIG_AUDIO_INTERPOLATION, NULL },
 
 	/* Config audio frequency */
 	/*x,   y,  w,  group,                      callback */
@@ -92,9 +92,9 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 	{ 322, 156, 60, RB_GROUP_CONFIG_AUDIO_INPUT_FREQ, NULL },
 
 	/* Config frequency slides */
-	/*x,   y,  w,   group,                       callback */
-	{ 513, 74,  49, RB_GROUP_CONFIG_FREQ_SLIDES, NULL },
-	{ 513, 88, 107, RB_GROUP_CONFIG_FREQ_SLIDES, NULL },
+	/*x,   y,   w,   group,                       callback */
+	{ 405, 103,  49, RB_GROUP_CONFIG_FREQ_SLIDES, NULL },  /* Amiga */
+	{ 405, 117, 107, RB_GROUP_CONFIG_FREQ_SLIDES, NULL },  /* Linear (default) */
 
 	/* Config mouse */
 	/*x,   y,   w,  group,                 callback */
@@ -153,8 +153,8 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 
 	/* Config filesort */
 	/*x,   y,  w,  group,                    callback */
-	{ 114, 15, 40, RB_GROUP_CONFIG_FILESORT, NULL },
-	{ 114, 29, 48, RB_GROUP_CONFIG_FILESORT, NULL },
+	{ 312, 15, 40, RB_GROUP_CONFIG_FILESORT, NULL },
+	{ 312, 29, 48, RB_GROUP_CONFIG_FILESORT, NULL },
 
 	/* Config window size */
 	/*x,   y,  w,  group,                    callback */

@@ -4,6 +4,7 @@
 
 - Feat: Allocate empty instrument when clicking on I.E.Ext.
 - Fix: Enable MIDI output in JUCE.
+- Visual: Config cleanup.
 
 ## 1.0.43 (Jan 5, 2026)
 

@@ -23,7 +23,9 @@
 /* Forward declarations for MIDI config callbacks */
 static void cbMidiEnable(struct ft2_instance_t *inst);
 static void cbMidiAllChannels(struct ft2_instance_t *inst);
+static void cbMidiRecTranspose(struct ft2_instance_t *inst);
 static void cbMidiRecVelocity(struct ft2_instance_t *inst);
+static void cbMidiRecAftertouch(struct ft2_instance_t *inst);
 
 checkBox_t checkBoxes[NUM_CHECKBOXES] =
 {
@@ -85,7 +87,7 @@ checkBox_t checkBoxes[NUM_CHECKBOXES] =
 	/* Config */
 	/*x,   y,   w,   h,  callback */
 	{   3,  91,  77, 12, NULL },
-	{ 512, 158, 107, 12, NULL },
+	{ 251, 145, 107, 12, NULL },  /* CB_CONF_VOLRAMP */
 	{ 113,  14, 108, 12, NULL },
 	{ 113,  27, 117, 12, NULL },
 	{ 113,  40,  81, 12, NULL },
@@ -96,23 +98,23 @@ checkBox_t checkBoxes[NUM_CHECKBOXES] =
 	{ 255,  14, 136, 12, NULL },
 	{ 237, 108,  13, 12, NULL },
 	{ 255, 158, 111, 12, NULL },
-	{ 212,   2, 150, 12, NULL },
-	{ 212,  15, 153, 12, NULL },
-	{ 212,  28, 159, 12, NULL },
-	{ 212,  41, 149, 12, NULL },
-	{ 212,  68, 130, 12, NULL },
-	{ 212,  81, 157, 12, NULL },
-	{ 212,  94, 114, 12, NULL },
-	{ 212, 107, 143, 12, NULL },
-	{ 212, 120,  89, 12, NULL },
-	{ 212, 133, 180, 24, NULL },
+	{ 112,   2, 150, 12, NULL },               /* CB_CONF_SAMPCUTBUF */
+	{ 112,  15, 153, 12, NULL },               /* CB_CONF_PATTCUTBUF */
+	{ 112,  28, 159, 12, NULL },               /* CB_CONF_KILLNOTES */
+	{ 112,  41, 149, 12, NULL },               /* CB_CONF_OVERWRITE_WARN */
+	{ 112,  70, 130, 12, NULL },               /* CB_CONF_MULTICHAN_REC */
+	{ 112,  83, 157, 12, NULL },               /* CB_CONF_MULTICHAN_KEYJAZZ */
+	{ 112,  96, 114, 12, NULL },               /* CB_CONF_MULTICHAN_EDIT */
+	{ 112, 109, 143, 12, NULL },               /* CB_CONF_REC_KEYOFF */
+	{ 112, 122,  89, 12, NULL },               /* CB_CONF_QUANTIZE */
+	{ 112, 135, 180, 24, NULL },               /* CB_CONF_CHANGE_PATTLEN */
 	{   0,   0,   0,  0, NULL },               /* CB_CONF_OLDABOUTLOGO (unused) */
-	{ 212, 159, 155, 12, NULL },               /* CB_CONF_AUTO_UPDATE_CHECK */
-	{ 116,  18,  93, 12, cbMidiEnable },       /* CB_CONF_MIDI_ENABLE */
-	{ 116,  48, 110, 12, cbMidiAllChannels },  /* CB_CONF_MIDI_ALLCHN */
-	{ 116,  64, 121, 12, NULL },               /* CB_CONF_MIDI_TRANSP (not used) */
-	{ 116, 112, 155, 12, cbMidiRecVelocity },  /* CB_CONF_MIDI_VELOCITY */
-	{ 121, 116, 124, 12, NULL },               /* CB_CONF_MIDI_AFTERTOUCH (not used) */
+	{ 112, 159, 155, 12, NULL },               /* CB_CONF_AUTO_UPDATE_CHECK */
+	{ 116,  18, 130, 12, cbMidiEnable },       /* CB_CONF_MIDI_ENABLE */
+	{ 233,  50,  30, 12, cbMidiAllChannels },  /* CB_CONF_MIDI_ALLCHN (inline with channel) */
+	{ 116,  66, 121, 12, cbMidiRecTranspose }, /* CB_CONF_MIDI_TRANSP */
+	{ 116,  82, 120, 12, cbMidiRecVelocity },  /* CB_CONF_MIDI_VELOCITY */
+	{ 116,  98, 124, 12, cbMidiRecAftertouch }, /* CB_CONF_MIDI_AFTERTOUCH */
 	{ 113, 115,  75, 12, NULL },
 	{ 113, 128,  78, 12, NULL },
 	{ 113, 141,  75, 12, NULL },
@@ -378,11 +380,27 @@ static void cbMidiAllChannels(struct ft2_instance_t *inst)
 	inst->config.midiAllChannels = widgets->checkBoxChecked[CB_CONF_MIDI_ALLCHN];
 }
 
+static void cbMidiRecTranspose(struct ft2_instance_t *inst)
+{
+	if (inst == NULL || inst->ui == NULL)
+		return;
+	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
+	inst->config.midiRecordTranspose = widgets->checkBoxChecked[CB_CONF_MIDI_TRANSP];
+}
+
 static void cbMidiRecVelocity(struct ft2_instance_t *inst)
 {
 	if (inst == NULL || inst->ui == NULL)
 		return;
 	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
 	inst->config.midiRecordVelocity = widgets->checkBoxChecked[CB_CONF_MIDI_VELOCITY];
+}
+
+static void cbMidiRecAftertouch(struct ft2_instance_t *inst)
+{
+	if (inst == NULL || inst->ui == NULL)
+		return;
+	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
+	inst->config.midiRecordAftertouch = widgets->checkBoxChecked[CB_CONF_MIDI_AFTERTOUCH];
 }
 

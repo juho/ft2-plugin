@@ -138,9 +138,11 @@ typedef struct ft2_plugin_config_t
 	bool midiEnabled;           /* Enable MIDI input processing */
 	bool midiAllChannels;       /* Receive from all MIDI channels (vs. single) */
 	uint8_t midiChannel;        /* MIDI channel to listen on (1-16) */
+	bool midiRecordTranspose;   /* Apply transpose to incoming MIDI notes */
 	int8_t midiTranspose;       /* Note transposition (-48 to +48) */
 	uint8_t midiVelocitySens;   /* Velocity sensitivity (0-100%) */
 	bool midiRecordVelocity;    /* Record velocity as volume column */
+	bool midiRecordAftertouch;  /* Record aftertouch (for parity with standalone) */
 	bool midiTriggerPatterns;   /* false = trigger notes (default), true = trigger patterns */
 
 	/* Miscellaneous */

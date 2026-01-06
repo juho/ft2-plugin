@@ -10,6 +10,13 @@ assignees: ''
 **Plugin version**
 What version of the plugin are you using? (Look at the About screen if unsure)
 
+**DAW**
+What DAW are you using? What is its version?
+
+**Desktop (please complete the following information):**
+ - OS: [e.g. Mac, Windows, Linux]
+ - OS version [e.g. 22]
+
 **Have you tried updating to the latest version, if you aren't on it?**
 Please try this first if applicable.
 
@@ -28,10 +35,6 @@ A clear and concise description of what you expected to happen.
 
 **Screenshots**
 If applicable, add screenshots to help explain your problem.
-
-**Desktop (please complete the following information):**
- - OS: [e.g. Mac, Windows, Linux]
- - OS version [e.g. 22]
 
 **Additional context**
 Add any other context about the problem here.

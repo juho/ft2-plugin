@@ -86,9 +86,11 @@ void ft2_config_init(ft2_plugin_config_t *config)
 	config->midiEnabled = true;
 	config->midiAllChannels = true;
 	config->midiChannel = 1;
+	config->midiRecordTranspose = true;
 	config->midiTranspose = 0;
 	config->midiVelocitySens = 100;
 	config->midiRecordVelocity = true;
+	config->midiRecordAftertouch = false;
 
 	/* Miscellaneous */
 	config->autoUpdateCheck = true;  /* Enabled by default */
@@ -419,17 +421,11 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	if (widgets == NULL)
 		return;
 
-	/* Framework sections matching standalone layout */
-	drawFramework(video, 110, 0, 276, 87, FRAMEWORK_TYPE1);   /* Audio output devices area */
-	drawFramework(video, 110, 87, 276, 86, FRAMEWORK_TYPE1);  /* Audio input devices area */
-
-	drawFramework(video, 386, 0, 123, 58, FRAMEWORK_TYPE1);   /* Audio buffer size */
-	drawFramework(video, 386, 58, 123, 29, FRAMEWORK_TYPE1);  /* Audio bit depth */
-	drawFramework(video, 386, 87, 123, 86, FRAMEWORK_TYPE1);  /* Interpolation */
-
-	drawFramework(video, 509, 0, 123, 58, FRAMEWORK_TYPE1);   /* Audio output rate */
-	drawFramework(video, 509, 58, 123, 44, FRAMEWORK_TYPE1);  /* Frequency slides */
-	drawFramework(video, 509, 102, 123, 71, FRAMEWORK_TYPE1); /* Amp/Master vol/Vol ramp */
+	/* Framework sections - reorganized for plugin */
+	drawFramework(video, 110, 0, 522, 87, FRAMEWORK_TYPE1);   /* DAW Sync (full width) */
+	drawFramework(video, 110, 87, 138, 86, FRAMEWORK_TYPE1);  /* Interpolation */
+	drawFramework(video, 248, 87, 153, 86, FRAMEWORK_TYPE1);  /* Amp/MasterVol/VolRamp */
+	drawFramework(video, 401, 87, 231, 86, FRAMEWORK_TYPE1);  /* Frequency slides (full width) */
 
 	/* DAW Sync section (replaces unused Audio output/input devices) */
 	textOutShadow(video, bmp, 114, 4, PAL_FORGRND, PAL_DSKTOP2, "DAW Sync:");
@@ -457,17 +453,17 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	/* Interpolation - ACTIVE */
 	setAudioConfigRadioButtonStates(widgets, cfg);
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_AUDIO_INTERPOLATION);
-	textOutShadow(video, bmp, 405, 91, PAL_FORGRND, PAL_DSKTOP2, "No interpolation");
-	textOutShadow(video, bmp, 405, 105, PAL_FORGRND, PAL_DSKTOP2, "Linear (FT2)");
-	textOutShadow(video, bmp, 405, 119, PAL_FORGRND, PAL_DSKTOP2, "Quadratic spline");
-	textOutShadow(video, bmp, 405, 133, PAL_FORGRND, PAL_DSKTOP2, "Cubic spline");
-	textOutShadow(video, bmp, 405, 147, PAL_FORGRND, PAL_DSKTOP2, "Sinc (8 point)");
-	textOutShadow(video, bmp, 405, 161, PAL_FORGRND, PAL_DSKTOP2, "Sinc (16 point)");
+	textOutShadow(video, bmp, 131, 91, PAL_FORGRND, PAL_DSKTOP2, "No interpolation");
+	textOutShadow(video, bmp, 131, 105, PAL_FORGRND, PAL_DSKTOP2, "Linear (FT2)");
+	textOutShadow(video, bmp, 131, 119, PAL_FORGRND, PAL_DSKTOP2, "Quadratic spline");
+	textOutShadow(video, bmp, 131, 133, PAL_FORGRND, PAL_DSKTOP2, "Cubic spline");
+	textOutShadow(video, bmp, 131, 147, PAL_FORGRND, PAL_DSKTOP2, "Sinc (8 point)");
+	textOutShadow(video, bmp, 131, 161, PAL_FORGRND, PAL_DSKTOP2, "Sinc (16 point)");
 
 	/* Frequency slides - ACTIVE */
-	textOutShadow(video, bmp, 513, 61, PAL_FORGRND, PAL_DSKTOP2, "Frequency slides:");
-	textOutShadow(video, bmp, 528, 75, PAL_FORGRND, PAL_DSKTOP2, "Amiga");
-	textOutShadow(video, bmp, 528, 89, PAL_FORGRND, PAL_DSKTOP2, "Linear (default)");
+	textOutShadow(video, bmp, 405, 91, PAL_FORGRND, PAL_DSKTOP2, "Frequency slides:");
+	textOutShadow(video, bmp, 420, 105, PAL_FORGRND, PAL_DSKTOP2, "Amiga");
+	textOutShadow(video, bmp, 420, 119, PAL_FORGRND, PAL_DSKTOP2, "Linear (default)");
 	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_FREQ_SLIDES);
 	if (inst->audio.linearPeriodsFlag)
 		widgets->radioButtonState[RB_CONFIG_FREQ_LINEAR] = RADIOBUTTON_CHECKED;
@@ -476,20 +472,20 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_FREQ_SLIDES);
 
 	/* Amplification - ACTIVE */
-	textOutShadow(video, bmp, 513, 105, PAL_FORGRND, PAL_DSKTOP2, "Amplification:");
+	textOutShadow(video, bmp, 252, 91, PAL_FORGRND, PAL_DSKTOP2, "Amplification:");
 	char ampStr[8];
 	snprintf(ampStr, sizeof(ampStr), "%2dx", cfg->boostLevel);
-	textOutShadow(video, bmp, 601, 105, PAL_FORGRND, PAL_DSKTOP2, ampStr);
+	textOutShadow(video, bmp, 374, 91, PAL_FORGRND, PAL_DSKTOP2, ampStr);
 	setScrollBarPos(inst, widgets, video, SB_AMP_SCROLL, cfg->boostLevel - 1, false);
 	showScrollBar(widgets, video, SB_AMP_SCROLL);
 	showPushButton(widgets, video, bmp, PB_CONFIG_AMP_DOWN);
 	showPushButton(widgets, video, bmp, PB_CONFIG_AMP_UP);
 
 	/* Master volume - ACTIVE */
-	textOutShadow(video, bmp, 513, 133, PAL_FORGRND, PAL_DSKTOP2, "Master volume:");
+	textOutShadow(video, bmp, 252, 119, PAL_FORGRND, PAL_DSKTOP2, "Master volume:");
 	char volStr[8];
 	snprintf(volStr, sizeof(volStr), "%3d", cfg->masterVol);
-	textOutShadow(video, bmp, 601, 133, PAL_FORGRND, PAL_DSKTOP2, volStr);
+	textOutShadow(video, bmp, 374, 119, PAL_FORGRND, PAL_DSKTOP2, volStr);
 	setScrollBarPos(inst, widgets, video, SB_MASTERVOL_SCROLL, cfg->masterVol, false);
 	showScrollBar(widgets, video, SB_MASTERVOL_SCROLL);
 	showPushButton(widgets, video, bmp, PB_CONFIG_MASTVOL_DOWN);
@@ -498,7 +494,7 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	/* Volume ramping - ACTIVE */
 	widgets->checkBoxChecked[CB_CONF_VOLRAMP] = cfg->volumeRamp;
 	showCheckBox(widgets, video, bmp, CB_CONF_VOLRAMP);
-	textOutShadow(video, bmp, 529, 160, PAL_FORGRND, PAL_DSKTOP2, "Volume ramping");
+	textOutShadow(video, bmp, 268, 147, PAL_FORGRND, PAL_DSKTOP2, "Volume ramping");
 }
 
 /* ============ DRAW CONFIG LAYOUT TAB ============ */
@@ -615,22 +611,35 @@ static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, co
 	if (widgets == NULL)
 		return;
 
-	/* Framework sections matching standalone layout */
-	drawFramework(video, 110, 0, 99, 43, FRAMEWORK_TYPE1);     /* Dir sorting */
-	drawFramework(video, 209, 0, 199, 55, FRAMEWORK_TYPE1);    /* Cut to buffer / kill voices */
-	drawFramework(video, 408, 0, 224, 91, FRAMEWORK_TYPE1);    /* Default directories */
+	/* Framework sections - reorganized layout */
+	drawFramework(video, 110, 0, 198, 57, FRAMEWORK_TYPE1);    /* Cut to buffer / kill voices / overwrite */
+	drawFramework(video, 308, 0, 324, 57, FRAMEWORK_TYPE1);    /* Dir sorting */
+	drawFramework(video, 110, 57, 198, 116, FRAMEWORK_TYPE1);  /* Rec./Edit/Play */
+	drawFramework(video, 308, 57, 324, 116, FRAMEWORK_TYPE1);  /* Empty right side */
 
-	drawFramework(video, 110, 43, 99, 57, FRAMEWORK_TYPE1);    /* Window size */
-	drawFramework(video, 209, 55, 199, 102, FRAMEWORK_TYPE1);  /* Rec./Edit/Play */
-	drawFramework(video, 408, 91, 224, 82, FRAMEWORK_TYPE1);   /* MIDI settings */
+	/* Sample/Pattern cut to buffer - ACTIVE (moved to left) */
+	widgets->checkBoxChecked[CB_CONF_SAMPCUTBUF] = cfg->smpCutToBuffer;
+	showCheckBox(widgets, video, bmp, CB_CONF_SAMPCUTBUF);
+	textOutShadow(video, bmp, 128, 4, PAL_FORGRND, PAL_DSKTOP2, "Sample \"cut to buffer\"");
 
-	drawFramework(video, 110, 100, 99, 73, FRAMEWORK_TYPE1);   /* Video settings */
-	drawFramework(video, 209, 157, 199, 16, FRAMEWORK_TYPE1);  /* Original FT2 About */
+	widgets->checkBoxChecked[CB_CONF_PATTCUTBUF] = cfg->ptnCutToBuffer;
+	showCheckBox(widgets, video, bmp, CB_CONF_PATTCUTBUF);
+	textOutShadow(video, bmp, 128, 17, PAL_FORGRND, PAL_DSKTOP2, "Pattern \"cut to buffer\"");
 
-	/* Dir sorting priority - ACTIVE */
-	textOutShadow(video, bmp, 114, 3, PAL_FORGRND, PAL_DSKTOP2, "Dir. sorting pri.:");
-	textOutShadow(video, bmp, 130, 16, PAL_FORGRND, PAL_DSKTOP2, "Ext.");
-	textOutShadow(video, bmp, 130, 30, PAL_FORGRND, PAL_DSKTOP2, "Name");
+	/* Kill voices at music stop - ACTIVE */
+	widgets->checkBoxChecked[CB_CONF_KILLNOTES] = cfg->killNotesOnStopPlay;
+	showCheckBox(widgets, video, bmp, CB_CONF_KILLNOTES);
+	textOutShadow(video, bmp, 128, 30, PAL_FORGRND, PAL_DSKTOP2, "Kill voices at music stop");
+
+	/* File-overwrite warning - ACTIVE */
+	widgets->checkBoxChecked[CB_CONF_OVERWRITE_WARN] = cfg->overwriteWarning;
+	showCheckBox(widgets, video, bmp, CB_CONF_OVERWRITE_WARN);
+	textOutShadow(video, bmp, 128, 43, PAL_FORGRND, PAL_DSKTOP2, "File-overwrite warning");
+
+	/* Dir sorting priority - ACTIVE (moved to right) */
+	textOutShadow(video, bmp, 312, 3, PAL_FORGRND, PAL_DSKTOP2, "Dir. sorting pri.:");
+	textOutShadow(video, bmp, 328, 16, PAL_FORGRND, PAL_DSKTOP2, "Ext.");
+	textOutShadow(video, bmp, 328, 30, PAL_FORGRND, PAL_DSKTOP2, "Name");
 	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_FILESORT);
 	if (cfg->dirSortPriority == 0)
 		widgets->radioButtonState[RB_CONFIG_FILESORT_EXT] = RADIOBUTTON_CHECKED;
@@ -638,80 +647,46 @@ static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, co
 		widgets->radioButtonState[RB_CONFIG_FILESORT_NAME] = RADIOBUTTON_CHECKED;
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_FILESORT);
 
-	/* Sample/Pattern cut to buffer - ACTIVE */
-	widgets->checkBoxChecked[CB_CONF_SAMPCUTBUF] = cfg->smpCutToBuffer;
-	showCheckBox(widgets, video, bmp, CB_CONF_SAMPCUTBUF);
-	textOutShadow(video, bmp, 228, 4, PAL_FORGRND, PAL_DSKTOP2, "Sample \"cut to buffer\"");
-
-	widgets->checkBoxChecked[CB_CONF_PATTCUTBUF] = cfg->ptnCutToBuffer;
-	showCheckBox(widgets, video, bmp, CB_CONF_PATTCUTBUF);
-	textOutShadow(video, bmp, 228, 17, PAL_FORGRND, PAL_DSKTOP2, "Pattern \"cut to buffer\"");
-
-	/* Kill voices at music stop - ACTIVE */
-	widgets->checkBoxChecked[CB_CONF_KILLNOTES] = cfg->killNotesOnStopPlay;
-	showCheckBox(widgets, video, bmp, CB_CONF_KILLNOTES);
-	textOutShadow(video, bmp, 228, 30, PAL_FORGRND, PAL_DSKTOP2, "Kill voices at music stop");
-
-	/* File-overwrite warning - ACTIVE */
-	widgets->checkBoxChecked[CB_CONF_OVERWRITE_WARN] = cfg->overwriteWarning;
-	showCheckBox(widgets, video, bmp, CB_CONF_OVERWRITE_WARN);
-	textOutShadow(video, bmp, 228, 43, PAL_FORGRND, PAL_DSKTOP2, "File-overwrite warning");
-
-	/* Default directories - grayed out */
-	textOutShadow(video, bmp, 464, 3, PAL_DSKTOP2, PAL_DSKTOP2, "Default directories:");
-	textOutShadow(video, bmp, 413, 17, PAL_DSKTOP2, PAL_DSKTOP2, "Modules");
-	textOutShadow(video, bmp, 413, 32, PAL_DSKTOP2, PAL_DSKTOP2, "Instruments");
-	textOutShadow(video, bmp, 413, 47, PAL_DSKTOP2, PAL_DSKTOP2, "Samples");
-	textOutShadow(video, bmp, 413, 62, PAL_DSKTOP2, PAL_DSKTOP2, "Patterns");
-	textOutShadow(video, bmp, 413, 77, PAL_DSKTOP2, PAL_DSKTOP2, "Tracks");
-
-	/* Text boxes for directories - grayed out placeholders */
-	drawFramework(video, 485, 15, 145, 14, FRAMEWORK_TYPE2);
-	drawFramework(video, 485, 30, 145, 14, FRAMEWORK_TYPE2);
-	drawFramework(video, 485, 45, 145, 14, FRAMEWORK_TYPE2);
-	drawFramework(video, 485, 60, 145, 14, FRAMEWORK_TYPE2);
-	drawFramework(video, 485, 75, 145, 14, FRAMEWORK_TYPE2);
-
-	/* Rec./Edit/Play section - ACTIVE */
-	textOutShadow(video, bmp, 213, 57, PAL_FORGRND, PAL_DSKTOP2, "Rec./Edit/Play:");
+	/* Rec./Edit/Play section - ACTIVE (moved to left) */
+	textOutShadow(video, bmp, 114, 59, PAL_FORGRND, PAL_DSKTOP2, "Rec./Edit/Play:");
 
 	widgets->checkBoxChecked[CB_CONF_MULTICHAN_REC] = cfg->multiRec;
 	showCheckBox(widgets, video, bmp, CB_CONF_MULTICHAN_REC);
-	textOutShadow(video, bmp, 228, 70, PAL_FORGRND, PAL_DSKTOP2, "Multichannel record");
+	textOutShadow(video, bmp, 128, 72, PAL_FORGRND, PAL_DSKTOP2, "Multichannel record");
 
 	widgets->checkBoxChecked[CB_CONF_MULTICHAN_KEYJAZZ] = cfg->multiKeyJazz;
 	showCheckBox(widgets, video, bmp, CB_CONF_MULTICHAN_KEYJAZZ);
-	textOutShadow(video, bmp, 228, 83, PAL_FORGRND, PAL_DSKTOP2, "Multichannel \"key jazz\"");
+	textOutShadow(video, bmp, 128, 85, PAL_FORGRND, PAL_DSKTOP2, "Multichannel \"key jazz\"");
 
 	widgets->checkBoxChecked[CB_CONF_MULTICHAN_EDIT] = cfg->multiEdit;
 	showCheckBox(widgets, video, bmp, CB_CONF_MULTICHAN_EDIT);
-	textOutShadow(video, bmp, 228, 96, PAL_FORGRND, PAL_DSKTOP2, "Multichannel edit");
+	textOutShadow(video, bmp, 128, 98, PAL_FORGRND, PAL_DSKTOP2, "Multichannel edit");
 
 	widgets->checkBoxChecked[CB_CONF_REC_KEYOFF] = cfg->recRelease;
 	showCheckBox(widgets, video, bmp, CB_CONF_REC_KEYOFF);
-	textOutShadow(video, bmp, 228, 109, PAL_FORGRND, PAL_DSKTOP2, "Record key-off notes");
+	textOutShadow(video, bmp, 128, 111, PAL_FORGRND, PAL_DSKTOP2, "Record key-off notes");
 
 	widgets->checkBoxChecked[CB_CONF_QUANTIZE] = cfg->recQuant;
 	showCheckBox(widgets, video, bmp, CB_CONF_QUANTIZE);
-	textOutShadow(video, bmp, 228, 122, PAL_FORGRND, PAL_DSKTOP2, "Quantization");
+	textOutShadow(video, bmp, 128, 124, PAL_FORGRND, PAL_DSKTOP2, "Quantization");
 
 	/* Quantization value and up/down buttons */
-	textOutShadow(video, bmp, 338, 122, PAL_FORGRND, PAL_DSKTOP2, "1/");
+	textOutShadow(video, bmp, 238, 124, PAL_FORGRND, PAL_DSKTOP2, "1/");
 	char quantStr[8];
 	snprintf(quantStr, sizeof(quantStr), "%d", cfg->recQuantRes);
-	textOutShadow(video, bmp, 350, 122, PAL_FORGRND, PAL_DSKTOP2, quantStr);
+	textOutShadow(video, bmp, 250, 124, PAL_FORGRND, PAL_DSKTOP2, quantStr);
 	showPushButton(widgets, video, bmp, PB_CONFIG_QUANTIZE_UP);
 	showPushButton(widgets, video, bmp, PB_CONFIG_QUANTIZE_DOWN);
 
 	widgets->checkBoxChecked[CB_CONF_CHANGE_PATTLEN] = cfg->recTrueInsert;
 	showCheckBox(widgets, video, bmp, CB_CONF_CHANGE_PATTLEN);
-	textOutShadow(video, bmp, 228, 135, PAL_FORGRND, PAL_DSKTOP2, "Change pattern length when");
-	textOutShadow(video, bmp, 228, 146, PAL_FORGRND, PAL_DSKTOP2, "inserting/deleting line.");
+	textOutShadow(video, bmp, 128, 137, PAL_FORGRND, PAL_DSKTOP2, "Change pattern length when");
+	textOutShadow(video, bmp, 128, 148, PAL_FORGRND, PAL_DSKTOP2, "inserting/deleting line.");
 
 	/* Automatic update check */
 	widgets->checkBoxChecked[CB_CONF_AUTO_UPDATE_CHECK] = cfg->autoUpdateCheck;
 	showCheckBox(widgets, video, bmp, CB_CONF_AUTO_UPDATE_CHECK);
-	textOutShadow(video, bmp, 228, 161, PAL_FORGRND, PAL_DSKTOP2, "Automatic update check");
+	textOutShadow(video, bmp, 128, 161, PAL_FORGRND, PAL_DSKTOP2, "Automatic update check");
 }
 
 static void showConfigIORouting(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
@@ -794,13 +769,13 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	/* Title */
 	textOutShadow(video, bmp, 116, 4, PAL_FORGRND, PAL_DSKTOP2, "MIDI Input Settings:");
 
-	/* MIDI Enable checkbox - always active */
+	/* Line 1: MIDI Enable checkbox - always active */
 	textOutShadow(video, bmp, 131, 20, PAL_FORGRND, PAL_DSKTOP2, "Enable MIDI input");
 	widgets->checkBoxChecked[CB_CONF_MIDI_ENABLE] = cfg->midiEnabled;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_ENABLE] = false;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_ENABLE);
 
-	/* Notes trigger mode (moved up, below Enable) - active if MIDI enabled */
+	/* Line 2: Notes trigger mode - active if MIDI enabled */
 	textOutShadow(video, bmp, 116, 36, triggerColor, PAL_DSKTOP2, "Notes trigger:");
 	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_MIDI_TRIGGER);
 	if (cfg->midiTriggerPatterns)
@@ -813,43 +788,55 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	textOutShadow(video, bmp, 233, 36, triggerColor, PAL_DSKTOP2, "Notes");
 	textOutShadow(video, bmp, 296, 36, triggerColor, PAL_DSKTOP2, "Patterns");
 
-	/* All channels checkbox - active if MIDI enabled AND notes mode */
-	textOutShadow(video, bmp, 131, 50, noteSettingsColor, PAL_DSKTOP2, "Receive all channels");
+	/* Line 3: Record MIDI chn. ([x] all) + value + up/down */
+	textOutShadow(video, bmp, 116, 52, noteSettingsColor, PAL_DSKTOP2, "Record MIDI chn.");
+	charOutShadow(video, bmp, 227, 52, noteSettingsColor, PAL_DSKTOP2, '(');
+	textOutShadow(video, bmp, 250, 52, noteSettingsColor, PAL_DSKTOP2, "all )");
 	widgets->checkBoxChecked[CB_CONF_MIDI_ALLCHN] = cfg->midiAllChannels;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_ALLCHN] = !noteSettingsEnabled;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_ALLCHN);
-
-	/* Channel number with scrollbar - active if MIDI enabled AND notes mode */
-	textOutShadow(video, bmp, 116, 68, noteSettingsColor, PAL_DSKTOP2, "Channel:");
-	setScrollBarPos(inst, widgets, video, SB_MIDI_CHANNEL, cfg->midiChannel - 1, false);
-	widgets->scrollBarDisabled[SB_MIDI_CHANNEL] = !noteSettingsEnabled;
-	showScrollBar(widgets, video, SB_MIDI_CHANNEL);
-	widgets->pushButtonDisabled[PB_CONFIG_MIDICHN_DOWN] = !noteSettingsEnabled;
-	widgets->pushButtonDisabled[PB_CONFIG_MIDICHN_UP] = !noteSettingsEnabled;
-	showPushButton(widgets, video, bmp, PB_CONFIG_MIDICHN_DOWN);
-	showPushButton(widgets, video, bmp, PB_CONFIG_MIDICHN_UP);
+	/* Channel value and up/down buttons */
 	char chnStr[8];
-	snprintf(chnStr, sizeof(chnStr), "%2d", cfg->midiChannel);
-	textOutShadow(video, bmp, 304, 68, noteSettingsColor, PAL_DSKTOP2, chnStr);
+	snprintf(chnStr, sizeof(chnStr), "%02d", cfg->midiChannel);
+	textOutShadow(video, bmp, 290, 52, noteSettingsColor, PAL_DSKTOP2, chnStr);
+	widgets->pushButtonDisabled[PB_CONFIG_MIDICHN_UP] = !noteSettingsEnabled;
+	widgets->pushButtonDisabled[PB_CONFIG_MIDICHN_DOWN] = !noteSettingsEnabled;
+	showPushButton(widgets, video, bmp, PB_CONFIG_MIDICHN_UP);
+	showPushButton(widgets, video, bmp, PB_CONFIG_MIDICHN_DOWN);
 
-	/* Transpose with scrollbar - active if MIDI enabled AND notes mode */
-	textOutShadow(video, bmp, 116, 84, noteSettingsColor, PAL_DSKTOP2, "Transpose:");
-	setScrollBarPos(inst, widgets, video, SB_MIDI_TRANSPOSE, cfg->midiTranspose + 48, false);
-	widgets->scrollBarDisabled[SB_MIDI_TRANSPOSE] = !noteSettingsEnabled;
-	showScrollBar(widgets, video, SB_MIDI_TRANSPOSE);
-	widgets->pushButtonDisabled[PB_CONFIG_MIDITRANS_DOWN] = !noteSettingsEnabled;
-	widgets->pushButtonDisabled[PB_CONFIG_MIDITRANS_UP] = !noteSettingsEnabled;
-	showPushButton(widgets, video, bmp, PB_CONFIG_MIDITRANS_DOWN);
-	showPushButton(widgets, video, bmp, PB_CONFIG_MIDITRANS_UP);
+	/* Line 4: Record transpose checkbox + value + up/down */
+	textOutShadow(video, bmp, 131, 68, noteSettingsColor, PAL_DSKTOP2, "Record transpose");
+	widgets->checkBoxChecked[CB_CONF_MIDI_TRANSP] = cfg->midiRecordTranspose;
+	widgets->checkBoxDisabled[CB_CONF_MIDI_TRANSP] = !noteSettingsEnabled;
+	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_TRANSP);
+	/* Transpose value and up/down buttons - always show but grey out if disabled */
+	const bool transposeEnabled = noteSettingsEnabled && cfg->midiRecordTranspose;
+	const uint8_t transposeColor = transposeEnabled ? PAL_FORGRND : PAL_DSKTOP2;
 	char transStr[8];
 	if (cfg->midiTranspose >= 0)
 		snprintf(transStr, sizeof(transStr), "+%d", cfg->midiTranspose);
 	else
 		snprintf(transStr, sizeof(transStr), "%d", cfg->midiTranspose);
-	textOutShadow(video, bmp, 304, 84, noteSettingsColor, PAL_DSKTOP2, transStr);
+	textOutShadow(video, bmp, 290, 68, transposeColor, PAL_DSKTOP2, transStr);
+	widgets->pushButtonDisabled[PB_CONFIG_MIDITRANS_UP] = !transposeEnabled;
+	widgets->pushButtonDisabled[PB_CONFIG_MIDITRANS_DOWN] = !transposeEnabled;
+	showPushButton(widgets, video, bmp, PB_CONFIG_MIDITRANS_UP);
+	showPushButton(widgets, video, bmp, PB_CONFIG_MIDITRANS_DOWN);
 
-	/* Velocity sensitivity with scrollbar - active if MIDI enabled AND notes mode */
-	textOutShadow(video, bmp, 116, 100, noteSettingsColor, PAL_DSKTOP2, "Velocity sens.:");
+	/* Line 5: Record velocity checkbox */
+	textOutShadow(video, bmp, 131, 84, noteSettingsColor, PAL_DSKTOP2, "Record velocity");
+	widgets->checkBoxChecked[CB_CONF_MIDI_VELOCITY] = cfg->midiRecordVelocity;
+	widgets->checkBoxDisabled[CB_CONF_MIDI_VELOCITY] = !noteSettingsEnabled;
+	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_VELOCITY);
+
+	/* Line 6: Record aftertouch checkbox */
+	textOutShadow(video, bmp, 131, 100, noteSettingsColor, PAL_DSKTOP2, "Record aftertouch");
+	widgets->checkBoxChecked[CB_CONF_MIDI_AFTERTOUCH] = cfg->midiRecordAftertouch;
+	widgets->checkBoxDisabled[CB_CONF_MIDI_AFTERTOUCH] = !noteSettingsEnabled;
+	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_AFTERTOUCH);
+
+	/* Line 7: Vel./A.T. sens. with scrollbar */
+	textOutShadow(video, bmp, 116, 116, noteSettingsColor, PAL_DSKTOP2, "Vel./A.T. sens.:");
 	setScrollBarPos(inst, widgets, video, SB_MIDI_SENS, cfg->midiVelocitySens, false);
 	widgets->scrollBarDisabled[SB_MIDI_SENS] = !noteSettingsEnabled;
 	showScrollBar(widgets, video, SB_MIDI_SENS);
@@ -859,14 +846,8 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	showPushButton(widgets, video, bmp, PB_CONFIG_MIDISENS_UP);
 	char sensStr[8];
 	snprintf(sensStr, sizeof(sensStr), "%3d", cfg->midiVelocitySens);
-	textOutShadow(video, bmp, 304, 100, noteSettingsColor, PAL_DSKTOP2, sensStr);
-	charOutShadow(video, bmp, 328, 100, noteSettingsColor, PAL_DSKTOP2, '%');
-
-	/* Record velocity checkbox - active if MIDI enabled AND notes mode */
-	textOutShadow(video, bmp, 131, 114, noteSettingsColor, PAL_DSKTOP2, "Record velocity as volume");
-	widgets->checkBoxChecked[CB_CONF_MIDI_VELOCITY] = cfg->midiRecordVelocity;
-	widgets->checkBoxDisabled[CB_CONF_MIDI_VELOCITY] = !noteSettingsEnabled;
-	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_VELOCITY);
+	textOutShadow(video, bmp, 328, 116, noteSettingsColor, PAL_DSKTOP2, sensStr);
+	charOutShadow(video, bmp, 352, 116, noteSettingsColor, PAL_DSKTOP2, '%');
 }
 
 /* ============ MAIN DRAW FUNCTION ============ */
@@ -1649,8 +1630,8 @@ void sbAmpPos(ft2_instance_t *inst, uint32_t pos)
 		{
 			char ampStr[8];
 			snprintf(ampStr, sizeof(ampStr), "%2dx", inst->config.boostLevel);
-			fillRect(&ui->video, 601, 105, 20, 8, PAL_DESKTOP);
-			textOutShadow(&ui->video, &ui->bmp, 601, 105, PAL_FORGRND, PAL_DSKTOP2, ampStr);
+			fillRect(&ui->video, 374, 91, 24, 9, PAL_DESKTOP);
+			textOutShadow(&ui->video, &ui->bmp, 374, 91, PAL_FORGRND, PAL_DSKTOP2, ampStr);
 		}
 	}
 }
@@ -1674,8 +1655,8 @@ void sbMasterVolPos(ft2_instance_t *inst, uint32_t pos)
 		{
 			char volStr[8];
 			snprintf(volStr, sizeof(volStr), "%3d", inst->config.masterVol);
-			fillRect(&ui->video, 601, 133, 20, 8, PAL_DESKTOP);
-			textOutShadow(&ui->video, &ui->bmp, 601, 133, PAL_FORGRND, PAL_DSKTOP2, volStr);
+			fillRect(&ui->video, 374, 119, 24, 9, PAL_DESKTOP);
+			textOutShadow(&ui->video, &ui->bmp, 374, 119, PAL_FORGRND, PAL_DSKTOP2, volStr);
 		}
 	}
 }
@@ -1856,9 +1837,9 @@ static void drawMidiChannelValue(ft2_instance_t *inst)
 		return;
 
 	char str[8];
-	snprintf(str, sizeof(str), "%2d", inst->config.midiChannel);
-	fillRect(&ui->video, 304, 52, 16, 8, PAL_DESKTOP);
-	textOutShadow(&ui->video, &ui->bmp, 304, 52, PAL_FORGRND, PAL_DSKTOP2, str);
+	snprintf(str, sizeof(str), "%02d", inst->config.midiChannel);
+	fillRect(&ui->video, 290, 52, 20, 9, PAL_DESKTOP);
+	textOutShadow(&ui->video, &ui->bmp, 290, 52, PAL_FORGRND, PAL_DSKTOP2, str);
 }
 
 static void drawMidiTransposeValue(ft2_instance_t *inst)
@@ -1874,8 +1855,8 @@ static void drawMidiTransposeValue(ft2_instance_t *inst)
 		snprintf(str, sizeof(str), "+%d", val);
 	else
 		snprintf(str, sizeof(str), "%d", val);
-	fillRect(&ui->video, 304, 68, 24, 8, PAL_DESKTOP);
-	textOutShadow(&ui->video, &ui->bmp, 304, 68, PAL_FORGRND, PAL_DSKTOP2, str);
+	fillRect(&ui->video, 290, 68, 20, 9, PAL_DESKTOP);
+	textOutShadow(&ui->video, &ui->bmp, 290, 68, PAL_FORGRND, PAL_DSKTOP2, str);
 }
 
 static void drawMidiSensValue(ft2_instance_t *inst)
@@ -1887,8 +1868,8 @@ static void drawMidiSensValue(ft2_instance_t *inst)
 
 	char str[8];
 	snprintf(str, sizeof(str), "%3d", inst->config.midiVelocitySens);
-	fillRect(&ui->video, 304, 84, 24, 8, PAL_DESKTOP);
-	textOutShadow(&ui->video, &ui->bmp, 304, 84, PAL_FORGRND, PAL_DSKTOP2, str);
+	fillRect(&ui->video, 328, 116, 24, 9, PAL_DESKTOP);
+	textOutShadow(&ui->video, &ui->bmp, 328, 116, PAL_FORGRND, PAL_DSKTOP2, str);
 }
 
 void configMidiChnDown(ft2_instance_t *inst)
@@ -1896,11 +1877,11 @@ void configMidiChnDown(ft2_instance_t *inst)
 	if (inst == NULL)
 		return;
 
-	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-
-	scrollBarScrollLeft(inst, widgets, video, SB_MIDI_CHANNEL, 1);
+	if (inst->config.midiChannel > 1)
+	{
+		inst->config.midiChannel--;
+		drawMidiChannelValue(inst);
+	}
 }
 
 void configMidiChnUp(ft2_instance_t *inst)
@@ -1908,11 +1889,11 @@ void configMidiChnUp(ft2_instance_t *inst)
 	if (inst == NULL)
 		return;
 
-	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-
-	scrollBarScrollRight(inst, widgets, video, SB_MIDI_CHANNEL, 1);
+	if (inst->config.midiChannel < 16)
+	{
+		inst->config.midiChannel++;
+		drawMidiChannelValue(inst);
+	}
 }
 
 void sbMidiChannel(ft2_instance_t *inst, uint32_t pos)
@@ -1936,11 +1917,11 @@ void configMidiTransDown(ft2_instance_t *inst)
 	if (inst == NULL)
 		return;
 
-	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-
-	scrollBarScrollLeft(inst, widgets, video, SB_MIDI_TRANSPOSE, 1);
+	if (inst->config.midiTranspose > -72)
+	{
+		inst->config.midiTranspose--;
+		drawMidiTransposeValue(inst);
+	}
 }
 
 void configMidiTransUp(ft2_instance_t *inst)
@@ -1948,11 +1929,11 @@ void configMidiTransUp(ft2_instance_t *inst)
 	if (inst == NULL)
 		return;
 
-	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-
-	scrollBarScrollRight(inst, widgets, video, SB_MIDI_TRANSPOSE, 1);
+	if (inst->config.midiTranspose < 72)
+	{
+		inst->config.midiTranspose++;
+		drawMidiTransposeValue(inst);
+	}
 }
 
 void sbMidiTranspose(ft2_instance_t *inst, uint32_t pos)

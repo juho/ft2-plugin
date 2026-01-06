@@ -764,9 +764,11 @@ void FT2PluginProcessor::saveGlobalConfig()
     props->setValue("config_midiEnabled", cfg.midiEnabled);
     props->setValue("config_midiAllChannels", cfg.midiAllChannels);
     props->setValue("config_midiChannel", cfg.midiChannel);
+    props->setValue("config_midiRecordTranspose", cfg.midiRecordTranspose);
     props->setValue("config_midiTranspose", cfg.midiTranspose);
     props->setValue("config_midiVelocitySens", cfg.midiVelocitySens);
     props->setValue("config_midiRecordVelocity", cfg.midiRecordVelocity);
+    props->setValue("config_midiRecordAftertouch", cfg.midiRecordAftertouch);
     props->setValue("config_midiTriggerPatterns", cfg.midiTriggerPatterns);
     
     // Miscellaneous
@@ -882,9 +884,11 @@ void FT2PluginProcessor::loadGlobalConfig()
     cfg.midiEnabled = props->getBoolValue("config_midiEnabled", cfg.midiEnabled);
     cfg.midiAllChannels = props->getBoolValue("config_midiAllChannels", cfg.midiAllChannels);
     cfg.midiChannel = static_cast<uint8_t>(props->getIntValue("config_midiChannel", cfg.midiChannel));
+    cfg.midiRecordTranspose = props->getBoolValue("config_midiRecordTranspose", cfg.midiRecordTranspose);
     cfg.midiTranspose = static_cast<int8_t>(props->getIntValue("config_midiTranspose", cfg.midiTranspose));
     cfg.midiVelocitySens = static_cast<uint8_t>(props->getIntValue("config_midiVelocitySens", cfg.midiVelocitySens));
     cfg.midiRecordVelocity = props->getBoolValue("config_midiRecordVelocity", cfg.midiRecordVelocity);
+    cfg.midiRecordAftertouch = props->getBoolValue("config_midiRecordAftertouch", cfg.midiRecordAftertouch);
     cfg.midiTriggerPatterns = props->getBoolValue("config_midiTriggerPatterns", cfg.midiTriggerPatterns);
     
     // Miscellaneous
@@ -1051,7 +1055,8 @@ void FT2PluginProcessor::processMidiInput(const juce::MidiMessage& msg)
         /* But standalone uses -11 offset in midiInKeyAction, so: ft2Note = midiNote - 11 */
         int8_t ft2Note = static_cast<int8_t>(midiNote - 11);
         
-        /* Apply transpose */
+        /* Apply transpose if enabled */
+        if (cfg.midiRecordTranspose)
         ft2Note += cfg.midiTranspose;
         
         /* Clamp to FT2 note range (1-96) */
