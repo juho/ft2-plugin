@@ -45,40 +45,15 @@ void hideAllTopLeftPanelOverlays(ft2_instance_t *inst)
 	if (inst == NULL)
 		return;
 
-	/* Hide all panel overlays that occupy the scopes area.
-	 * These are mutually exclusive - only one can be shown at a time.
-	 * This function hides widgets AND resets flags for all of them. */
-
-	/* Hide Sample Editor Extension (buttons) */
-	if (inst->uiState.sampleEditorExtShown)
-	{
-		hideSampleEditorExtButtons(inst);
-		inst->uiState.sampleEditorExtShown = false;
-	}
-
-	/* Hide Instrument Editor Extension */
-	if (inst->uiState.instEditorExtShown)
-	{
-		hideInstEditorExt(inst);
-	}
-
-	/* Hide Transpose screen */
-	if (inst->uiState.transposeShown)
-	{
-		hideTranspose(inst);
-	}
-
-	/* Hide Advanced Edit screen */
-	if (inst->uiState.advEditShown)
-	{
-		hideAdvEdit(inst);
-	}
-
-	/* Hide Trim screen */
-	if (inst->uiState.trimScreenShown)
-	{
-		hideTrimScreen(inst);
-	}
+	/* Always hide ALL overlays unconditionally - don't check flags.
+	 * This ensures widget visibility matches state even if flags were
+	 * already cleared (e.g., by ft2_instance_reset during module loading).
+	 * Calling hide on an already-hidden overlay is safe and idempotent. */
+	hideSampleEditorExt(inst);
+	hideInstEditorExt(inst);
+	hideTranspose(inst);
+	hideAdvEdit(inst);
+	hideTrimScreen(inst);
 }
 
 void hideTopLeftMainScreen(ft2_instance_t *inst)

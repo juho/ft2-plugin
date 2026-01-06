@@ -1013,7 +1013,7 @@ int8_t ft2_plugin_record_note(ft2_instance_t *inst, ft2_input_state_t *input,
 				for (int8_t i = 0; i < (int8_t)numChannels; i++)
 				{
 					if (input->keyOffTime[i] < time && input->keyOnTab[i] == 0 && multiRecChn[i])
-					{
+		{
 						c = i;
 						time = input->keyOffTime[i];
 					}
@@ -1024,7 +1024,7 @@ int8_t ft2_plugin_record_note(ft2_instance_t *inst, ft2_input_state_t *input,
 			if (time == 0x7FFFFFFF)
 			{
 				for (int8_t i = 0; i < (int8_t)numChannels; i++)
-				{
+			{
 					if (input->keyOffTime[i] < time && input->keyOnTab[i] == 0)
 					{
 						c = i;
@@ -1044,34 +1044,34 @@ int8_t ft2_plugin_record_note(ft2_instance_t *inst, ft2_input_state_t *input,
 		{
 			if (noteNum == input->keyOnTab[i])
 				k = i;
-		}
-	}
-	
+				}
+			}
+			
 	/* Validate channel and check if note already held (matching standalone logic) */
 	if (c < 0 || (k >= 0 && (inst->config.multiEdit || (recMode || !editMode))))
 		return -1;
 	
 	/* Track key-on on selected channel */
 	input->keyOnTab[c] = noteNum;
-	
+		
 	/* Trigger the note for playback */
 	ft2_instance_trigger_note(inst, noteNum, inst->editor.curInstr, c, vol, midiVibDepth, midiPitch);
-	
+		
 	/* Record note to pattern in edit/record mode */
 	if (editMode || recMode)
-	{
-		uint16_t patt = inst->editor.editPattern;
-		if (!allocatePattern(inst, patt))
-			return c;
-		
-		int16_t row = inst->replayer.song.row;
-		if (c < (int8_t)numChannels && row >= 0 && row < inst->replayer.patternNumRows[patt])
 		{
+			uint16_t patt = inst->editor.editPattern;
+			if (!allocatePattern(inst, patt))
+			return c;
+			
+			int16_t row = inst->replayer.song.row;
+		if (c < (int8_t)numChannels && row >= 0 && row < inst->replayer.patternNumRows[patt])
+			{
 			ft2_note_t *n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + c];
 			n->note = noteNum;
 			if (inst->editor.curInstr > 0)
 				n->instr = inst->editor.curInstr;
-			
+				
 			/* Record volume if specified (vol >= 0 means record it) */
 			if (vol >= 0 && inst->config.midiRecordVelocity)
 				n->vol = 0x10 + (uint8_t)vol;  /* Volume column format: 0x10-0x50 = vol 0-64 */
@@ -1166,15 +1166,15 @@ int8_t ft2_plugin_record_note(ft2_instance_t *inst, ft2_input_state_t *input,
 			
 			/* In edit mode (not record), advance row */
 			if (!recMode && inst->editor.editRowSkip > 0)
-			{
-				uint16_t numRows = inst->replayer.patternNumRows[patt];
-				inst->replayer.song.row = (inst->replayer.song.row + inst->editor.editRowSkip) % numRows;
-				if (!inst->replayer.songPlaying)
-					inst->editor.row = (uint8_t)inst->replayer.song.row;
-			}
-			
-			ft2_song_mark_modified(inst);
-			inst->uiState.updatePatternEditor = true;
+				{
+					uint16_t numRows = inst->replayer.patternNumRows[patt];
+					inst->replayer.song.row = (inst->replayer.song.row + inst->editor.editRowSkip) % numRows;
+					if (!inst->replayer.songPlaying)
+						inst->editor.row = (uint8_t)inst->replayer.song.row;
+				}
+				
+				ft2_song_mark_modified(inst);
+				inst->uiState.updatePatternEditor = true;
 		}
 	}
 	

@@ -23,6 +23,7 @@
 #include "ft2_plugin_load_mod.h"
 #include "ft2_plugin_load_s3m.h"
 #include "ft2_plugin_timemap.h"
+#include "ft2_plugin_gui.h"
 
 /* Sample flags */
 #define SAMPLE_16BIT 16
@@ -825,6 +826,7 @@ bool ft2_load_xm_from_memory(ft2_instance_t *inst, const uint8_t *data, uint32_t
 	song->row = 0;
 	inst->uiState.updatePosEdScrollBar = true;
 	inst->uiState.updatePosSections = true;
+	hideAllTopLeftPanelOverlays(inst);
 	inst->uiState.needsFullRedraw = true;
 
 	return true;

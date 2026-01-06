@@ -1048,7 +1048,7 @@ void FT2PluginProcessor::processMidiInput(const juce::MidiMessage& msg)
         
         /* Apply transpose if enabled */
         if (cfg.midiRecordTranspose)
-            ft2Note += cfg.midiTranspose;
+        ft2Note += cfg.midiTranspose;
         
         /* Clamp to FT2 note range (1-96) */
         if (ft2Note < 1 || ft2Note > 96)
@@ -1076,7 +1076,7 @@ void FT2PluginProcessor::processMidiInput(const juce::MidiMessage& msg)
         
         /* Track which channel this note is playing on for note-off */
         if (channel >= 0)
-            midiNoteToChannel[midiNote] = channel;
+        midiNoteToChannel[midiNote] = channel;
     }
     else if (msg.isNoteOff())
     {
