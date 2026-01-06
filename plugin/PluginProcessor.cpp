@@ -31,6 +31,9 @@ FT2PluginProcessor::FT2PluginProcessor()
     for (int i = 0; i < MAX_MIDI_NOTES; ++i)
         midiNoteToChannel[i] = -1;
     
+    // Initialize MIDI input state for unified recording
+    ft2_input_init(&midiInputState);
+    
     // Create instance immediately with a default sample rate
     // It will be updated in prepareToPlay when we know the actual rate
     instance = ft2_instance_create(48000);
@@ -769,6 +772,11 @@ void FT2PluginProcessor::saveGlobalConfig()
     props->setValue("config_midiVelocitySens", cfg.midiVelocitySens);
     props->setValue("config_midiRecordVelocity", cfg.midiRecordVelocity);
     props->setValue("config_midiRecordAftertouch", cfg.midiRecordAftertouch);
+    props->setValue("config_midiRecordModWheel", cfg.midiRecordModWheel);
+    props->setValue("config_midiRecordPitchBend", cfg.midiRecordPitchBend);
+    props->setValue("config_midiRecordPriority", cfg.midiRecordPriority);
+    props->setValue("config_midiModRange", cfg.midiModRange);
+    props->setValue("config_midiBendRange", cfg.midiBendRange);
     props->setValue("config_midiTriggerPatterns", cfg.midiTriggerPatterns);
     
     // Miscellaneous
@@ -889,6 +897,11 @@ void FT2PluginProcessor::loadGlobalConfig()
     cfg.midiVelocitySens = static_cast<uint8_t>(props->getIntValue("config_midiVelocitySens", cfg.midiVelocitySens));
     cfg.midiRecordVelocity = props->getBoolValue("config_midiRecordVelocity", cfg.midiRecordVelocity);
     cfg.midiRecordAftertouch = props->getBoolValue("config_midiRecordAftertouch", cfg.midiRecordAftertouch);
+    cfg.midiRecordModWheel = props->getBoolValue("config_midiRecordModWheel", cfg.midiRecordModWheel);
+    cfg.midiRecordPitchBend = props->getBoolValue("config_midiRecordPitchBend", cfg.midiRecordPitchBend);
+    cfg.midiRecordPriority = static_cast<uint8_t>(props->getIntValue("config_midiRecordPriority", cfg.midiRecordPriority));
+    cfg.midiModRange = static_cast<uint8_t>(props->getIntValue("config_midiModRange", cfg.midiModRange));
+    cfg.midiBendRange = static_cast<uint8_t>(props->getIntValue("config_midiBendRange", cfg.midiBendRange));
     cfg.midiTriggerPatterns = props->getBoolValue("config_midiTriggerPatterns", cfg.midiTriggerPatterns);
     
     // Miscellaneous
@@ -986,27 +999,6 @@ void FT2PluginProcessor::pollConfigRequests()
     }
 }
 
-int8_t FT2PluginProcessor::allocateMidiChannel()
-{
-    if (instance == nullptr)
-        return -1;
-    
-    const int numChannels = instance->replayer.song.numChannels;
-    if (numChannels <= 0)
-        return 0;
-    
-    /* Round-robin allocation */
-    int8_t channel = nextMidiChannel;
-    nextMidiChannel = (nextMidiChannel + 1) % numChannels;
-    return channel;
-}
-
-void FT2PluginProcessor::releaseMidiChannel(int8_t channel)
-{
-    /* Nothing special needed for round-robin - just release the note */
-    (void)channel;
-}
-
 void FT2PluginProcessor::processMidiInput(const juce::MidiMessage& msg)
 {
     if (instance == nullptr)
@@ -1051,34 +1043,40 @@ void FT2PluginProcessor::processMidiInput(const juce::MidiMessage& msg)
         int velocity = msg.getVelocity();
         
         /* Convert MIDI note to FT2 note: MIDI 60 = C4, FT2 48 = C-4 */
-        /* So: ft2Note = midiNote - 12 (MIDI 60 -> FT2 48) */
-        /* But standalone uses -11 offset in midiInKeyAction, so: ft2Note = midiNote - 11 */
+        /* Standalone uses -11 offset in midiInKeyAction, so: ft2Note = midiNote - 11 */
         int8_t ft2Note = static_cast<int8_t>(midiNote - 11);
         
         /* Apply transpose if enabled */
         if (cfg.midiRecordTranspose)
-        ft2Note += cfg.midiTranspose;
+            ft2Note += cfg.midiTranspose;
         
         /* Clamp to FT2 note range (1-96) */
         if (ft2Note < 1 || ft2Note > 96)
             return;
         
         /* Convert velocity (0-127) to FT2 volume (0-64) with sensitivity */
-        int vol = (velocity * 64 * cfg.midiVelocitySens) / (127 * 100);
-        if (vol > 64) vol = 64;
-        if (velocity > 0 && vol == 0) vol = 1;  /* Match standalone bugfix */
+        int8_t vol;
+        if (cfg.midiRecordVelocity)
+        {
+            int calcVol = (velocity * 64 * cfg.midiVelocitySens) / (127 * 100);
+            if (calcVol > 64) calcVol = 64;
+            if (velocity > 0 && calcVol == 0) calcVol = 1;  /* Match standalone bugfix */
+            vol = static_cast<int8_t>(calcVol);
+        }
+        else
+        {
+            vol = -1;  /* Don't record velocity, use sample default */
+        }
         
-        /* Allocate FT2 channel */
-        int8_t channel = allocateMidiChannel();
-        if (channel < 0)
-            return;
+        /* Use unified recording function (handles channel allocation + pattern recording) */
+        int8_t channel = ft2_plugin_record_note(instance, &midiInputState, 
+                                                static_cast<uint8_t>(ft2Note), vol,
+                                                instance->editor.currMIDIVibDepth, 
+                                                instance->editor.currMIDIPitch);
         
-        /* Track which channel this note is playing on */
-        midiNoteToChannel[midiNote] = channel;
-        
-        /* Trigger note */
-        ft2_instance_trigger_note(instance, ft2Note, instance->editor.curInstr, 
-                                  static_cast<uint8_t>(channel), static_cast<uint8_t>(vol));
+        /* Track which channel this note is playing on for note-off */
+        if (channel >= 0)
+            midiNoteToChannel[midiNote] = channel;
     }
     else if (msg.isNoteOff())
     {
@@ -1089,12 +1087,63 @@ void FT2PluginProcessor::processMidiInput(const juce::MidiMessage& msg)
         if (channel < 0)
             return;
         
-        /* Release the note */
-        ft2_instance_release_note(instance, static_cast<uint8_t>(channel));
+        /* Release the note using unified function */
+        ft2_plugin_record_note_off(instance, &midiInputState, channel);
         
         /* Clear tracking */
         midiNoteToChannel[midiNote] = -1;
-        releaseMidiChannel(channel);
+    }
+    else if (msg.isController())
+    {
+        int controllerNumber = msg.getControllerNumber();
+        int controllerValue = msg.getControllerValue();
+        
+        /* CC#1 = Modulation wheel - controls MIDI vibrato depth */
+        if (controllerNumber == 1)
+        {
+            /* Store vibrato depth (matches standalone: value << 6) */
+            instance->editor.currMIDIVibDepth = static_cast<uint16_t>(controllerValue << 6);
+            
+            /* Apply vibrato to all active channels that have keyOnTab set */
+            int numChannels = instance->replayer.song.numChannels;
+            for (int i = 0; i < numChannels && i < 32; i++)
+            {
+                ft2_channel_t* ch = &instance->replayer.channel[i];
+                if (ch->midiVibDepth != 0 || midiInputState.keyOnTab[i] != 0)
+                    ch->midiVibDepth = instance->editor.currMIDIVibDepth;
+            }
+        }
+    }
+    else if (msg.isPitchWheel())
+    {
+        /* Pitch wheel: 0-16383, center=8192 */
+        int pitchValue = msg.getPitchWheelValue();
+        int16_t pitch = static_cast<int16_t>(pitchValue - 8192);  /* -8192..8191 */
+        pitch >>= 6;  /* Scale to -128..127 (matches standalone) */
+        
+        /* Store pitch bend value */
+        instance->editor.currMIDIPitch = pitch;
+        
+        /* Apply pitch bend to all active channels that have keyOnTab set */
+        int numChannels = instance->replayer.song.numChannels;
+        for (int i = 0; i < numChannels && i < 32; i++)
+        {
+            ft2_channel_t* ch = &instance->replayer.channel[i];
+            if (ch->midiPitch != 0 || midiInputState.keyOnTab[i] != 0)
+                ch->midiPitch = instance->editor.currMIDIPitch;
+        }
+    }
+    else if (msg.isAftertouch())
+    {
+        /* Channel aftertouch (not polyphonic) */
+        int atValue = msg.getAfterTouchValue();
+        instance->editor.currAftertouch = static_cast<uint8_t>(atValue);
+    }
+    else if (msg.isChannelPressure())
+    {
+        /* Channel pressure (another name for channel aftertouch) */
+        int pressure = msg.getChannelPressureValue();
+        instance->editor.currAftertouch = static_cast<uint8_t>(pressure);
     }
 }
 

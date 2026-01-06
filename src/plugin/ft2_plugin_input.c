@@ -928,10 +928,26 @@ static void handlePatternInsertDelete(ft2_instance_t *inst, int keyCode, int mod
 	}
 }
 
-static void handleNoteInput(ft2_instance_t *inst, ft2_input_state_t *input, int keyCode)
+/* ============ UNIFIED NOTE RECORDING ============ */
+
+int8_t ft2_plugin_record_note(ft2_instance_t *inst, ft2_input_state_t *input,
+                              uint8_t noteNum, int8_t vol,
+                              uint16_t midiVibDepth, int16_t midiPitch)
 {
 	if (inst == NULL || input == NULL)
-		return;
+		return -1;
+	
+	/* Handle note-off separately */
+	if (noteNum == FT2_KEY_NOTE_OFF)
+	{
+		/* For note-off without a specific channel, we need to find the channel */
+		/* This path is used for keyboard note-off key */
+		return -1;
+	}
+	
+	/* Validate note range */
+	if (noteNum < 1 || noteNum > 96)
+		return -1;
 	
 	/* Get UI for access to scopes (multiRecChn, channelMuted) */
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
@@ -946,62 +962,6 @@ static void handleNoteInput(ft2_instance_t *inst, ft2_input_state_t *input, int 
 	
 	uint16_t numChannels = inst->replayer.song.numChannels;
 	if (numChannels > 32) numChannels = 32;
-	
-	/* Check for note off key (backtick) */
-	if (keyCode == '`' || keyCode == '~')
-	{
-		if ((editMode || recMode) && inst->uiState.patternEditorShown)
-		{
-			/* Find channel to insert note off */
-			int8_t c = inst->cursor.ch;
-			
-			/* In multi-edit/rec mode, find channel from multiRecChn */
-			if (((inst->config.multiEdit && editMode) || (inst->config.multiRec && recMode)) && multiRecChn)
-			{
-				int32_t time = 0x7FFFFFFF;
-				for (int8_t i = 0; i < (int8_t)numChannels; i++)
-				{
-					if ((!channelMuted || !channelMuted[i]) && multiRecChn[i] && 
-					    input->keyOffTime[i] < time && input->keyOnTab[i] == 0)
-					{
-						c = i;
-						time = input->keyOffTime[i];
-					}
-				}
-			}
-			
-			if (c < 0 || c >= (int8_t)numChannels)
-				return;
-			
-			uint16_t patt = inst->editor.editPattern;
-			if (!allocatePattern(inst, patt))
-				return;
-			
-			int16_t row = inst->replayer.song.row;
-			if (row >= 0 && row < inst->replayer.patternNumRows[patt])
-			{
-				ft2_note_t *n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + c];
-				n->note = 97; /* Note off */
-				n->instr = 0;
-				
-				/* In edit mode (not record), advance row */
-				if (!recMode && inst->editor.editRowSkip > 0)
-				{
-					uint16_t numRows = inst->replayer.patternNumRows[patt];
-					inst->replayer.song.row = (inst->replayer.song.row + inst->editor.editRowSkip) % numRows;
-					if (!inst->replayer.songPlaying)
-						inst->editor.row = (uint8_t)inst->replayer.song.row;
-				}
-				
-				inst->uiState.updatePatternEditor = true;
-			}
-		}
-		return;
-	}
-	
-	int8_t noteNum = ft2_key_to_note(keyCode, input->octave);
-	if (noteNum <= 0)
-		return;
 	
 	int8_t c = -1; /* Channel to play/record on */
 	int8_t k = -1; /* Channel where this note is already held */
@@ -1053,7 +1013,7 @@ static void handleNoteInput(ft2_instance_t *inst, ft2_input_state_t *input, int 
 				for (int8_t i = 0; i < (int8_t)numChannels; i++)
 				{
 					if (input->keyOffTime[i] < time && input->keyOnTab[i] == 0 && multiRecChn[i])
-		{
+					{
 						c = i;
 						time = input->keyOffTime[i];
 					}
@@ -1064,7 +1024,7 @@ static void handleNoteInput(ft2_instance_t *inst, ft2_input_state_t *input, int 
 			if (time == 0x7FFFFFFF)
 			{
 				for (int8_t i = 0; i < (int8_t)numChannels; i++)
-			{
+				{
 					if (input->keyOffTime[i] < time && input->keyOnTab[i] == 0)
 					{
 						c = i;
@@ -1084,36 +1044,247 @@ static void handleNoteInput(ft2_instance_t *inst, ft2_input_state_t *input, int 
 		{
 			if (noteNum == input->keyOnTab[i])
 				k = i;
-				}
-			}
-			
+		}
+	}
+	
 	/* Validate channel and check if note already held (matching standalone logic) */
 	if (c < 0 || (k >= 0 && (inst->config.multiEdit || (recMode || !editMode))))
-		return;
+		return -1;
 	
 	/* Track key-on on selected channel */
 	input->keyOnTab[c] = noteNum;
-		
+	
 	/* Trigger the note for playback */
-	ft2_instance_trigger_note(inst, noteNum, inst->editor.curInstr, c, 64);
-		
+	ft2_instance_trigger_note(inst, noteNum, inst->editor.curInstr, c, vol, midiVibDepth, midiPitch);
+	
 	/* Record note to pattern in edit/record mode */
 	if (editMode || recMode)
+	{
+		uint16_t patt = inst->editor.editPattern;
+		if (!allocatePattern(inst, patt))
+			return c;
+		
+		int16_t row = inst->replayer.song.row;
+		if (c < (int8_t)numChannels && row >= 0 && row < inst->replayer.patternNumRows[patt])
 		{
+			ft2_note_t *n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + c];
+			n->note = noteNum;
+			if (inst->editor.curInstr > 0)
+				n->instr = inst->editor.curInstr;
+			
+			/* Record volume if specified (vol >= 0 means record it) */
+			if (vol >= 0 && inst->config.midiRecordVelocity)
+				n->vol = 0x10 + (uint8_t)vol;  /* Volume column format: 0x10-0x50 = vol 0-64 */
+			
+			/* Determine which MIDI controllers get effect column vs volume column */
+			/* Priority setting: 0 = pitch bend to effect, mod wheel to volume */
+			/*                   1 = mod wheel to effect, pitch bend to volume */
+			bool pitchToEffect = (inst->config.midiRecordPriority == 0);
+			bool modToEffect = (inst->config.midiRecordPriority == 1);
+			
+			/* Record mod wheel vibrato if enabled */
+			if (inst->config.midiRecordModWheel && midiVibDepth > 0)
+			{
+				/* Apply mod range scaling: midiVibDepth is 0-1024, midiModRange is 1-15 */
+				/* Scale to 0-F with modRange affecting the depth */
+				uint8_t depth = ((midiVibDepth * inst->config.midiModRange) >> 12) & 0x0F;
+				if (depth > 0)
+				{
+					if (modToEffect && n->efx == 0)
+					{
+						/* Effect column: 04Ax = vibrato with depth */
+						n->efx = 0x04;
+						n->efxData = 0xA0 | depth;
+					}
+					else if (!modToEffect && n->vol == 0)
+					{
+						/* Volume column: Vx = vibrato */
+						n->vol = 0xB0 | depth;
+					}
+				}
+			}
+			
+			/* Record pitch bend as portamento if enabled */
+			if (inst->config.midiRecordPitchBend && midiPitch != 0)
+			{
+				/* Calculate portamento speed based on bend range */
+				/* bendRange = semitones for full bend, midiPitch = -128..127 */
+				/* We want to convert to a portamento speed value (0-FF) */
+				int absPitch = midiPitch < 0 ? -midiPitch : midiPitch;
+				/* Scale: full bend (127) at range 2 = ~0x40, at range 12 = ~0xFF */
+				uint8_t speed = (uint8_t)((absPitch * inst->config.midiBendRange * 2) / 127);
+				if (speed > 0xFF) speed = 0xFF;
+				if (speed == 0 && absPitch > 0) speed = 1;
+				
+				if (speed > 0)
+				{
+					if (pitchToEffect && n->efx == 0)
+					{
+						/* Effect column: 1xx = portamento up, 2xx = portamento down */
+						n->efx = (midiPitch > 0) ? 0x01 : 0x02;
+						n->efxData = speed;
+					}
+					else if (!pitchToEffect && n->vol == 0)
+					{
+						/* Volume column: Mx = tone portamento (simplified) */
+						uint8_t volSpeed = speed >> 4;
+						if (volSpeed == 0 && speed > 0) volSpeed = 1;
+						n->vol = 0xF0 | volSpeed;
+					}
+				}
+			}
+			
+			/* Record aftertouch as volume slide if enabled and volume column not already used */
+			if (inst->config.midiRecordAftertouch && n->vol == 0)
+			{
+				uint8_t at = inst->editor.currAftertouch;
+				uint8_t lastAt = inst->editor.lastRecordedAT;
+				
+				if (at != lastAt)
+				{
+					/* Convert aftertouch change to volume slide */
+					int8_t delta = (int8_t)at - (int8_t)lastAt;
+					if (delta > 0)
+					{
+						/* Aftertouch increased = volume slide up */
+						uint8_t slideUp = (uint8_t)(delta >> 3);  /* Scale 0-127 to 0-15 */
+						if (slideUp > 15) slideUp = 15;
+						if (slideUp == 0) slideUp = 1;
+						n->vol = 0x70 | slideUp;  /* +x = volume slide up */
+					}
+					else
+					{
+						/* Aftertouch decreased = volume slide down */
+						uint8_t slideDown = (uint8_t)((-delta) >> 3);
+						if (slideDown > 15) slideDown = 15;
+						if (slideDown == 0) slideDown = 1;
+						n->vol = 0x60 | slideDown;  /* -x = volume slide down */
+					}
+					inst->editor.lastRecordedAT = at;
+				}
+			}
+			
+			/* In edit mode (not record), advance row */
+			if (!recMode && inst->editor.editRowSkip > 0)
+			{
+				uint16_t numRows = inst->replayer.patternNumRows[patt];
+				inst->replayer.song.row = (inst->replayer.song.row + inst->editor.editRowSkip) % numRows;
+				if (!inst->replayer.songPlaying)
+					inst->editor.row = (uint8_t)inst->replayer.song.row;
+			}
+			
+			ft2_song_mark_modified(inst);
+			inst->uiState.updatePatternEditor = true;
+		}
+	}
+	
+	return c;
+}
+
+void ft2_plugin_record_note_off(ft2_instance_t *inst, ft2_input_state_t *input, int8_t channel)
+{
+	if (inst == NULL || input == NULL || channel < 0 || channel >= 32)
+		return;
+	
+	/* Clear key-on tracking */
+	input->keyOffNr++;
+	input->keyOnTab[channel] = 0;
+	input->keyOffTime[channel] = input->keyOffNr;
+	
+	/* Release the note */
+	ft2_instance_release_note(inst, (uint8_t)channel);
+	
+	/* Record note-off to pattern if in record mode and recRelease is enabled */
+	bool recMode = (inst->replayer.playMode == FT2_PLAYMODE_RECSONG) ||
+	               (inst->replayer.playMode == FT2_PLAYMODE_RECPATT);
+	
+	if (recMode && inst->config.recRelease)
+	{
+		uint16_t patt = inst->editor.editPattern;
+		if (!allocatePattern(inst, patt))
+			return;
+		
+		int16_t row = inst->replayer.song.row;
+		uint16_t numRows = inst->replayer.patternNumRows[patt];
+		
+		if (row >= 0 && row < numRows)
+		{
+			ft2_note_t *n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + channel];
+			
+			/* If there's already a note on this row, go to next row */
+			if (n->note != 0)
+			{
+				row++;
+				if (row >= numRows)
+					row = 0;
+				n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + channel];
+			}
+			
+			n->note = FT2_KEY_NOTE_OFF;
+			
+			ft2_song_mark_modified(inst);
+			inst->uiState.updatePatternEditor = true;
+		}
+	}
+}
+
+static void handleNoteInput(ft2_instance_t *inst, ft2_input_state_t *input, int keyCode)
+{
+	if (inst == NULL || input == NULL)
+		return;
+	
+	/* Check for note off key (backtick) - handled specially */
+	if (keyCode == '`' || keyCode == '~')
+	{
+		/* Get UI for access to scopes */
+		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+		bool *multiRecChn = (ui != NULL) ? ui->scopes.multiRecChn : NULL;
+		bool *channelMuted = (ui != NULL) ? ui->scopes.channelMuted : NULL;
+		
+		bool editMode = inst->uiState.patternEditorShown && 
+		                (inst->replayer.playMode == FT2_PLAYMODE_EDIT);
+		bool recMode = (inst->replayer.playMode == FT2_PLAYMODE_RECSONG) ||
+		               (inst->replayer.playMode == FT2_PLAYMODE_RECPATT);
+		
+		if ((editMode || recMode) && inst->uiState.patternEditorShown)
+		{
+			uint16_t numChannels = inst->replayer.song.numChannels;
+			if (numChannels > 32) numChannels = 32;
+			
+			/* Find channel to insert note off */
+			int8_t c = inst->cursor.ch;
+			
+			/* In multi-edit/rec mode, find channel from multiRecChn */
+			if (((inst->config.multiEdit && editMode) || (inst->config.multiRec && recMode)) && multiRecChn)
+			{
+				int32_t time = 0x7FFFFFFF;
+				for (int8_t i = 0; i < (int8_t)numChannels; i++)
+				{
+					if ((!channelMuted || !channelMuted[i]) && multiRecChn[i] && 
+					    input->keyOffTime[i] < time && input->keyOnTab[i] == 0)
+					{
+						c = i;
+						time = input->keyOffTime[i];
+					}
+				}
+			}
+			
+			if (c < 0 || c >= (int8_t)numChannels)
+				return;
+			
 			uint16_t patt = inst->editor.editPattern;
 			if (!allocatePattern(inst, patt))
 				return;
 			
 			int16_t row = inst->replayer.song.row;
-		if (c < (int8_t)numChannels && row >= 0 && row < inst->replayer.patternNumRows[patt])
+			if (row >= 0 && row < inst->replayer.patternNumRows[patt])
 			{
-			ft2_note_t *n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + c];
-			n->note = noteNum;
-			if (inst->editor.curInstr > 0)
-				n->instr = inst->editor.curInstr;
+				ft2_note_t *n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + c];
+				n->note = FT2_KEY_NOTE_OFF;
+				n->instr = 0;
 				
-			/* In edit mode (not record), advance row */
-			if (!recMode && inst->editor.editRowSkip > 0)
+				/* In edit mode (not record), advance row */
+				if (!recMode && inst->editor.editRowSkip > 0)
 				{
 					uint16_t numRows = inst->replayer.patternNumRows[patt];
 					inst->replayer.song.row = (inst->replayer.song.row + inst->editor.editRowSkip) % numRows;
@@ -1123,8 +1294,18 @@ static void handleNoteInput(ft2_instance_t *inst, ft2_input_state_t *input, int 
 				
 				ft2_song_mark_modified(inst);
 				inst->uiState.updatePatternEditor = true;
+			}
 		}
+		return;
 	}
+	
+	/* Convert key to note number */
+	int8_t noteNum = ft2_key_to_note(keyCode, input->octave);
+	if (noteNum <= 0)
+		return;
+	
+	/* Use unified recording function (keyboard: vol=-1 for default, no MIDI mods) */
+	ft2_plugin_record_note(inst, input, (uint8_t)noteNum, -1, 0, 0);
 }
 
 static int8_t hexCharToValue(int keyCode)

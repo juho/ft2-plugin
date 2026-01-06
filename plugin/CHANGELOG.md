@@ -5,6 +5,7 @@
 - Feat: Allocate empty instrument when clicking on I.E.Ext.
 - Fix: Enable MIDI output in JUCE.
 - Visual: Config cleanup.
+- Feat: Aftertouch, bender and mod wheel midi input support + related config settings.
 
 ## 1.0.43 (Jan 5, 2026)
 

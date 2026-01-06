@@ -562,7 +562,8 @@ void ft2_instance_stop(ft2_instance_t *inst)
 	inst->uiState.updatePatternEditor = true;
 }
 
-void ft2_instance_trigger_note(ft2_instance_t *inst, int8_t note, uint8_t instr, uint8_t channel, uint8_t volume)
+void ft2_instance_trigger_note(ft2_instance_t *inst, int8_t note, uint8_t instr, uint8_t channel, 
+                               int8_t volume, uint16_t midiVibDepth, int16_t midiPitch)
 {
 	if (inst == NULL || channel >= FT2_MAX_CHANNELS)
 		return;
@@ -619,12 +620,16 @@ void ft2_instance_trigger_note(ft2_instance_t *inst, int8_t note, uint8_t instr,
 	ft2_channel_trigger_instrument(ch);
 	
 	/* Override volume if specified (volume == -1 means use sample volume) */
-	if (volume != 0xFF)
+	if (volume >= 0)
 	{
-		ch->realVol = volume;
-		ch->outVol = volume;
-		ch->oldVol = volume;
+		ch->realVol = (uint8_t)volume;
+		ch->outVol = (uint8_t)volume;
+		ch->oldVol = (uint8_t)volume;
 	}
+	
+	/* Apply MIDI modulation (matches standalone playTone) */
+	ch->midiVibDepth = midiVibDepth;
+	ch->midiPitch = midiPitch;
 	
 	/* Set status flags for voice trigger */
 	ch->status |= FT2_CS_TRIGGER_VOICE | FT2_CS_UPDATE_VOL | FT2_CS_UPDATE_PAN | 

@@ -335,6 +335,12 @@ typedef struct ft2_editor_t
 	
 	/* Pattern marking */
 	ft2_patt_mark_t pattMark;
+	
+	/* MIDI input state (for recording) */
+	uint16_t currMIDIVibDepth;   /* Current mod wheel vibrato depth (0-8128) */
+	int16_t currMIDIPitch;       /* Current pitch bend value (-128 to +127) */
+	uint8_t currAftertouch;      /* Current aftertouch value (0-127) */
+	uint8_t lastRecordedAT;      /* Last aftertouch value recorded to pattern */
 } ft2_editor_t;
 
 /**
@@ -753,9 +759,12 @@ void ft2_instance_play_pattern(ft2_instance_t *instance, uint8_t patternNum, int
  * @param note Note number (1-96).
  * @param instr Instrument number (0-127).
  * @param channel Channel number.
- * @param volume Volume (0-64).
+ * @param volume Volume (0-64, or -1 to use sample default).
+ * @param midiVibDepth MIDI vibrato depth from mod wheel (0 for none).
+ * @param midiPitch MIDI pitch bend value (-128 to +127, 0 for none).
  */
-void ft2_instance_trigger_note(ft2_instance_t *instance, int8_t note, uint8_t instr, uint8_t channel, uint8_t volume);
+void ft2_instance_trigger_note(ft2_instance_t *instance, int8_t note, uint8_t instr, uint8_t channel, 
+                               int8_t volume, uint16_t midiVibDepth, int16_t midiPitch);
 
 /**
  * @brief Releases a note on a channel.

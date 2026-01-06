@@ -91,6 +91,11 @@ void ft2_config_init(ft2_plugin_config_t *config)
 	config->midiVelocitySens = 100;
 	config->midiRecordVelocity = true;
 	config->midiRecordAftertouch = false;
+	config->midiRecordModWheel = false;
+	config->midiRecordPitchBend = false;
+	config->midiRecordPriority = 0;  /* Pitch bend priority by default */
+	config->midiModRange = 8;        /* Mid-range vibrato depth by default */
+	config->midiBendRange = 2;       /* 2 semitones by default */
 
 	/* Miscellaneous */
 	config->autoUpdateCheck = true;  /* Enabled by default */
@@ -367,8 +372,6 @@ void hideConfigScreen(ft2_instance_t *inst)
 	hideCheckBox(widgets, CB_CONF_MIDI_AFTERTOUCH);
 	hideCheckBox(widgets, CB_CONF_VSYNC_OFF);
 	hideCheckBox(widgets, CB_CONF_FULLSCREEN);
-	hideCheckBox(widgets, CB_CONF_STRETCH);
-	hideCheckBox(widgets, CB_CONF_PIXELFILTER);
 	hidePushButton(widgets, PB_CONFIG_QUANTIZE_UP);
 	hidePushButton(widgets, PB_CONFIG_QUANTIZE_DOWN);
 
@@ -382,7 +385,14 @@ void hideConfigScreen(ft2_instance_t *inst)
 	hidePushButton(widgets, PB_CONFIG_MIDITRANS_UP);
 	hidePushButton(widgets, PB_CONFIG_MIDISENS_DOWN);
 	hidePushButton(widgets, PB_CONFIG_MIDISENS_UP);
+	hidePushButton(widgets, PB_CONFIG_MODRANGE_UP);
+	hidePushButton(widgets, PB_CONFIG_MODRANGE_DOWN);
+	hidePushButton(widgets, PB_CONFIG_BENDRANGE_UP);
+	hidePushButton(widgets, PB_CONFIG_BENDRANGE_DOWN);
 	hideRadioButtonGroup(widgets, RB_GROUP_CONFIG_MIDI_TRIGGER);
+	hideRadioButtonGroup(widgets, RB_GROUP_CONFIG_MIDI_PRIORITY);
+	hideCheckBox(widgets, CB_CONF_MIDI_MODWHEEL);
+	hideCheckBox(widgets, CB_CONF_MIDI_PITCHBEND);
 
 	/* CONFIG I/O ROUTING */
 	for (int i = 0; i < 32; i++)
@@ -763,20 +773,18 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	const uint8_t triggerColor = midiEnabled ? PAL_FORGRND : PAL_DSKTOP2;
 	const uint8_t noteSettingsColor = noteSettingsEnabled ? PAL_FORGRND : PAL_DSKTOP2;
 
-	/* Draw main content framework */
-	drawFramework(video, 110, 0, 522, 173, FRAMEWORK_TYPE1);
-
-	/* Title */
-	textOutShadow(video, bmp, 116, 4, PAL_FORGRND, PAL_DSKTOP2, "MIDI Input Settings:");
+	/* Draw framework sections */
+	drawFramework(video, 110, 0, 240, 173, FRAMEWORK_TYPE1);   /* Content area */
+	drawFramework(video, 350, 0, 282, 173, FRAMEWORK_TYPE1);   /* Empty right area */
 
 	/* Line 1: MIDI Enable checkbox - always active */
-	textOutShadow(video, bmp, 131, 20, PAL_FORGRND, PAL_DSKTOP2, "Enable MIDI input");
+	textOutShadow(video, bmp, 129, 4, PAL_FORGRND, PAL_DSKTOP2, "Enable MIDI input");
 	widgets->checkBoxChecked[CB_CONF_MIDI_ENABLE] = cfg->midiEnabled;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_ENABLE] = false;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_ENABLE);
 
 	/* Line 2: Notes trigger mode - active if MIDI enabled */
-	textOutShadow(video, bmp, 116, 36, triggerColor, PAL_DSKTOP2, "Notes trigger:");
+	textOutShadow(video, bmp, 114, 20, triggerColor, PAL_DSKTOP2, "Notes trigger:");
 	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_MIDI_TRIGGER);
 	if (cfg->midiTriggerPatterns)
 		widgets->radioButtonState[RB_CONFIG_MIDI_PATTERNS] = RADIOBUTTON_CHECKED;
@@ -785,27 +793,27 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	widgets->radioButtonDisabled[RB_CONFIG_MIDI_NOTES] = !midiEnabled;
 	widgets->radioButtonDisabled[RB_CONFIG_MIDI_PATTERNS] = !midiEnabled;
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_MIDI_TRIGGER);
-	textOutShadow(video, bmp, 233, 36, triggerColor, PAL_DSKTOP2, "Notes");
-	textOutShadow(video, bmp, 296, 36, triggerColor, PAL_DSKTOP2, "Patterns");
+	textOutShadow(video, bmp, 231, 20, triggerColor, PAL_DSKTOP2, "Notes");
+	textOutShadow(video, bmp, 294, 20, triggerColor, PAL_DSKTOP2, "Patterns");
 
 	/* Line 3: Record MIDI chn. ([x] all) + value + up/down */
-	textOutShadow(video, bmp, 116, 52, noteSettingsColor, PAL_DSKTOP2, "Record MIDI chn.");
-	charOutShadow(video, bmp, 227, 52, noteSettingsColor, PAL_DSKTOP2, '(');
-	textOutShadow(video, bmp, 250, 52, noteSettingsColor, PAL_DSKTOP2, "all )");
+	textOutShadow(video, bmp, 114, 36, noteSettingsColor, PAL_DSKTOP2, "Record MIDI chn.");
+	charOutShadow(video, bmp, 225, 36, noteSettingsColor, PAL_DSKTOP2, '(');
+	textOutShadow(video, bmp, 248, 36, noteSettingsColor, PAL_DSKTOP2, "all )");
 	widgets->checkBoxChecked[CB_CONF_MIDI_ALLCHN] = cfg->midiAllChannels;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_ALLCHN] = !noteSettingsEnabled;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_ALLCHN);
 	/* Channel value and up/down buttons */
 	char chnStr[8];
 	snprintf(chnStr, sizeof(chnStr), "%02d", cfg->midiChannel);
-	textOutShadow(video, bmp, 290, 52, noteSettingsColor, PAL_DSKTOP2, chnStr);
+	textOutShadow(video, bmp, 288, 36, noteSettingsColor, PAL_DSKTOP2, chnStr);
 	widgets->pushButtonDisabled[PB_CONFIG_MIDICHN_UP] = !noteSettingsEnabled;
 	widgets->pushButtonDisabled[PB_CONFIG_MIDICHN_DOWN] = !noteSettingsEnabled;
 	showPushButton(widgets, video, bmp, PB_CONFIG_MIDICHN_UP);
 	showPushButton(widgets, video, bmp, PB_CONFIG_MIDICHN_DOWN);
 
 	/* Line 4: Record transpose checkbox + value + up/down */
-	textOutShadow(video, bmp, 131, 68, noteSettingsColor, PAL_DSKTOP2, "Record transpose");
+	textOutShadow(video, bmp, 129, 52, noteSettingsColor, PAL_DSKTOP2, "Record transpose");
 	widgets->checkBoxChecked[CB_CONF_MIDI_TRANSP] = cfg->midiRecordTranspose;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_TRANSP] = !noteSettingsEnabled;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_TRANSP);
@@ -817,26 +825,26 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 		snprintf(transStr, sizeof(transStr), "+%d", cfg->midiTranspose);
 	else
 		snprintf(transStr, sizeof(transStr), "%d", cfg->midiTranspose);
-	textOutShadow(video, bmp, 290, 68, transposeColor, PAL_DSKTOP2, transStr);
+	textOutShadow(video, bmp, 288, 52, transposeColor, PAL_DSKTOP2, transStr);
 	widgets->pushButtonDisabled[PB_CONFIG_MIDITRANS_UP] = !transposeEnabled;
 	widgets->pushButtonDisabled[PB_CONFIG_MIDITRANS_DOWN] = !transposeEnabled;
 	showPushButton(widgets, video, bmp, PB_CONFIG_MIDITRANS_UP);
 	showPushButton(widgets, video, bmp, PB_CONFIG_MIDITRANS_DOWN);
 
 	/* Line 5: Record velocity checkbox */
-	textOutShadow(video, bmp, 131, 84, noteSettingsColor, PAL_DSKTOP2, "Record velocity");
+	textOutShadow(video, bmp, 129, 68, noteSettingsColor, PAL_DSKTOP2, "Record velocity");
 	widgets->checkBoxChecked[CB_CONF_MIDI_VELOCITY] = cfg->midiRecordVelocity;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_VELOCITY] = !noteSettingsEnabled;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_VELOCITY);
 
 	/* Line 6: Record aftertouch checkbox */
-	textOutShadow(video, bmp, 131, 100, noteSettingsColor, PAL_DSKTOP2, "Record aftertouch");
+	textOutShadow(video, bmp, 129, 84, noteSettingsColor, PAL_DSKTOP2, "Record aftertouch");
 	widgets->checkBoxChecked[CB_CONF_MIDI_AFTERTOUCH] = cfg->midiRecordAftertouch;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_AFTERTOUCH] = !noteSettingsEnabled;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_AFTERTOUCH);
 
 	/* Line 7: Vel./A.T. sens. with scrollbar */
-	textOutShadow(video, bmp, 116, 116, noteSettingsColor, PAL_DSKTOP2, "Vel./A.T. sens.:");
+	textOutShadow(video, bmp, 114, 100, noteSettingsColor, PAL_DSKTOP2, "Vel./A.T. sens.");
 	setScrollBarPos(inst, widgets, video, SB_MIDI_SENS, cfg->midiVelocitySens, false);
 	widgets->scrollBarDisabled[SB_MIDI_SENS] = !noteSettingsEnabled;
 	showScrollBar(widgets, video, SB_MIDI_SENS);
@@ -846,8 +854,61 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	showPushButton(widgets, video, bmp, PB_CONFIG_MIDISENS_UP);
 	char sensStr[8];
 	snprintf(sensStr, sizeof(sensStr), "%3d", cfg->midiVelocitySens);
-	textOutShadow(video, bmp, 328, 116, noteSettingsColor, PAL_DSKTOP2, sensStr);
-	charOutShadow(video, bmp, 352, 116, noteSettingsColor, PAL_DSKTOP2, '%');
+	textOutShadow(video, bmp, 310, 100, noteSettingsColor, PAL_DSKTOP2, sensStr);
+	charOutShadow(video, bmp, 334, 100, noteSettingsColor, PAL_DSKTOP2, '%');
+
+	/* Line 8: Record mod wheel checkbox + range */
+	textOutShadow(video, bmp, 129, 116, noteSettingsColor, PAL_DSKTOP2, "Record mod wheel");
+	widgets->checkBoxChecked[CB_CONF_MIDI_MODWHEEL] = cfg->midiRecordModWheel;
+	widgets->checkBoxDisabled[CB_CONF_MIDI_MODWHEEL] = !noteSettingsEnabled;
+	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_MODWHEEL);
+	/* Mod range - only enabled if mod wheel recording is on */
+	const bool modEnabled = noteSettingsEnabled && cfg->midiRecordModWheel;
+	const uint8_t modColor = modEnabled ? PAL_FORGRND : PAL_DSKTOP2;
+	textOutShadow(video, bmp, 246, 116, modColor, PAL_DSKTOP2, "range:");
+	char modStr[8];
+	snprintf(modStr, sizeof(modStr), "%2d", cfg->midiModRange);
+	textOutShadow(video, bmp, 288, 116, modColor, PAL_DSKTOP2, modStr);
+	widgets->pushButtonDisabled[PB_CONFIG_MODRANGE_UP] = !modEnabled;
+	widgets->pushButtonDisabled[PB_CONFIG_MODRANGE_DOWN] = !modEnabled;
+	showPushButton(widgets, video, bmp, PB_CONFIG_MODRANGE_UP);
+	showPushButton(widgets, video, bmp, PB_CONFIG_MODRANGE_DOWN);
+
+	/* Line 9: Record pitch bend checkbox + range */
+	textOutShadow(video, bmp, 129, 132, noteSettingsColor, PAL_DSKTOP2, "Record pitch bend");
+	widgets->checkBoxChecked[CB_CONF_MIDI_PITCHBEND] = cfg->midiRecordPitchBend;
+	widgets->checkBoxDisabled[CB_CONF_MIDI_PITCHBEND] = !noteSettingsEnabled;
+	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_PITCHBEND);
+	/* Bend range - only enabled if pitch bend recording is on */
+	const bool bendEnabled = noteSettingsEnabled && cfg->midiRecordPitchBend;
+	const uint8_t bendColor = bendEnabled ? PAL_FORGRND : PAL_DSKTOP2;
+	textOutShadow(video, bmp, 246, 132, bendColor, PAL_DSKTOP2, "range:");
+	char bendStr[8];
+	snprintf(bendStr, sizeof(bendStr), "%2d", cfg->midiBendRange);
+	textOutShadow(video, bmp, 288, 132, bendColor, PAL_DSKTOP2, bendStr);
+	widgets->pushButtonDisabled[PB_CONFIG_BENDRANGE_UP] = !bendEnabled;
+	widgets->pushButtonDisabled[PB_CONFIG_BENDRANGE_DOWN] = !bendEnabled;
+	showPushButton(widgets, video, bmp, PB_CONFIG_BENDRANGE_UP);
+	showPushButton(widgets, video, bmp, PB_CONFIG_BENDRANGE_DOWN);
+
+	/* Line 10: Recording priority radio buttons */
+	textOutShadow(video, bmp, 114, 148, noteSettingsColor, PAL_DSKTOP2, "Recording priority:");
+	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_MIDI_PRIORITY);
+	if (cfg->midiRecordPriority == 0)
+		widgets->radioButtonState[RB_CONFIG_MIDI_PITCH_PRIO] = RADIOBUTTON_CHECKED;
+	else
+		widgets->radioButtonState[RB_CONFIG_MIDI_MOD_PRIO] = RADIOBUTTON_CHECKED;
+	widgets->radioButtonDisabled[RB_CONFIG_MIDI_PITCH_PRIO] = !noteSettingsEnabled;
+	widgets->radioButtonDisabled[RB_CONFIG_MIDI_MOD_PRIO] = !noteSettingsEnabled;
+	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_MIDI_PRIORITY);
+	textOutShadow(video, bmp, 239, 148, noteSettingsColor, PAL_DSKTOP2, "Bend");
+	textOutShadow(video, bmp, 287, 148, noteSettingsColor, PAL_DSKTOP2, "Mod whl.");
+
+	/* Dynamic explanation text based on priority selection */
+	const char *priorityExplain = (cfg->midiRecordPriority == 0) 
+		? "Bend to effects, mod to volume" 
+		: "Mod to effects, bend to volume";
+	textOutShadow(video, bmp, 114, 160, noteSettingsColor, PAL_DSKTOP2, priorityExplain);
 }
 
 /* ============ MAIN DRAW FUNCTION ============ */
@@ -1066,6 +1127,28 @@ void rbConfigMidiTriggerPatterns(ft2_instance_t *inst)
 		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PATTERNS);
 	/* Redraw config screen to update widget enable states */
 	inst->uiState.needsFullRedraw = true;
+}
+
+void rbConfigMidiPitchPrio(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	inst->config.midiRecordPriority = 0;  /* Pitch bend to effect column */
+	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets != NULL)
+		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PITCH_PRIO);
+	inst->uiState.needsFullRedraw = true;  /* Redraw to update explanation text */
+}
+
+void rbConfigMidiModPrio(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	inst->config.midiRecordPriority = 1;  /* Mod wheel to effect column */
+	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets != NULL)
+		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_MOD_PRIO);
+	inst->uiState.needsFullRedraw = true;  /* Redraw to update explanation text */
 }
 
 /* ============ INTERPOLATION CALLBACKS ============ */
@@ -1838,8 +1921,8 @@ static void drawMidiChannelValue(ft2_instance_t *inst)
 
 	char str[8];
 	snprintf(str, sizeof(str), "%02d", inst->config.midiChannel);
-	fillRect(&ui->video, 290, 52, 20, 9, PAL_DESKTOP);
-	textOutShadow(&ui->video, &ui->bmp, 290, 52, PAL_FORGRND, PAL_DSKTOP2, str);
+	fillRect(&ui->video, 288, 36, 20, 9, PAL_DESKTOP);
+	textOutShadow(&ui->video, &ui->bmp, 288, 36, PAL_FORGRND, PAL_DSKTOP2, str);
 }
 
 static void drawMidiTransposeValue(ft2_instance_t *inst)
@@ -1855,8 +1938,8 @@ static void drawMidiTransposeValue(ft2_instance_t *inst)
 		snprintf(str, sizeof(str), "+%d", val);
 	else
 		snprintf(str, sizeof(str), "%d", val);
-	fillRect(&ui->video, 290, 68, 20, 9, PAL_DESKTOP);
-	textOutShadow(&ui->video, &ui->bmp, 290, 68, PAL_FORGRND, PAL_DSKTOP2, str);
+	fillRect(&ui->video, 288, 52, 20, 9, PAL_DESKTOP);
+	textOutShadow(&ui->video, &ui->bmp, 288, 52, PAL_FORGRND, PAL_DSKTOP2, str);
 }
 
 static void drawMidiSensValue(ft2_instance_t *inst)
@@ -1868,8 +1951,8 @@ static void drawMidiSensValue(ft2_instance_t *inst)
 
 	char str[8];
 	snprintf(str, sizeof(str), "%3d", inst->config.midiVelocitySens);
-	fillRect(&ui->video, 328, 116, 24, 9, PAL_DESKTOP);
-	textOutShadow(&ui->video, &ui->bmp, 328, 116, PAL_FORGRND, PAL_DSKTOP2, str);
+	fillRect(&ui->video, 310, 100, 24, 10, PAL_DESKTOP);
+	textOutShadow(&ui->video, &ui->bmp, 310, 100, PAL_FORGRND, PAL_DSKTOP2, str);
 }
 
 void configMidiChnDown(ft2_instance_t *inst)
@@ -1988,5 +2071,84 @@ void sbMidiSens(ft2_instance_t *inst, uint32_t pos)
 	{
 		inst->config.midiVelocitySens = newSens;
 		drawMidiSensValue(inst);
+	}
+}
+
+static void drawBendRangeValue(ft2_instance_t *inst)
+{
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	if (ui == NULL || !inst->uiState.configScreenShown || 
+	    inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT)
+		return;
+
+	char str[8];
+	snprintf(str, sizeof(str), "%2d", inst->config.midiBendRange);
+	fillRect(&ui->video, 288, 132, 16, 9, PAL_DESKTOP);
+	textOutShadow(&ui->video, &ui->bmp, 288, 132, PAL_FORGRND, PAL_DSKTOP2, str);
+}
+
+void configBendRangeUp(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	
+	if (inst->config.midiBendRange < 12)
+	{
+		inst->config.midiBendRange++;
+		drawBendRangeValue(inst);
+	}
+}
+
+void configBendRangeDown(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	
+	if (inst->config.midiBendRange > 1)
+	{
+		inst->config.midiBendRange--;
+		drawBendRangeValue(inst);
+	}
+}
+
+/* ---- Mod wheel range value display and callbacks ---- */
+
+static void drawModRangeValue(ft2_instance_t *inst)
+{
+	if (inst == NULL || inst->ui == NULL)
+		return;
+
+	ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
+	if (ui == NULL || !inst->uiState.configScreenShown || 
+	    inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT)
+		return;
+
+	char str[8];
+	snprintf(str, sizeof(str), "%2d", inst->config.midiModRange);
+	fillRect(&ui->video, 288, 116, 16, 9, PAL_DESKTOP);
+	textOutShadow(&ui->video, &ui->bmp, 288, 116, PAL_FORGRND, PAL_DSKTOP2, str);
+}
+
+void configModRangeUp(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	
+	if (inst->config.midiModRange < 15)
+	{
+		inst->config.midiModRange++;
+		drawModRangeValue(inst);
+	}
+}
+
+void configModRangeDown(ft2_instance_t *inst)
+{
+	if (inst == NULL)
+		return;
+	
+	if (inst->config.midiModRange > 1)
+	{
+		inst->config.midiModRange--;
+		drawModRangeValue(inst);
 	}
 }

@@ -2625,6 +2625,18 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_CONFIG_MIDISENS_UP].callbackFuncOnDown = configMidiSensUp;
 	widgets->pushButtons[PB_CONFIG_MIDISENS_UP].preDelay = 1;
 	widgets->pushButtons[PB_CONFIG_MIDISENS_UP].delayFrames = 4;
+	widgets->pushButtons[PB_CONFIG_MODRANGE_UP].callbackFuncOnDown = configModRangeUp;
+	widgets->pushButtons[PB_CONFIG_MODRANGE_UP].preDelay = 1;
+	widgets->pushButtons[PB_CONFIG_MODRANGE_UP].delayFrames = 4;
+	widgets->pushButtons[PB_CONFIG_MODRANGE_DOWN].callbackFuncOnDown = configModRangeDown;
+	widgets->pushButtons[PB_CONFIG_MODRANGE_DOWN].preDelay = 1;
+	widgets->pushButtons[PB_CONFIG_MODRANGE_DOWN].delayFrames = 4;
+	widgets->pushButtons[PB_CONFIG_BENDRANGE_UP].callbackFuncOnDown = configBendRangeUp;
+	widgets->pushButtons[PB_CONFIG_BENDRANGE_UP].preDelay = 1;
+	widgets->pushButtons[PB_CONFIG_BENDRANGE_UP].delayFrames = 4;
+	widgets->pushButtons[PB_CONFIG_BENDRANGE_DOWN].callbackFuncOnDown = configBendRangeDown;
+	widgets->pushButtons[PB_CONFIG_BENDRANGE_DOWN].preDelay = 1;
+	widgets->pushButtons[PB_CONFIG_BENDRANGE_DOWN].delayFrames = 4;
 
 	/* Nibbles buttons */
 	widgets->pushButtons[PB_NIBBLES_PLAY].callbackFuncOnUp = pbNibblesPlay;

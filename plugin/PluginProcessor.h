@@ -8,6 +8,7 @@
 #endif
 extern "C" {
 #include "ft2_instance.h"
+#include "ft2_plugin_input.h"
 }
 #if defined(_WIN32)
 #pragma pack(pop)
@@ -142,11 +143,9 @@ private:
     // MIDI input state: track which FT2 channel is playing which MIDI note
     static constexpr int MAX_MIDI_NOTES = 128;
     int8_t midiNoteToChannel[MAX_MIDI_NOTES];  // MIDI note -> FT2 channel (-1 = not playing, initialized in ctor)
-    int8_t nextMidiChannel = 0;  // Round-robin channel assignment
+    ft2_input_state_t midiInputState;  // Input state for MIDI channel tracking
     
     void processMidiInput(const juce::MidiMessage& msg);
-    int8_t allocateMidiChannel();
-    void releaseMidiChannel(int8_t channel);
     
     mutable juce::CriticalSection processLock;
     

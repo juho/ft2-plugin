@@ -26,6 +26,8 @@ static void cbMidiAllChannels(struct ft2_instance_t *inst);
 static void cbMidiRecTranspose(struct ft2_instance_t *inst);
 static void cbMidiRecVelocity(struct ft2_instance_t *inst);
 static void cbMidiRecAftertouch(struct ft2_instance_t *inst);
+static void cbMidiRecModWheel(struct ft2_instance_t *inst);
+static void cbMidiRecPitchBend(struct ft2_instance_t *inst);
 
 checkBox_t checkBoxes[NUM_CHECKBOXES] =
 {
@@ -110,13 +112,13 @@ checkBox_t checkBoxes[NUM_CHECKBOXES] =
 	{ 112, 135, 180, 24, NULL },               /* CB_CONF_CHANGE_PATTLEN */
 	{   0,   0,   0,  0, NULL },               /* CB_CONF_OLDABOUTLOGO (unused) */
 	{ 112, 159, 155, 12, NULL },               /* CB_CONF_AUTO_UPDATE_CHECK */
-	{ 116,  18, 130, 12, cbMidiEnable },       /* CB_CONF_MIDI_ENABLE */
-	{ 233,  50,  30, 12, cbMidiAllChannels },  /* CB_CONF_MIDI_ALLCHN (inline with channel) */
-	{ 116,  66, 121, 12, cbMidiRecTranspose }, /* CB_CONF_MIDI_TRANSP */
-	{ 116,  82, 120, 12, cbMidiRecVelocity },  /* CB_CONF_MIDI_VELOCITY */
-	{ 116,  98, 124, 12, cbMidiRecAftertouch }, /* CB_CONF_MIDI_AFTERTOUCH */
-	{ 113, 115,  75, 12, NULL },
-	{ 113, 128,  78, 12, NULL },
+	{ 114,   2, 130, 12, cbMidiEnable },       /* CB_CONF_MIDI_ENABLE */
+	{ 231,  34,  30, 12, cbMidiAllChannels },  /* CB_CONF_MIDI_ALLCHN (inline with channel) */
+	{ 114,  50, 121, 12, cbMidiRecTranspose }, /* CB_CONF_MIDI_TRANSP */
+	{ 114,  66, 120, 12, cbMidiRecVelocity },  /* CB_CONF_MIDI_VELOCITY */
+	{ 114,  82, 124, 12, cbMidiRecAftertouch }, /* CB_CONF_MIDI_AFTERTOUCH */
+	{ 114, 114, 130, 12, cbMidiRecModWheel },  /* CB_CONF_MIDI_MODWHEEL */
+	{ 114, 130, 130, 12, cbMidiRecPitchBend }, /* CB_CONF_MIDI_PITCHBEND */
 	{ 113, 141,  75, 12, NULL },
 	{ 113, 154,  78, 12, NULL },
 
@@ -386,6 +388,7 @@ static void cbMidiRecTranspose(struct ft2_instance_t *inst)
 		return;
 	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
 	inst->config.midiRecordTranspose = widgets->checkBoxChecked[CB_CONF_MIDI_TRANSP];
+	inst->uiState.needsFullRedraw = true;  /* Update transpose value/buttons enable state */
 }
 
 static void cbMidiRecVelocity(struct ft2_instance_t *inst)
@@ -402,5 +405,23 @@ static void cbMidiRecAftertouch(struct ft2_instance_t *inst)
 		return;
 	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
 	inst->config.midiRecordAftertouch = widgets->checkBoxChecked[CB_CONF_MIDI_AFTERTOUCH];
+}
+
+static void cbMidiRecModWheel(struct ft2_instance_t *inst)
+{
+	if (inst == NULL || inst->ui == NULL)
+		return;
+	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
+	inst->config.midiRecordModWheel = widgets->checkBoxChecked[CB_CONF_MIDI_MODWHEEL];
+	inst->uiState.needsFullRedraw = true;  /* Update range button enable state */
+}
+
+static void cbMidiRecPitchBend(struct ft2_instance_t *inst)
+{
+	if (inst == NULL || inst->ui == NULL)
+		return;
+	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
+	inst->config.midiRecordPitchBend = widgets->checkBoxChecked[CB_CONF_MIDI_PITCHBEND];
+	inst->uiState.needsFullRedraw = true;  /* Update range button enable state */
 }
 

@@ -974,20 +974,57 @@ When disabled, only the channel specified below is used.
 The MIDI channel to listen on (1-16). Only used when "Receive all
 channels" is disabled.
 
->@X040@C001Transpose:
+>@X040@C001Record transpose:
 >@X060@C002
-Shifts incoming MIDI notes by the specified number of semitones.
-Range is -48 to +48 (4 octaves up or down).
+When enabled, incoming MIDI notes are shifted by the transpose value.
+When disabled, notes are played at their original pitch regardless of
+the transpose setting. The transpose range is -72 to +72 semitones.
 
->@X040@C001Velocity sensitivity:
+>@X040@C001Record velocity:
 >@X060@C002
-Controls how much MIDI velocity affects note volume. At 100%, full
-velocity (127) produces full volume. At 200%, half velocity produces
-full volume. At 0%, velocity is ignored and all notes play at full volume.
+When enabled and recording, MIDI velocity is stored in the volume column
+as a value from $10 to $50 (corresponding to FT2's 0-64 volume range).
 
->@X040@C001Record velocity as volume:
+>@X040@C001Record aftertouch:
 >@X060@C002
-When recording, stores the MIDI velocity in the volume column.
+When enabled and recording, channel aftertouch is recorded as volume
+slides in the volume column. Increasing pressure creates slide-up effects,
+decreasing pressure creates slide-down effects. This adds expressive
+control to recorded performances.
+
+>@X040@C001Vel./A.T. sensitivity:
+>@X060@C002
+Controls how much MIDI velocity and aftertouch affect the recorded values.
+At 100%, full velocity (127) produces full volume. At 200%, half velocity
+produces full volume. At 0%, velocity/aftertouch is ignored and all notes
+play at full volume.
+
+>@X040@C001Record mod wheel:
+>@X060@C002
+When enabled and recording, the MIDI mod wheel (CC#1) is recorded as
+vibrato effects. The "range" setting (1-15) controls the maximum vibrato
+depth. Higher values produce more pronounced vibrato. The mod wheel
+position at the time of note-on is recorded.
+
+>@X040@C001Record pitch bend:
+>@X060@C002
+When enabled and recording, MIDI pitch bend is recorded as portamento
+effects. Positive bend records portamento up (1xx), negative bend records
+portamento down (2xx). The "range" setting (1-12 semitones) should match
+your MIDI controller's pitch bend range for accurate results.
+
+>@X040@C001Recording priority (Bend / Mod wheel):
+>@X060@C002
+When both mod wheel and pitch bend recording are enabled, this setting
+determines which gets priority for the effect column:
+>
+>@X052@C001Bend priority:
+>@X060@C002Pitch bend goes to the effect column (1xx/2xx), mod wheel goes to
+the volume column (Vx vibrato).
+>
+>@X052@C001Mod wheel priority:
+>@X060@C002Mod wheel goes to the effect column (4Ax vibrato), pitch bend goes
+to the volume column (Mx portamento).
 
 @X020@C001Configuration, Miscellaneous:
 >

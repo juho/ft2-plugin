@@ -140,9 +140,14 @@ typedef struct ft2_plugin_config_t
 	uint8_t midiChannel;        /* MIDI channel to listen on (1-16) */
 	bool midiRecordTranspose;   /* Apply transpose to incoming MIDI notes */
 	int8_t midiTranspose;       /* Note transposition (-48 to +48) */
-	uint8_t midiVelocitySens;   /* Velocity sensitivity (0-100%) */
+	uint8_t midiVelocitySens;   /* Velocity/aftertouch sensitivity (0-100%) */
 	bool midiRecordVelocity;    /* Record velocity as volume column */
-	bool midiRecordAftertouch;  /* Record aftertouch (for parity with standalone) */
+	bool midiRecordAftertouch;  /* Record aftertouch as volume slides */
+	bool midiRecordModWheel;    /* Record mod wheel as vibrato effect */
+	bool midiRecordPitchBend;   /* Record pitch bend as portamento effect */
+	uint8_t midiRecordPriority; /* 0=pitch bend priority, 1=mod wheel priority */
+	uint8_t midiModRange;       /* Mod wheel vibrato depth multiplier (1-15) */
+	uint8_t midiBendRange;      /* Pitch bend range in semitones (1-12) */
 	bool midiTriggerPatterns;   /* false = trigger notes (default), true = trigger patterns */
 
 	/* Miscellaneous */
@@ -278,6 +283,10 @@ void configMidiTransUp(struct ft2_instance_t *inst);
 void sbMidiTranspose(struct ft2_instance_t *inst, uint32_t pos);
 void configMidiSensDown(struct ft2_instance_t *inst);
 void configMidiSensUp(struct ft2_instance_t *inst);
+void configBendRangeUp(struct ft2_instance_t *inst);
+void configBendRangeDown(struct ft2_instance_t *inst);
+void configModRangeUp(struct ft2_instance_t *inst);
+void configModRangeDown(struct ft2_instance_t *inst);
 void sbMidiSens(struct ft2_instance_t *inst, uint32_t pos);
 
 /* File sorting */
@@ -290,6 +299,8 @@ void rbConfigFreqSlidesLinear(struct ft2_instance_t *inst);
 
 void rbConfigMidiTriggerNotes(struct ft2_instance_t *inst);
 void rbConfigMidiTriggerPatterns(struct ft2_instance_t *inst);
+void rbConfigMidiPitchPrio(struct ft2_instance_t *inst);
+void rbConfigMidiModPrio(struct ft2_instance_t *inst);
 
 /* Config button callbacks */
 void pbConfigReset(struct ft2_instance_t *inst);

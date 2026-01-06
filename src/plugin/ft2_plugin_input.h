@@ -191,6 +191,32 @@ void ft2_input_update(ft2_input_state_t *input);
  */
 int8_t ft2_key_to_note(int key, int8_t octave);
 
+/**
+ * Record/play a note (unified path for keyboard and MIDI input).
+ * Handles channel allocation, playback triggering, and pattern recording.
+ * 
+ * @param inst Instance
+ * @param input Input state (for keyOnTab/keyOffTime tracking)
+ * @param noteNum Note number (1-96) or NOTE_OFF (97)
+ * @param vol Volume (-1 = use sample default and don't record vol, 0-64 = record to pattern)
+ * @param midiVibDepth MIDI vibrato depth from mod wheel (0 if not MIDI)
+ * @param midiPitch MIDI pitch bend value (-128 to 127, 0 if not MIDI)
+ * @return Channel used (0-31), or -1 if failed/note-off
+ */
+int8_t ft2_plugin_record_note(struct ft2_instance_t *inst, ft2_input_state_t *input,
+                              uint8_t noteNum, int8_t vol,
+                              uint16_t midiVibDepth, int16_t midiPitch);
+
+/**
+ * Record a note-off on a specific channel.
+ * Used when releasing a MIDI note that was tracked to a specific channel.
+ * 
+ * @param inst Instance
+ * @param input Input state
+ * @param channel Channel to release (0-31)
+ */
+void ft2_plugin_record_note_off(struct ft2_instance_t *inst, ft2_input_state_t *input, int8_t channel);
+
 #ifdef __cplusplus
 }
 #endif

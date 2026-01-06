@@ -84,7 +84,7 @@ const scrollBar_t scrollBarsTemplate[NUM_SCROLLBARS] =
 	/*x,   y,  w,  h,  type,                 style */
 	{   0,  0,  0,  0, SCROLLBAR_HORIZONTAL, SCROLLBAR_FIXED_THUMB_SIZE },  /* SB_MIDI_CHANNEL (unused) */
 	{   0,  0,  0,  0, SCROLLBAR_HORIZONTAL, SCROLLBAR_FIXED_THUMB_SIZE },  /* SB_MIDI_TRANSPOSE (unused) */
-	{ 241, 114, 65, 13, SCROLLBAR_HORIZONTAL, SCROLLBAR_FIXED_THUMB_SIZE },  /* SB_MIDI_SENS */
+	{ 226, 98, 60, 13, SCROLLBAR_HORIZONTAL, SCROLLBAR_FIXED_THUMB_SIZE },  /* SB_MIDI_SENS */
 
 	/* Disk op */
 	/*x,   y,  w,  h,   type,               style */

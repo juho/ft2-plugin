@@ -334,12 +334,16 @@ const pushButton_t pushButtonsTemplate[NUM_PUSHBUTTONS] =
 
 	/* Config MIDI input - vertical up/down buttons for channel/transpose, horizontal for sens */
 	/*x,   y,  w,  h,  p, d, text #1,             text #2, funcOnDown, funcOnUp */
-	{ 310, 50, 18, 13, 1, 4, ARROW_UP_STRING,     NULL,    NULL,       NULL },  /* PB_CONFIG_MIDICHN_UP */
-	{ 328, 50, 18, 13, 1, 4, ARROW_DOWN_STRING,   NULL,    NULL,       NULL },  /* PB_CONFIG_MIDICHN_DOWN */
-	{ 310, 66, 18, 13, 1, 4, ARROW_UP_STRING,     NULL,    NULL,       NULL },  /* PB_CONFIG_MIDITRANS_UP */
-	{ 328, 66, 18, 13, 1, 4, ARROW_DOWN_STRING,   NULL,    NULL,       NULL },  /* PB_CONFIG_MIDITRANS_DOWN */
-	{ 220, 114, 21, 13, 1, 4, ARROW_LEFT_STRING,  NULL,    NULL,       NULL },  /* PB_CONFIG_MIDISENS_DOWN */
-	{ 306, 114, 21, 13, 1, 4, ARROW_RIGHT_STRING, NULL,    NULL,       NULL },  /* PB_CONFIG_MIDISENS_UP */
+	{ 308, 34, 18, 13, 1, 4, ARROW_UP_STRING,     NULL,    NULL,       NULL },  /* PB_CONFIG_MIDICHN_UP */
+	{ 326, 34, 18, 13, 1, 4, ARROW_DOWN_STRING,   NULL,    NULL,       NULL },  /* PB_CONFIG_MIDICHN_DOWN */
+	{ 308, 50, 18, 13, 1, 4, ARROW_UP_STRING,     NULL,    NULL,       NULL },  /* PB_CONFIG_MIDITRANS_UP */
+	{ 326, 50, 18, 13, 1, 4, ARROW_DOWN_STRING,   NULL,    NULL,       NULL },  /* PB_CONFIG_MIDITRANS_DOWN */
+	{ 205, 98, 21, 13, 1, 4, ARROW_LEFT_STRING,  NULL,    NULL,       NULL },  /* PB_CONFIG_MIDISENS_DOWN */
+	{ 286, 98, 21, 13, 1, 4, ARROW_RIGHT_STRING, NULL,    NULL,       NULL },  /* PB_CONFIG_MIDISENS_UP */
+	{ 308, 114, 18, 13, 1, 4, ARROW_UP_STRING,    NULL,    NULL,       NULL },  /* PB_CONFIG_MODRANGE_UP */
+	{ 326, 114, 18, 13, 1, 4, ARROW_DOWN_STRING,  NULL,    NULL,       NULL },  /* PB_CONFIG_MODRANGE_DOWN */
+	{ 308, 130, 18, 13, 1, 4, ARROW_UP_STRING,    NULL,    NULL,       NULL },  /* PB_CONFIG_BENDRANGE_UP */
+	{ 326, 130, 18, 13, 1, 4, ARROW_DOWN_STRING,  NULL,    NULL,       NULL },  /* PB_CONFIG_BENDRANGE_DOWN */
 
 	/* Disk op */
 	/*x,   y,   w,  h,  p, d, text #1,           text #2, funcOnDown, funcOnUp */

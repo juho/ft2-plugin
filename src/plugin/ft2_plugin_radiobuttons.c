@@ -203,8 +203,13 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 
 	/* Config MIDI trigger mode */
 	/*x,   y,   w,  group,                         callback */
-	{ 220, 34, 48, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL },  /* RB_CONFIG_MIDI_NOTES */
-	{ 283, 34, 65, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL }   /* RB_CONFIG_MIDI_PATTERNS */
+	{ 218, 18, 48, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL },  /* RB_CONFIG_MIDI_NOTES */
+	{ 281, 18, 65, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL },  /* RB_CONFIG_MIDI_PATTERNS */
+
+	/* Config MIDI recording priority */
+	/*x,   y,   w,  group,                          callback */
+	{ 226, 146, 48, RB_GROUP_CONFIG_MIDI_PRIORITY, NULL },  /* RB_CONFIG_MIDI_PITCH_PRIO */
+	{ 274, 146, 90, RB_GROUP_CONFIG_MIDI_PRIORITY, NULL }   /* RB_CONFIG_MIDI_MOD_PRIO */
 };
 
 void initRadioButtons(void)
@@ -282,6 +287,10 @@ void initRadioButtons(void)
 	/* Wire up MIDI trigger mode callbacks */
 	radioButtons[RB_CONFIG_MIDI_NOTES].callbackFunc = rbConfigMidiTriggerNotes;
 	radioButtons[RB_CONFIG_MIDI_PATTERNS].callbackFunc = rbConfigMidiTriggerPatterns;
+
+	/* Wire up MIDI recording priority callbacks */
+	radioButtons[RB_CONFIG_MIDI_PITCH_PRIO].callbackFunc = rbConfigMidiPitchPrio;
+	radioButtons[RB_CONFIG_MIDI_MOD_PRIO].callbackFunc = rbConfigMidiModPrio;
 }
 
 void drawRadioButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t radioButtonID)
