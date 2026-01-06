@@ -1,6 +1,10 @@
 # Changelog for Fasttracker II Plugin
 
-## 1.0.44 (Jan 5, 2026)
+## 1.0.45 (Jan 6, 2026)
+
+- Fix: default disk op to home folder.
+
+## 1.0.44 (Jan 6, 2026)
 
 - Feat: Allocate empty instrument when clicking on I.E.Ext.
 - Fix: Enable MIDI output in JUCE.

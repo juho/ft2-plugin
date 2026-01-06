@@ -38,6 +38,11 @@ FT2PluginProcessor::FT2PluginProcessor()
     // It will be updated in prepareToPlay when we know the actual rate
     instance = ft2_instance_create(48000);
     
+    // Initialize disk op to home directory
+    juce::File homeDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+    strncpy(instance->diskop.currentPath, homeDir.getFullPathName().toRawUTF8(), FT2_PATH_MAX - 1);
+    instance->diskop.currentPath[FT2_PATH_MAX - 1] = '\0';
+    
     // Initialize persistent storage
     initAppProperties();
     
