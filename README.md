@@ -1,4 +1,4 @@
-# ft2-plugin
+# Fasttracker II (FT2) Plugin
 
 <img width="4112" height="2658" alt="image_2025-12-29_01-04-36" src="https://github.com/user-attachments/assets/572e056a-48d6-42e2-b7dc-0b37e6ab08e2" />
 
