@@ -12,6 +12,7 @@ This is a fork of [8bitbubsy's standalone ft2-clone](https://github.com/8bitbubs
 - [Transgender Europe (EU)](https://www.tgeu.org/), the largest pro-transgender rights organization in Europe.
 - [Mermaids (UK)](https://mermaidsuk.org.uk/), helps trans, non-binary and gender-diverse kids and their families in the UK.
 - [The Trevor Project (US)](https://www.thetrevorproject.org/), helps suicide prevention for LGBTQIA+ youth in the US.
+- [Doctors Without Borders (MSF)](https://www.msf.org/), helps provide medical aid to those in need internationally.
 
 ## Plugin-specific features
 
