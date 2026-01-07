@@ -6,7 +6,7 @@ This is a fork of [8bitbubsy's standalone ft2-clone](https://github.com/8bitbubs
 
 **Standalone builds are not a concern in this repository.** If you're looking for the standalone version, you can find it [here](https://github.com/8bitbubsy/ft2-clone). Standalone code is kept around so that we can compare and integrate changes to the plugin from the standalone version.
 
-**All credit goes to [8bitbubsy](https://16-bits.org) for his tireless work on the port from original, on which the plugin is based on. If you wish to donate, please consider supporting one of the following:**
+**All credit goes to [8bitbubsy](https://16-bits.org) for his tireless work on the port from original, on which the plugin is based on. If you wish to donate, please consider supporting:**
 
 - [8bitbubsy](https://16-bits.org/donate.php) for his work on the standalone version.
 - [Transgender Europe (EU)](https://www.tgeu.org/), the largest pro-transgender rights organization in Europe.
