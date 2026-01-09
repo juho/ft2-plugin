@@ -831,6 +831,9 @@ static int16_t countUsedSamples(ft2_instr_t *ins)
 
 #ifdef _MSC_VER
 #pragma pack(push, 1)
+#define PACKED_STRUCT
+#else
+#define PACKED_STRUCT __attribute__((packed))
 #endif
 
 typedef struct xm_patt_hdr_t {
@@ -838,7 +841,7 @@ typedef struct xm_patt_hdr_t {
 	uint8_t type;
 	int16_t numRows;
 	uint16_t dataSize;
-} __attribute__((packed)) xm_patt_hdr_t;
+} PACKED_STRUCT xm_patt_hdr_t;
 
 typedef struct xm_smp_hdr_t {
 	uint32_t length, loopStart, loopLength;
@@ -848,7 +851,7 @@ typedef struct xm_smp_hdr_t {
 	int8_t relativeNote;
 	uint8_t nameLength;
 	char name[22];
-} __attribute__((packed)) xm_smp_hdr_t;
+} PACKED_STRUCT xm_smp_hdr_t;
 
 typedef struct xm_ins_hdr_t {
 	uint32_t instrSize;
@@ -870,11 +873,12 @@ typedef struct xm_ins_hdr_t {
 	int8_t mute;
 	uint8_t reserved[15];
 	xm_smp_hdr_t smp[16];
-} __attribute__((packed)) xm_ins_hdr_t;
+} PACKED_STRUCT xm_ins_hdr_t;
 
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif
+#undef PACKED_STRUCT
 
 /* Delta encoding for XM/XI sample data (saves space) */
 static void sample_to_delta(int8_t *p, int32_t length, uint8_t smpFlags)
