@@ -288,14 +288,11 @@ void FT2PluginEditor::processDiskOpRequests()
     if (diskop.requestGoRoot)
     {
         diskop.requestGoRoot = false;
-#ifdef _WIN32
-        // Get root of current drive
+        // Navigate to root of current path (works on all platforms)
         juce::File current(diskop.currentPath);
-        juce::File volume = current.getVolumeDirectory();
-        strncpy(diskop.currentPath, volume.getFullPathName().toRawUTF8(), FT2_PATH_MAX - 1);
-#else
-        strncpy(diskop.currentPath, "/", FT2_PATH_MAX - 1);
-#endif
+        while (!current.isRoot())
+            current = current.getParentDirectory();
+        strncpy(diskop.currentPath, current.getFullPathName().toRawUTF8(), FT2_PATH_MAX - 1);
         diskop.currentPath[FT2_PATH_MAX - 1] = '\0';
         diskop.requestReadDir = true;
     }
