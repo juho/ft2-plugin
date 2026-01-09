@@ -1804,19 +1804,34 @@ void exitPatternEditorExtended(ft2_instance_t *inst)
 	updatePatternEditorGUI(inst);
 	if (inst->ui) hidePushButton(&((ft2_ui_t *)inst->ui)->widgets, PB_EXIT_EXT_PATT);
 
+	/* Restore bottom screen editor (only one can be active) - show functions restore widgets */
+	if (inst->uiState._sampleEditorShown)
+		showSampleEditor(inst);
+	else if (inst->uiState._instEditorShown)
+		showInstEditor(inst);
+	else
+		showPatternEditor(inst);
+
+	/* Restore scope overlay panels - draw functions show their widgets */
+	inst->uiState.transposeShown = inst->uiState._transposeShown;
+	inst->uiState.advEditShown = inst->uiState._advEditShown;
+	inst->uiState.trimScreenShown = inst->uiState._trimScreenShown;
+	inst->uiState.instEditorExtShown = inst->uiState._instEditorExtShown;
+	inst->uiState.sampleEditorExtShown = inst->uiState._sampleEditorExtShown;
+
+	/* scopesShown = true only if no overlay is active */
+	inst->uiState.scopesShown = !(inst->uiState.transposeShown ||
+	                              inst->uiState.advEditShown ||
+	                              inst->uiState.trimScreenShown ||
+	                              inst->uiState.instEditorExtShown ||
+	                              inst->uiState.sampleEditorExtShown);
+
+	/* Restore full-screen overlays (config, help, about, diskop, nibbles) */
 	inst->uiState.aboutScreenShown = inst->uiState._aboutScreenShown;
 	inst->uiState.helpScreenShown = inst->uiState._helpScreenShown;
 	inst->uiState.configScreenShown = inst->uiState._configScreenShown;
 	inst->uiState.diskOpShown = inst->uiState._diskOpShown;
 	inst->uiState.nibblesShown = inst->uiState._nibblesShown;
-	inst->uiState.transposeShown = inst->uiState._transposeShown;
-	inst->uiState.instEditorShown = inst->uiState._instEditorShown;
-	inst->uiState.instEditorExtShown = inst->uiState._instEditorExtShown;
-	inst->uiState.sampleEditorShown = inst->uiState._sampleEditorShown;
-	inst->uiState.sampleEditorExtShown = inst->uiState._sampleEditorExtShown;
-	inst->uiState.advEditShown = inst->uiState._advEditShown;
-	inst->uiState.trimScreenShown = inst->uiState._trimScreenShown;
-	inst->uiState.patternEditorShown = inst->uiState._patternEditorShown;
 
 	inst->uiState.updatePatternEditor = true;
 	inst->uiState.needsFullRedraw = true;
