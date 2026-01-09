@@ -1,6 +1,6 @@
 /**
  * @file ft2_plugin_mix_panel.h
- * @brief Sample mixing modal panel for sample editor
+ * @brief Sample mixing modal panel (mixes src sample into current sample).
  */
 
 #pragma once
@@ -22,7 +22,7 @@ bool ft2_mix_panel_is_active(void);
 void ft2_mix_panel_draw(struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 void ft2_mix_panel_apply(void);
 
-int8_t ft2_mix_panel_get_balance(void);
+int8_t ft2_mix_panel_get_balance(void);  /* 0=all source, 100=all dest */
 void ft2_mix_panel_set_balance(int8_t balance);
 
 #ifdef __cplusplus

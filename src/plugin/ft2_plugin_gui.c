@@ -1,22 +1,14 @@
 /**
  * @file ft2_plugin_gui.c
- * @brief Screen visibility management for the FT2 plugin.
+ * @brief Screen visibility management: hide/show widget groups.
  *
- * This file handles widget visibility state management - showing/hiding widget
- * groups for different screen configurations. It ensures only one top-screen
- * overlay (config/help/about/nibbles) is visible at a time.
+ * Ensures only one top-screen overlay (config/help/about/nibbles) is visible.
+ * Top and bottom screen areas are independent - overlays don't affect editors.
  *
- * SEPARATION OF CONCERNS:
- * - ft2_plugin_gui.c: Widget visibility state management (hide/show widget groups)
- * - ft2_plugin_ui.c:  Main UI controller (rendering loop, input handling, updates)
- * - ft2_plugin_layout.c: Drawing functions that also call show* on initial display
- * - ft2_plugin_config.c/help.c/etc: Screen-specific show/hide and callbacks
- *
- * This separation mirrors the standalone architecture (ft2_gui.c vs ft2_video.c).
- *
- * KEY PRINCIPLE: Top and bottom screen areas are independent.
- * - Top overlays (config/help) only hide/show top-screen widgets
- * - Bottom editors (pattern/sample/instrument) continue to draw regardless
+ * Related files:
+ *   ft2_plugin_ui.c     - render loop, input
+ *   ft2_plugin_layout.c - drawing + initial show*
+ *   ft2_plugin_*.c      - screen-specific callbacks
  */
 
 #include <stdint.h>
@@ -40,27 +32,22 @@
 #include "ft2_plugin_ui.h"
 #include "ft2_instance.h"
 
+/* Hide S.E.Ext, I.E.Ext, Transpose, Adv.Edit, Trim - mutually exclusive overlays */
 void hideAllTopLeftPanelOverlays(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
-	/* Always hide ALL overlays unconditionally - don't check flags.
-	 * This ensures widget visibility matches state even if flags were
-	 * already cleared (e.g., by ft2_instance_reset during module loading).
-	 * Calling hide on an already-hidden overlay is safe and idempotent. */
+	if (inst == NULL) return;
+	/* Always hide unconditionally - idempotent and ensures sync after reset */
 	hideSampleEditorExt(inst);
-		hideInstEditorExt(inst);
-		hideTranspose(inst);
-		hideAdvEdit(inst);
-		hideTrimScreen(inst);
+	hideInstEditorExt(inst);
+	hideTranspose(inst);
+	hideAdvEdit(inst);
+	hideTrimScreen(inst);
 }
 
+/* Hide position editor, logo, left menu, song/pattern controls, and panel overlays */
 void hideTopLeftMainScreen(ft2_instance_t *inst)
 {
-	if (inst == NULL || inst->ui == NULL)
-		return;
-
+	if (inst == NULL || inst->ui == NULL) return;
 	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
 	inst->uiState.scopesShown = false;
 
@@ -77,11 +64,9 @@ void hideTopLeftMainScreen(ft2_instance_t *inst)
 	hidePushButton(widgets, PB_POSED_REP_UP);
 	hidePushButton(widgets, PB_POSED_REP_DOWN);
 
-	/* Logo buttons */
+	/* Logo + left menu */
 	hidePushButton(widgets, PB_LOGO);
 	hidePushButton(widgets, PB_BADGE);
-
-	/* Left menu buttons */
 	hidePushButton(widgets, PB_ABOUT);
 	hidePushButton(widgets, PB_NIBBLES);
 	hidePushButton(widgets, PB_KILL);
@@ -94,7 +79,7 @@ void hideTopLeftMainScreen(ft2_instance_t *inst)
 	hidePushButton(widgets, PB_ADD_CHANNELS);
 	hidePushButton(widgets, PB_SUB_CHANNELS);
 
-	/* Song/pattern control buttons */
+	/* Song/pattern controls */
 	hidePushButton(widgets, PB_BPM_UP);
 	hidePushButton(widgets, PB_BPM_DOWN);
 	hidePushButton(widgets, PB_SPEED_UP);
@@ -108,19 +93,16 @@ void hideTopLeftMainScreen(ft2_instance_t *inst)
 	hidePushButton(widgets, PB_PATT_EXPAND);
 	hidePushButton(widgets, PB_PATT_SHRINK);
 
-	/* Hide all panel overlays (S.E.Ext, I.E.Ext, Transpose, Adv.Edit, Trim) */
 	hideAllTopLeftPanelOverlays(inst);
 	inst->uiState.diskOpShown = false;
 }
 
+/* Hide right menu, instrument switcher, and song name textbox */
 void hideTopRightMainScreen(ft2_instance_t *inst)
 {
-	if (inst == NULL || inst->ui == NULL)
-		return;
-
+	if (inst == NULL || inst->ui == NULL) return;
 	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
 
-	/* Right menu buttons */
 	hidePushButton(widgets, PB_PLAY_SONG);
 	hidePushButton(widgets, PB_PLAY_PATT);
 	hidePushButton(widgets, PB_STOP);
@@ -132,31 +114,22 @@ void hideTopRightMainScreen(ft2_instance_t *inst)
 	hidePushButton(widgets, PB_CONFIG);
 	hidePushButton(widgets, PB_HELP);
 
-	/* Instrument switcher */
 	hideInstrumentSwitcher(inst);
 	inst->uiState.instrSwitcherShown = false;
-
-	/* Song name textbox */
 	ft2_textbox_hide(TB_SONG_NAME);
 }
 
+/* Hide all top-screen elements: main sides + overlays */
 void hideTopScreen(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 
-	/* Hide both main screen sides */
 	hideTopLeftMainScreen(inst);
 	hideTopRightMainScreen(inst);
-
-	/* Hide all overlay screens */
 	hideConfigScreen(inst);
 	hideHelpScreen(inst);
 	hideDiskOpScreen(inst);
-	/* hideAboutScreen(inst); - about screen doesn't have widgets to hide */
-	/* hideNibblesScreen(inst); - nibbles not implemented yet */
 
-	/* Reset visibility flags */
 	inst->uiState.instrSwitcherShown = false;
 	inst->uiState.scopesShown = false;
 }

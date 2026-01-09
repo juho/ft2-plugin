@@ -1,8 +1,13 @@
 /**
  * @file ft2_plugin_diskop.c
- * @brief Disk operations implementation for the plugin.
+ * @brief Disk operations: file browser, load/save for modules, instruments, samples, patterns.
  *
- * Provides FT2-style file browser with JUCE-backed directory operations.
+ * FT2-style file browser UI with JUCE-backed directory I/O.
+ * Item types: Module, Instrument, Sample, Pattern, Track (each with separate paths).
+ * Save formats: XM/MOD (module), XI (instrument), WAV/IFF/RAW (sample), XP (pattern), XT (track).
+ *
+ * File list populated via JUCE callbacks (requestReadDir, requestGoHome, etc.).
+ * Double-click to load; single-click on directory to navigate.
  */
 
 #include <string.h>
@@ -25,13 +30,13 @@
 #include "ft2_plugin_ui.h"
 #include "ft2_plugin_pattern_ed.h"
 
-/* File list display constants */
+/* File list layout (matches standalone) */
 #define FILENAME_TEXT_X 170
 #define FILESIZE_TEXT_X 295
 #define DISKOP_LIST_Y 4
 #define DISKOP_LIST_H 164
 
-/* Count digits in a number (for right-aligning file sizes) */
+/* Count decimal digits for right-aligning file sizes */
 static int numDigits(int32_t n)
 {
 	if (n <= 0) return 1;
@@ -40,36 +45,31 @@ static int numDigits(int32_t n)
 	return count;
 }
 
-/* Find last extension offset in filename (returns -1 if no extension) */
+/* Find position of last '.' in filename, or -1 if none */
 static int32_t getExtOffset(const char *s, int32_t nameLen)
 {
-	if (s == NULL || nameLen < 1)
-		return -1;
-
+	if (s == NULL || nameLen < 1) return -1;
 	for (int32_t i = nameLen - 1; i >= 0; i--)
-	{
-		if (s[i] == '.')
-			return i;
-	}
-
+		if (s[i] == '.') return i;
 	return -1;
 }
 
-/* Truncate entry name to fit in file list (matching standalone) */
+/*
+ * Truncate entry name to fit file list width.
+ * Directories: "longdirname.." truncated at end.
+ * Files with extension: "longfilename.. .ext" preserves extension.
+ * Files without extension: "longfilename.." truncated at end.
+ */
 static void trimEntryName(char *name, bool isDir)
 {
 	char extBuffer[24];
-
 	int32_t j = (int32_t)strlen(name);
 	const int32_t extOffset = getExtOffset(name, j);
 	int32_t extLen = (extOffset != -1) ? (int32_t)strlen(&name[extOffset]) : 0;
 	j--;
 
-	if (isDir)
-	{
-		/* Directory: truncate with ".." at end to fit 160-8 pixels */
-		while (textWidth(name) > 160 - 8 && j >= 2)
-		{
+	if (isDir) {
+		while (textWidth(name) > 160 - 8 && j >= 2) {
 			name[j - 2] = '.';
 			name[j - 1] = '.';
 			name[j - 0] = '\0';
@@ -78,23 +78,15 @@ static void trimEntryName(char *name, bool isDir)
 		return;
 	}
 
-	if (extOffset != -1 && extLen <= 4)
-	{
-		/* Has extension: preserve extension with ".. .ext" format */
+	if (extOffset != -1 && extLen <= 4) {
 		snprintf(extBuffer, sizeof(extBuffer), ".. %s", &name[extOffset]);
-
 		extLen = (int32_t)strlen(extBuffer);
-		while (textWidth(name) >= FILESIZE_TEXT_X - FILENAME_TEXT_X && j >= extLen + 1)
-		{
+		while (textWidth(name) >= FILESIZE_TEXT_X - FILENAME_TEXT_X && j >= extLen + 1) {
 			memcpy(&name[j - extLen], extBuffer, extLen + 1);
 			j--;
 		}
-	}
-	else
-	{
-		/* No extension: truncate with ".." at end */
-		while (textWidth(name) >= FILESIZE_TEXT_X - FILENAME_TEXT_X && j >= 2)
-		{
+	} else {
+		while (textWidth(name) >= FILESIZE_TEXT_X - FILENAME_TEXT_X && j >= 2) {
 			name[j - 2] = '.';
 			name[j - 1] = '.';
 			name[j - 0] = '\0';
@@ -103,116 +95,90 @@ static void trimEntryName(char *name, bool isDir)
 	}
 }
 
-/* ============ HELPER FUNCTIONS ============ */
+/* ---------- Drawing helpers ---------- */
 
+/* Draw "Save as:" format labels based on current item type */
 static void drawSaveAsElements(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL || video == NULL || bmp == NULL)
-		return;
+	if (inst == NULL || video == NULL || bmp == NULL) return;
 
-	/* Clear the save-as area with desktop color */
 	fillRect(video, 5, 99, 60, 42, PAL_DESKTOP);
 
-	switch (inst->diskop.itemType)
-	{
+	switch (inst->diskop.itemType) {
 		default:
 		case FT2_DISKOP_ITEM_MODULE:
 			textOutShadow(video, bmp, 19, 101, PAL_FORGRND, PAL_DSKTOP2, "MOD");
 			textOutShadow(video, bmp, 19, 115, PAL_FORGRND, PAL_DSKTOP2, "XM");
 			break;
-
 		case FT2_DISKOP_ITEM_INSTR:
 			textOutShadow(video, bmp, 19, 101, PAL_FORGRND, PAL_DSKTOP2, "XI");
 			break;
-
 		case FT2_DISKOP_ITEM_SAMPLE:
 			textOutShadow(video, bmp, 19, 101, PAL_FORGRND, PAL_DSKTOP2, "RAW");
 			textOutShadow(video, bmp, 19, 115, PAL_FORGRND, PAL_DSKTOP2, "IFF");
 			textOutShadow(video, bmp, 19, 129, PAL_FORGRND, PAL_DSKTOP2, "WAV");
 			break;
-
 		case FT2_DISKOP_ITEM_PATTERN:
 			textOutShadow(video, bmp, 19, 101, PAL_FORGRND, PAL_DSKTOP2, "XP");
 			break;
-
 		case FT2_DISKOP_ITEM_TRACK:
 			textOutShadow(video, bmp, 19, 101, PAL_FORGRND, PAL_DSKTOP2, "XT");
 			break;
 	}
 }
 
+/* Update save format radio buttons: hide all groups, show only the one for current item type */
 static void setDiskOpItemRadioButtons(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
-		return;
+	if (widgets == NULL) return;
 
-	/* Uncheck all save format groups */
+	/* Reset all format groups */
 	uncheckRadioButtonGroup(widgets, RB_GROUP_DISKOP_MOD_SAVEAS);
 	uncheckRadioButtonGroup(widgets, RB_GROUP_DISKOP_INS_SAVEAS);
 	uncheckRadioButtonGroup(widgets, RB_GROUP_DISKOP_SMP_SAVEAS);
 	uncheckRadioButtonGroup(widgets, RB_GROUP_DISKOP_PAT_SAVEAS);
 	uncheckRadioButtonGroup(widgets, RB_GROUP_DISKOP_TRK_SAVEAS);
-
-	/* Hide all save format groups */
 	hideRadioButtonGroup(widgets, RB_GROUP_DISKOP_MOD_SAVEAS);
 	hideRadioButtonGroup(widgets, RB_GROUP_DISKOP_INS_SAVEAS);
 	hideRadioButtonGroup(widgets, RB_GROUP_DISKOP_SMP_SAVEAS);
 	hideRadioButtonGroup(widgets, RB_GROUP_DISKOP_PAT_SAVEAS);
 	hideRadioButtonGroup(widgets, RB_GROUP_DISKOP_TRK_SAVEAS);
 
-	/* Set checked state for each save format */
+	/* Apply saved format selections */
 	widgets->radioButtonState[RB_DISKOP_MOD_MOD + inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE]] = RADIOBUTTON_CHECKED;
 	widgets->radioButtonState[RB_DISKOP_SMP_RAW + inst->diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE]] = RADIOBUTTON_CHECKED;
 	widgets->radioButtonState[RB_DISKOP_INS_XI] = RADIOBUTTON_CHECKED;
 	widgets->radioButtonState[RB_DISKOP_PAT_XP] = RADIOBUTTON_CHECKED;
 	widgets->radioButtonState[RB_DISKOP_TRK_XT] = RADIOBUTTON_CHECKED;
 
-	/* Show the appropriate group based on current item type */
-	if (inst->uiState.diskOpShown && video != NULL && bmp != NULL)
-	{
-		switch (inst->diskop.itemType)
-		{
+	/* Show only the relevant group */
+	if (inst->uiState.diskOpShown && video != NULL && bmp != NULL) {
+		switch (inst->diskop.itemType) {
 			default:
-			case FT2_DISKOP_ITEM_MODULE:
-				showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_MOD_SAVEAS);
-				break;
-			case FT2_DISKOP_ITEM_INSTR:
-				showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_INS_SAVEAS);
-				break;
-			case FT2_DISKOP_ITEM_SAMPLE:
-				showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_SMP_SAVEAS);
-				break;
-			case FT2_DISKOP_ITEM_PATTERN:
-				showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_PAT_SAVEAS);
-				break;
-			case FT2_DISKOP_ITEM_TRACK:
-				showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_TRK_SAVEAS);
-				break;
+			case FT2_DISKOP_ITEM_MODULE:  showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_MOD_SAVEAS); break;
+			case FT2_DISKOP_ITEM_INSTR:   showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_INS_SAVEAS); break;
+			case FT2_DISKOP_ITEM_SAMPLE:  showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_SMP_SAVEAS); break;
+			case FT2_DISKOP_ITEM_PATTERN: showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_PAT_SAVEAS); break;
+			case FT2_DISKOP_ITEM_TRACK:   showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_TRK_SAVEAS); break;
 		}
 	}
 }
 
+/* Draw current directory path, truncated with ".." if too long */
 static void displayCurrPath(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL || video == NULL || bmp == NULL)
-		return;
+	if (inst == NULL || video == NULL || bmp == NULL) return;
 
-	/* Clear path area with desktop color */
 	fillRect(video, 4, 145, 162, FONT1_CHAR_H, PAL_DESKTOP);
 
-	/* Display truncated path */
 	char pathBuf[256];
 	strncpy(pathBuf, inst->diskop.currentPath, sizeof(pathBuf) - 1);
 	pathBuf[sizeof(pathBuf) - 1] = '\0';
 
-	/* Truncate if too long */
 	int32_t len = (int32_t)strlen(pathBuf);
-	while (textWidth(pathBuf) > 160 - 8 && len >= 3)
-	{
+	while (textWidth(pathBuf) > 160 - 8 && len >= 3) {
 		pathBuf[len - 3] = '.';
 		pathBuf[len - 2] = '.';
 		pathBuf[len - 1] = '\0';
@@ -222,24 +188,19 @@ static void displayCurrPath(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	textOutClipX(video, bmp, 4, 145, PAL_FORGRND, pathBuf, 165);
 }
 
-/* ============ VISIBILITY ============ */
+/* ---------- Screen visibility ---------- */
 
 void showDiskOpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 
-	/* Hide other top screens first */
 	hideTopScreen(inst);
-
 	inst->uiState.diskOpShown = true;
 	inst->uiState.scopesShown = false;
 
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
 
-	/* Show disk op buttons */
-	if (video != NULL && bmp != NULL && widgets != NULL)
-	{
+	if (video != NULL && bmp != NULL && widgets != NULL) {
 		showPushButton(widgets, video, bmp, PB_DISKOP_SAVE);
 		showPushButton(widgets, video, bmp, PB_DISKOP_MAKEDIR);
 		showPushButton(widgets, video, bmp, PB_DISKOP_REFRESH);
@@ -251,27 +212,21 @@ void showDiskOpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 		showPushButton(widgets, video, bmp, PB_DISKOP_HOME);
 		showPushButton(widgets, video, bmp, PB_DISKOP_LIST_UP);
 		showPushButton(widgets, video, bmp, PB_DISKOP_LIST_DOWN);
-
 		showScrollBar(widgets, video, SB_DISKOP_LIST);
 
-		/* Show item type radio buttons */
 		uncheckRadioButtonGroup(widgets, RB_GROUP_DISKOP_ITEM);
 		widgets->radioButtonState[RB_DISKOP_MODULE + inst->diskop.itemType] = RADIOBUTTON_CHECKED;
 		showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_ITEM);
-
-		/* Set up save format radio buttons */
 		setDiskOpItemRadioButtons(inst, video, bmp);
 	}
 
-	/* Initialize directory on first open */
-	if (inst->diskop.firstOpen)
-	{
+	/* First open: navigate to home directory */
+	if (inst->diskop.firstOpen) {
 		inst->diskop.firstOpen = false;
-		inst->diskop.requestGoHome = true; /* Start at home directory */
+		inst->diskop.requestGoHome = true;
 	}
 
 #ifdef _WIN32
-	/* Request drive enumeration */
 	inst->diskop.requestEnumerateDrives = true;
 	inst->diskop.requestDriveIndex = -1;
 #endif
@@ -281,13 +236,10 @@ void showDiskOpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 
 void hideDiskOpScreen(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-	{
-		/* Hide disk op buttons */
+	if (widgets != NULL) {
 		hidePushButton(widgets, PB_DISKOP_SAVE);
 		hidePushButton(widgets, PB_DISKOP_MAKEDIR);
 		hidePushButton(widgets, PB_DISKOP_REFRESH);
@@ -308,10 +260,7 @@ void hideDiskOpScreen(ft2_instance_t *inst)
 #endif
 		hidePushButton(widgets, PB_DISKOP_LIST_UP);
 		hidePushButton(widgets, PB_DISKOP_LIST_DOWN);
-
 		hideScrollBar(widgets, SB_DISKOP_LIST);
-
-		/* Hide radio buttons */
 		hideRadioButtonGroup(widgets, RB_GROUP_DISKOP_ITEM);
 		hideRadioButtonGroup(widgets, RB_GROUP_DISKOP_MOD_SAVEAS);
 		hideRadioButtonGroup(widgets, RB_GROUP_DISKOP_INS_SAVEAS);
@@ -320,54 +269,43 @@ void hideDiskOpScreen(ft2_instance_t *inst)
 		hideRadioButtonGroup(widgets, RB_GROUP_DISKOP_TRK_SAVEAS);
 	}
 
-	/* Hide filename textbox */
 	ft2_textbox_hide(TB_DISKOP_FILENAME);
-
 	inst->uiState.diskOpShown = false;
 	inst->uiState.scopesShown = true;
 }
 
 void toggleDiskOpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 
-	if (inst->uiState.diskOpShown)
-	{
+	if (inst->uiState.diskOpShown) {
 		hideDiskOpScreen(inst);
-		/* Restore scopes */
 		inst->uiState.scopesShown = true;
-	}
-	else
-	{
+	} else {
 		showDiskOpScreen(inst, video, bmp);
 	}
-
 	inst->uiState.needsFullRedraw = true;
 }
 
+/* ---------- Drawing ---------- */
+
 void drawDiskOpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL || video == NULL || bmp == NULL)
-		return;
+	if (inst == NULL || video == NULL || bmp == NULL) return;
 
-	/* Check for error flags and show appropriate dialogs */
+	/* Handle deferred error messages from JUCE operations */
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (inst->diskop.pathSetFailed)
-	{
+	if (inst->diskop.pathSetFailed) {
 		inst->diskop.pathSetFailed = false;
-		if (ui != NULL)
-			ft2_dialog_show_message(&ui->dialog, "System message", "Couldn't set directory path!");
+		if (ui != NULL) ft2_dialog_show_message(&ui->dialog, "System message", "Couldn't set directory path!");
 	}
-	if (inst->diskop.makeDirFailed)
-	{
+	if (inst->diskop.makeDirFailed) {
 		inst->diskop.makeDirFailed = false;
-		if (ui != NULL)
-			ft2_dialog_show_message(&ui->dialog, "System message", 
-				"Couldn't create directory: Access denied, or a dir with the same name already exists!");
+		if (ui != NULL) ft2_dialog_show_message(&ui->dialog, "System message",
+			"Couldn't create directory: Access denied, or a dir with the same name already exists!");
 	}
 
-	/* Draw frameworks - matching standalone exactly */
+	/* Framework layout (matches standalone) */
 	drawFramework(video, 0,     0,  67,  86, FRAMEWORK_TYPE1);
 	drawFramework(video, 67,    0,  64, 142, FRAMEWORK_TYPE1);
 	drawFramework(video, 131,   0,  37, 142, FRAMEWORK_TYPE1);
@@ -377,15 +315,12 @@ void drawDiskOpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 	drawFramework(video, 168, 170, 164,   3, FRAMEWORK_TYPE1);
 	drawFramework(video, 332,   0,  24, 173, FRAMEWORK_TYPE1);
 	drawFramework(video, 30,  157, 136,  14, FRAMEWORK_TYPE2);
-
-	/* Clear file list area */
 	clearRect(video, 168, 2, 164, 168);
 
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
-		return;
+	if (widgets == NULL) return;
 
-	/* Show buttons - matching standalone order (Delete and Rename removed for plugin) */
+	/* Buttons (Delete/Rename removed in plugin - sandboxed environments can't delete) */
 	showPushButton(widgets, video, bmp, PB_DISKOP_SAVE);
 	showPushButton(widgets, video, bmp, PB_DISKOP_MAKEDIR);
 	showPushButton(widgets, video, bmp, PB_DISKOP_REFRESH);
@@ -393,162 +328,119 @@ void drawDiskOpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 	showPushButton(widgets, video, bmp, PB_DISKOP_PARENT);
 	showPushButton(widgets, video, bmp, PB_DISKOP_ROOT);
 	showPushButton(widgets, video, bmp, PB_DISKOP_HOME);
+
 #ifdef _WIN32
-	/* Show and update drive buttons based on enumerated drives */
+	/* Drive buttons: show only enumerated drives */
 	{
 		const int driveButtons[FT2_DISKOP_MAX_DRIVES] = {
 			PB_DISKOP_DRIVE1, PB_DISKOP_DRIVE2, PB_DISKOP_DRIVE3, PB_DISKOP_DRIVE4,
 			PB_DISKOP_DRIVE5, PB_DISKOP_DRIVE6, PB_DISKOP_DRIVE7
 		};
-		for (int i = 0; i < FT2_DISKOP_MAX_DRIVES; i++)
-		{
-			if (i < inst->diskop.numDrives && inst->diskop.driveNames[i][0] != '\0')
-			{
-				/* Set button caption to drive name */
+		for (int i = 0; i < FT2_DISKOP_MAX_DRIVES; i++) {
+			if (i < inst->diskop.numDrives && inst->diskop.driveNames[i][0] != '\0') {
 				widgets->pushButtons[driveButtons[i]].caption = inst->diskop.driveNames[i];
 				showPushButton(widgets, video, bmp, driveButtons[i]);
-			}
-			else
-			{
+			} else {
 				hidePushButton(widgets, driveButtons[i]);
 			}
 		}
 	}
 #endif
+
 	showPushButton(widgets, video, bmp, PB_DISKOP_SHOW_ALL);
 	showPushButton(widgets, video, bmp, PB_DISKOP_SET_PATH);
 	showPushButton(widgets, video, bmp, PB_DISKOP_LIST_UP);
 	showPushButton(widgets, video, bmp, PB_DISKOP_LIST_DOWN);
-
-	/* Show scrollbar */
 	showScrollBar(widgets, video, SB_DISKOP_LIST);
-
-	/* Show filename textbox */
 	ft2_textbox_show(TB_DISKOP_FILENAME);
 
-	/* Show item type radio buttons */
-	if (inst->diskop.itemType > 4)
-		inst->diskop.itemType = 0;
+	/* Item type radio buttons */
+	if (inst->diskop.itemType > 4) inst->diskop.itemType = 0;
 	uncheckRadioButtonGroup(widgets, RB_GROUP_DISKOP_ITEM);
 	widgets->radioButtonState[RB_DISKOP_MODULE + inst->diskop.itemType] = RADIOBUTTON_CHECKED;
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_ITEM);
 
-	/* Draw labels */
+	/* Labels */
 	textOutShadow(video, bmp, 5,   3, PAL_FORGRND, PAL_DSKTOP2, "Item:");
 	textOutShadow(video, bmp, 19, 17, PAL_FORGRND, PAL_DSKTOP2, "Module");
 	textOutShadow(video, bmp, 19, 31, PAL_FORGRND, PAL_DSKTOP2, "Instr.");
 	textOutShadow(video, bmp, 19, 45, PAL_FORGRND, PAL_DSKTOP2, "Sample");
 	textOutShadow(video, bmp, 19, 59, PAL_FORGRND, PAL_DSKTOP2, "Pattern");
 	textOutShadow(video, bmp, 19, 73, PAL_FORGRND, PAL_DSKTOP2, "Track");
-
 	textOutShadow(video, bmp, 5,  89, PAL_FORGRND, PAL_DSKTOP2, "Save as:");
-	drawSaveAsElements(inst, video, bmp);
-	setDiskOpItemRadioButtons(inst, video, bmp);
-
 	textOutShadow(video, bmp, 4, 159, PAL_FORGRND, PAL_DSKTOP2, "File:");
 
-	/* Display current path */
+	drawSaveAsElements(inst, video, bmp);
+	setDiskOpItemRadioButtons(inst, video, bmp);
 	displayCurrPath(inst, video, bmp);
-
-	/* Draw file list */
 	diskOpDrawFilelist(inst, video, bmp);
-
-	/* Update scrollbar */
 	setScrollBarEnd(inst, widgets, video, SB_DISKOP_LIST, inst->diskop.fileCount);
 	setScrollBarPos(inst, widgets, video, SB_DISKOP_LIST, inst->diskop.dirPos, false);
-
-	/* Draw filename textbox */
 	ft2_textbox_draw(video, bmp, TB_DISKOP_FILENAME, inst);
 }
 
-/* ============ FILE LIST DISPLAY ============ */
+/* ---------- File list display ---------- */
 
+/*
+ * Draw file list entries. Directories prefixed with '/'.
+ * File sizes right-aligned: bytes, "Xk" (kB), "XM" (MB), ">2GB" for overflow.
+ */
 void diskOpDrawFilelist(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
 	char nameBuf[FT2_PATH_MAX];
 
-	if (inst == NULL || video == NULL || bmp == NULL)
-		return;
+	if (inst == NULL || video == NULL || bmp == NULL) return;
 
-	/* Clear file list area */
 	clearRect(video, FILENAME_TEXT_X - 1, DISKOP_LIST_Y, 162, DISKOP_LIST_H);
+	if (inst->diskop.fileCount == 0) return;
 
-	if (inst->diskop.fileCount == 0)
-		return;
-
-	/* Draw selected file highlight */
-	if (inst->diskop.selectedEntry >= 0 && inst->diskop.selectedEntry < FT2_DISKOP_ENTRY_NUM)
-	{
+	/* Selection highlight */
+	if (inst->diskop.selectedEntry >= 0 && inst->diskop.selectedEntry < FT2_DISKOP_ENTRY_NUM) {
 		uint16_t y = DISKOP_LIST_Y + (uint16_t)((FONT1_CHAR_H + 1) * inst->diskop.selectedEntry);
 		fillRect(video, FILENAME_TEXT_X - 1, y, 162, FONT1_CHAR_H, PAL_PATTEXT);
 	}
 
-	/* Draw each visible entry */
-	for (uint16_t i = 0; i < FT2_DISKOP_ENTRY_NUM; i++)
-	{
+	for (uint16_t i = 0; i < FT2_DISKOP_ENTRY_NUM; i++) {
 		int32_t bufEntry = inst->diskop.dirPos + i;
-		if (bufEntry >= inst->diskop.fileCount)
-			break;
-
-		if (inst->diskop.entries == NULL)
-			break;
+		if (bufEntry >= inst->diskop.fileCount || inst->diskop.entries == NULL) break;
 
 		ft2_diskop_entry_t *entry = &inst->diskop.entries[bufEntry];
-		if (entry->name[0] == '\0')
-			continue;
+		if (entry->name[0] == '\0') continue;
 
 		uint16_t y = DISKOP_LIST_Y + (i * (FONT1_CHAR_H + 1));
-
-		/* Copy name to temp buffer and truncate to fit */
 		strncpy(nameBuf, entry->name, sizeof(nameBuf) - 1);
 		nameBuf[sizeof(nameBuf) - 1] = '\0';
 		trimEntryName(nameBuf, entry->isDir);
 
-		if (entry->isDir)
-		{
-			/* Directory - prefix with slash */
+		if (entry->isDir) {
 			charOut(video, bmp, FILENAME_TEXT_X, y, PAL_BLCKTXT, '/');
 			textOut(video, bmp, FILENAME_TEXT_X + FONT1_CHAR_W, y, PAL_BLCKTXT, nameBuf);
-		}
-		else
-		{
-			/* File */
+		} else {
 			textOut(video, bmp, FILENAME_TEXT_X, y, PAL_BLCKTXT, nameBuf);
 
-			/* Draw file size (right-aligned like standalone) */
-			if (entry->filesize == -1)
-			{
+			/* File size: right-aligned with unit suffix */
+			if (entry->filesize == -1) {
 				textOut(video, bmp, FILESIZE_TEXT_X + 6, y, PAL_BLCKTXT, ">2GB");
-			}
-			else if (entry->filesize > 0)
-			{
+			} else if (entry->filesize > 0) {
 				char sizeBuf[16];
 				int32_t printFilesize;
 				int sizeX = FILESIZE_TEXT_X;
-				
-				if (entry->filesize >= 1024 * 1024 * 10)  /* >= 10MB */
-				{
+
+				if (entry->filesize >= 1024 * 1024 * 10) {
 					printFilesize = (entry->filesize + 1024 * 1024 - 1) / (1024 * 1024);
 					sizeX += (4 - numDigits(printFilesize)) * (FONT1_CHAR_W - 1);
 					snprintf(sizeBuf, sizeof(sizeBuf), "%dM", printFilesize);
-				}
-				else if (entry->filesize >= 1024 * 10)  /* >= 10kB */
-				{
+				} else if (entry->filesize >= 1024 * 10) {
 					printFilesize = (entry->filesize + 1024 - 1) / 1024;
-					if (printFilesize > 9999)
-					{
+					if (printFilesize > 9999) {
 						printFilesize = (entry->filesize + 1024 * 1024 - 1) / (1024 * 1024);
 						sizeX += (4 - numDigits(printFilesize)) * (FONT1_CHAR_W - 1);
 						snprintf(sizeBuf, sizeof(sizeBuf), "%dM", printFilesize);
-					}
-				else
-					{
+					} else {
 						sizeX += (4 - numDigits(printFilesize)) * (FONT1_CHAR_W - 1);
 						snprintf(sizeBuf, sizeof(sizeBuf), "%dk", printFilesize);
 					}
-				}
-				else  /* bytes */
-				{
+				} else {
 					printFilesize = entry->filesize;
 					sizeX += (5 - numDigits(printFilesize)) * (FONT1_CHAR_W - 1);
 					snprintf(sizeBuf, sizeof(sizeBuf), "%d", printFilesize);
@@ -559,50 +451,45 @@ void diskOpDrawFilelist(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_
 	}
 }
 
+/* Refresh directory display after navigation */
 void diskOpDrawDirectory(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL || video == NULL || bmp == NULL)
-		return;
+	if (inst == NULL || video == NULL || bmp == NULL) return;
 
 	displayCurrPath(inst, video, bmp);
-
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-	{
+	if (widgets != NULL) {
 		setScrollBarEnd(inst, widgets, video, SB_DISKOP_LIST, inst->diskop.fileCount);
 		setScrollBarPos(inst, widgets, video, SB_DISKOP_LIST, inst->diskop.dirPos, false);
 	}
-
 	diskOpDrawFilelist(inst, video, bmp);
 }
 
-/* ============ CALLBACKS ============ */
+/* ---------- Navigation callbacks ---------- */
 
 void pbDiskOpParent(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->diskop.requestGoParent = true;
 	inst->uiState.needsFullRedraw = true;
 }
 
 void pbDiskOpRoot(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->diskop.requestGoRoot = true;
 	inst->uiState.needsFullRedraw = true;
 }
 
 void pbDiskOpHome(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->diskop.requestGoHome = true;
 	inst->uiState.needsFullRedraw = true;
 }
 
 #ifdef _WIN32
+/* Drive buttons (Windows only): navigate to enumerated drive root */
 void pbDiskOpDrive1(ft2_instance_t *inst) { if (inst) { inst->diskop.requestDriveIndex = 0; inst->uiState.needsFullRedraw = true; } }
 void pbDiskOpDrive2(ft2_instance_t *inst) { if (inst) { inst->diskop.requestDriveIndex = 1; inst->uiState.needsFullRedraw = true; } }
 void pbDiskOpDrive3(ft2_instance_t *inst) { if (inst) { inst->diskop.requestDriveIndex = 2; inst->uiState.needsFullRedraw = true; } }
@@ -614,30 +501,27 @@ void pbDiskOpDrive7(ft2_instance_t *inst) { if (inst) { inst->diskop.requestDriv
 
 void pbDiskOpRefresh(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->diskop.requestReadDir = true;
 	inst->uiState.needsFullRedraw = true;
 }
 
+/* Toggle showing all files vs only matching item type */
 void pbDiskOpShowAll(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->diskop.showAllFiles = !inst->diskop.showAllFiles;
 	inst->diskop.requestReadDir = true;
 	inst->uiState.needsFullRedraw = true;
 }
 
-/* Callback for set path input dialog */
+/* ---------- Action callbacks ---------- */
+
 static void onSetPathCallback(ft2_instance_t *inst, ft2_dialog_result_t result,
                               const char *inputText, void *userData)
 {
 	(void)userData;
-
-	if (result == DIALOG_RESULT_OK && inputText != NULL && inputText[0] != '\0')
-	{
-		/* Store the path and request validation/change (JUCE will verify it exists) */
+	if (result == DIALOG_RESULT_OK && inputText != NULL && inputText[0] != '\0') {
 		strncpy(inst->diskop.newPath, inputText, FT2_PATH_MAX - 1);
 		inst->diskop.newPath[FT2_PATH_MAX - 1] = '\0';
 		inst->diskop.requestSetPath = true;
@@ -647,64 +531,45 @@ static void onSetPathCallback(ft2_instance_t *inst, ft2_dialog_result_t result,
 
 void pbDiskOpSetPath(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (ui != NULL)
-	{
-		/* Single text like standalone: "Enter new directory path:" */
-		ft2_dialog_show_input_cb(&ui->dialog,
-			"Enter new directory path:", "",
-			"", 255, inst, onSetPathCallback, NULL);
-	}
+		ft2_dialog_show_input_cb(&ui->dialog, "Enter new directory path:", "", "", 255, inst, onSetPathCallback, NULL);
 }
 
 void pbDiskOpExit(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	hideDiskOpScreen(inst);
 	inst->uiState.needsFullRedraw = true;
 }
 
 void pbDiskOpSave(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
-	/* Request save via JUCE */
+	if (inst == NULL) return;
 	inst->diskop.requestSave = true;
 }
 
+/* Delete/Rename: disabled in plugin (sandboxed environments can't delete files) */
 void pbDiskOpDelete(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
-	/* Request delete of selected entry */
+	if (inst == NULL) return;
 	if (inst->diskop.selectedEntry >= 0)
 		inst->diskop.requestDelete = true;
 }
 
 void pbDiskOpRename(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
-	/* Request rename of selected entry */
+	if (inst == NULL) return;
 	if (inst->diskop.selectedEntry >= 0)
 		inst->diskop.requestRename = true;
 }
 
-/* Callback for make directory input dialog */
 static void onMakeDirCallback(ft2_instance_t *inst, ft2_dialog_result_t result,
                               const char *inputText, void *userData)
 {
 	(void)userData;
-
-	if (result == DIALOG_RESULT_OK && inputText != NULL && inputText[0] != '\0')
-	{
+	if (result == DIALOG_RESULT_OK && inputText != NULL && inputText[0] != '\0') {
 		strncpy(inst->diskop.newDirName, inputText, sizeof(inst->diskop.newDirName) - 1);
 		inst->diskop.newDirName[sizeof(inst->diskop.newDirName) - 1] = '\0';
 		inst->diskop.requestMakeDir = true;
@@ -714,63 +579,49 @@ static void onMakeDirCallback(ft2_instance_t *inst, ft2_dialog_result_t result,
 
 void pbDiskOpMakeDir(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (ui != NULL)
-	{
-		/* Single text like standalone: "Enter directory name:" */
-		ft2_dialog_show_input_cb(&ui->dialog,
-			"Enter directory name:", "",
-			"", 64, inst, onMakeDirCallback, NULL);
-	}
+		ft2_dialog_show_input_cb(&ui->dialog, "Enter directory name:", "", "", 64, inst, onMakeDirCallback, NULL);
 }
+
+/* ---------- List scrolling ---------- */
 
 void pbDiskOpListUp(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	if (inst->diskop.dirPos > 0)
-	{
+	if (inst == NULL) return;
+	if (inst->diskop.dirPos > 0) {
 		inst->diskop.dirPos--;
-		/* Scrollbar will be updated on redraw */
 		inst->uiState.needsFullRedraw = true;
 	}
 }
 
 void pbDiskOpListDown(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	if (inst->diskop.dirPos < inst->diskop.fileCount - FT2_DISKOP_ENTRY_NUM)
-	{
+	if (inst == NULL) return;
+	if (inst->diskop.dirPos < inst->diskop.fileCount - FT2_DISKOP_ENTRY_NUM) {
 		inst->diskop.dirPos++;
-		/* Scrollbar will be updated on redraw */
 		inst->uiState.needsFullRedraw = true;
 	}
 }
 
 void sbDiskOpSetPos(ft2_instance_t *inst, uint32_t pos)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->diskop.dirPos = (int32_t)pos;
 	inst->uiState.needsFullRedraw = true;
 }
 
-/* Item type selection */
+/* ---------- Item type selection ---------- */
+
+/* Switch item type and restore saved path for that type */
 static void setDiskOpItem(ft2_instance_t *inst, uint8_t item)
 {
-	if (inst == NULL || item > 4)
-		return;
-
+	if (inst == NULL || item > 4) return;
 	inst->diskop.itemType = item;
 
-	/* Switch to saved path for this item type */
 	char *sourcePath = NULL;
-	switch (item)
-	{
+	switch (item) {
 		case FT2_DISKOP_ITEM_MODULE:  sourcePath = inst->diskop.modulePath; break;
 		case FT2_DISKOP_ITEM_INSTR:   sourcePath = inst->diskop.instrPath; break;
 		case FT2_DISKOP_ITEM_SAMPLE:  sourcePath = inst->diskop.samplePath; break;
@@ -779,13 +630,11 @@ static void setDiskOpItem(ft2_instance_t *inst, uint8_t item)
 		default: return;
 	}
 
-	if (sourcePath[0] != '\0')
-	{
+	if (sourcePath[0] != '\0') {
 		strncpy(inst->diskop.currentPath, sourcePath, FT2_PATH_MAX - 1);
 		inst->diskop.currentPath[FT2_PATH_MAX - 1] = '\0';
 	}
 
-	/* Request directory refresh via JUCE */
 	inst->diskop.requestReadDir = true;
 	inst->uiState.needsFullRedraw = true;
 }
@@ -796,204 +645,135 @@ void rbDiskOpSample(ft2_instance_t *inst)  { setDiskOpItem(inst, FT2_DISKOP_ITEM
 void rbDiskOpPattern(ft2_instance_t *inst) { setDiskOpItem(inst, FT2_DISKOP_ITEM_PATTERN); }
 void rbDiskOpTrack(ft2_instance_t *inst)   { setDiskOpItem(inst, FT2_DISKOP_ITEM_TRACK); }
 
-/* Save format selection */
-void rbDiskOpModSaveMod(ft2_instance_t *inst)
-{
-	if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_MOD;
-}
+/* ---------- Save format selection ---------- */
 
-void rbDiskOpModSaveXm(ft2_instance_t *inst)
-{
-	if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_XM;
-}
+void rbDiskOpModSaveMod(ft2_instance_t *inst) { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_MOD; }
+void rbDiskOpModSaveXm(ft2_instance_t *inst)  { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_XM; }
+void rbDiskOpModSaveWav(ft2_instance_t *inst) { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_WAV; }
+void rbDiskOpSmpSaveRaw(ft2_instance_t *inst) { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE] = FT2_SMP_SAVE_RAW; }
+void rbDiskOpSmpSaveIff(ft2_instance_t *inst) { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE] = FT2_SMP_SAVE_IFF; }
+void rbDiskOpSmpSaveWav(ft2_instance_t *inst) { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE] = FT2_SMP_SAVE_WAV; }
 
-void rbDiskOpModSaveWav(ft2_instance_t *inst)
-{
-	if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_WAV;
-}
+/* Stub: directory reading done via JUCE callback (populates inst->diskop.entries) */
+void diskOpReadDirectory(ft2_instance_t *inst) { (void)inst; }
 
-void rbDiskOpSmpSaveRaw(ft2_instance_t *inst)
-{
-	if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE] = FT2_SMP_SAVE_RAW;
-}
+/* ---------- Mouse handling ---------- */
 
-void rbDiskOpSmpSaveIff(ft2_instance_t *inst)
-{
-	if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE] = FT2_SMP_SAVE_IFF;
-}
-
-void rbDiskOpSmpSaveWav(ft2_instance_t *inst)
-{
-	if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE] = FT2_SMP_SAVE_WAV;
-}
-
-/* Directory reading - stub, implemented via JUCE callback */
-void diskOpReadDirectory(ft2_instance_t *inst)
-{
-	(void)inst;
-	/* This will be implemented via JUCE callback to populate inst->diskop.entries */
-}
-
-/* Mouse handling for file list */
 bool diskOpTestMouseDown(ft2_instance_t *inst, int32_t mouseX, int32_t mouseY)
 {
-	if (inst == NULL || !inst->uiState.diskOpShown)
-		return false;
+	if (inst == NULL || !inst->uiState.diskOpShown) return false;
 
-	/* Check if click is in file list area */
+	/* File list area hit test */
 	if (mouseX >= FILENAME_TEXT_X - 1 && mouseX < FILENAME_TEXT_X + 162 &&
-	    mouseY >= DISKOP_LIST_Y && mouseY < DISKOP_LIST_Y + DISKOP_LIST_H)
-	{
+	    mouseY >= DISKOP_LIST_Y && mouseY < DISKOP_LIST_Y + DISKOP_LIST_H) {
 		int32_t entryIndex = (mouseY - DISKOP_LIST_Y) / (FONT1_CHAR_H + 1);
-		if (entryIndex >= 0 && entryIndex < FT2_DISKOP_ENTRY_NUM)
-		{
+		if (entryIndex >= 0 && entryIndex < FT2_DISKOP_ENTRY_NUM) {
 			int32_t absIndex = inst->diskop.dirPos + entryIndex;
-			if (absIndex < inst->diskop.fileCount)
-			{
+			if (absIndex < inst->diskop.fileCount) {
 				inst->diskop.selectedEntry = entryIndex;
 				diskOpHandleItemClick(inst, absIndex);
 				return true;
 			}
 		}
 	}
-
 	return false;
 }
 
-/* Track last click for double-click detection */
+/* Double-click detection state */
 static int32_t lastClickedEntry = -1;
 static uint32_t lastClickTime = 0;
 
-/* Callback for unsaved changes confirmation when loading a module */
 static void unsavedChangesLoadCallback(ft2_instance_t *inst, ft2_dialog_result_t result,
                                        const char *inputText, void *userData)
 {
 	(void)inputText;
 	int32_t entryIndex = (int32_t)(intptr_t)userData;
-
-	if (result == DIALOG_RESULT_YES)
-	{
+	if (result == DIALOG_RESULT_YES) {
 		inst->diskop.requestLoadEntry = entryIndex;
 		inst->uiState.needsFullRedraw = true;
 	}
 }
 
+/*
+ * Handle file list click:
+ *   Directory: navigate on single click
+ *   File: set filename on single click, load on double click
+ *   Module load with unsaved changes: confirm dialog first
+ */
 void diskOpHandleItemClick(ft2_instance_t *inst, int32_t entryIndex)
 {
-	if (inst == NULL || inst->diskop.entries == NULL)
-		return;
-
-	if (entryIndex < 0 || entryIndex >= inst->diskop.fileCount)
-		return;
+	if (inst == NULL || inst->diskop.entries == NULL) return;
+	if (entryIndex < 0 || entryIndex >= inst->diskop.fileCount) return;
 
 	ft2_diskop_entry_t *entry = &inst->diskop.entries[entryIndex];
-
-	/* Check for double-click (within ~500ms) */
 	uint32_t currentTime = inst->editor.framesPassed;
-	bool isDoubleClick = (entryIndex == lastClickedEntry && 
-	                      (currentTime - lastClickTime) < 30); /* ~500ms at 60fps */
-
+	bool isDoubleClick = (entryIndex == lastClickedEntry && (currentTime - lastClickTime) < 30);
 	lastClickedEntry = entryIndex;
 	lastClickTime = currentTime;
 
-	if (entry->isDir)
-	{
-		/* Directory - navigate on single click */
+	if (entry->isDir) {
 		inst->diskop.requestOpenEntry = entryIndex;
-	}
-	else
-	{
-		/* File - set filename on single click, load on double click */
+	} else {
 		strncpy(inst->diskop.filename, entry->name, FT2_PATH_MAX - 1);
 		inst->diskop.filename[FT2_PATH_MAX - 1] = '\0';
 
-		if (isDoubleClick)
-		{
-			/* Double-click - check for unsaved changes when loading modules */
-			if (inst->diskop.itemType == FT2_DISKOP_ITEM_MODULE && inst->replayer.song.isModified)
-			{
-				/* Show confirmation dialog */
+		if (isDoubleClick) {
+			if (inst->diskop.itemType == FT2_DISKOP_ITEM_MODULE && inst->replayer.song.isModified) {
 				ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 				if (ui != NULL)
-				{
 					ft2_dialog_show_yesno_cb(&ui->dialog, "System request",
 						"You have unsaved changes in your song. Load new song and lose ALL changes?",
 						inst, unsavedChangesLoadCallback, (void *)(intptr_t)entryIndex);
-				}
-			}
-			else
-			{
-				/* No unsaved changes or not a module - load directly */
-			inst->diskop.requestLoadEntry = entryIndex;
+			} else {
+				inst->diskop.requestLoadEntry = entryIndex;
 			}
 		}
 	}
-
 	inst->uiState.needsFullRedraw = true;
 }
 
-/* Free disk op resources */
 void freeDiskOp(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
-	if (inst->diskop.entries != NULL)
-	{
+	if (inst == NULL) return;
+	if (inst->diskop.entries != NULL) {
 		free(inst->diskop.entries);
 		inst->diskop.entries = NULL;
 	}
-
 	inst->diskop.fileCount = 0;
 }
 
-/* ============ FILE FORMAT DETECTION ============ */
+/* ---------- Format detection ---------- */
 
+/* Detect format by file extension (case-insensitive) */
 ft2_file_format ft2_detect_format_by_ext(const char *filename)
 {
-	if (filename == NULL)
-		return FT2_FORMAT_UNKNOWN;
+	if (filename == NULL) return FT2_FORMAT_UNKNOWN;
 
-	/* Find last dot */
 	const char *ext = NULL;
-	const char *p = filename;
-	while (*p)
-	{
-		if (*p == '.')
-			ext = p + 1;
-		p++;
-	}
+	for (const char *p = filename; *p; p++)
+		if (*p == '.') ext = p + 1;
+	if (ext == NULL) return FT2_FORMAT_UNKNOWN;
 
-	if (ext == NULL)
-		return FT2_FORMAT_UNKNOWN;
-
-	/* Compare extension (case-insensitive) */
+	/* Manual case-insensitive comparison (no strcasecmp on MSVC) */
 	if ((ext[0] == 'x' || ext[0] == 'X') && (ext[1] == 'm' || ext[1] == 'M') && ext[2] == '\0')
 		return FT2_FORMAT_XM;
-
-	if ((ext[0] == 'm' || ext[0] == 'M') && (ext[1] == 'o' || ext[1] == 'O') && 
+	if ((ext[0] == 'm' || ext[0] == 'M') && (ext[1] == 'o' || ext[1] == 'O') &&
 	    (ext[2] == 'd' || ext[2] == 'D') && ext[3] == '\0')
 		return FT2_FORMAT_MOD;
-
-	if ((ext[0] == 's' || ext[0] == 'S') && (ext[1] == '3' || ext[1] == '3') && 
+	if ((ext[0] == 's' || ext[0] == 'S') && (ext[1] == '3' || ext[1] == '3') &&
 	    (ext[2] == 'm' || ext[2] == 'M') && ext[3] == '\0')
 		return FT2_FORMAT_S3M;
-
 	if ((ext[0] == 'x' || ext[0] == 'X') && (ext[1] == 'i' || ext[1] == 'I') && ext[2] == '\0')
 		return FT2_FORMAT_XI;
-
-	if ((ext[0] == 'w' || ext[0] == 'W') && (ext[1] == 'a' || ext[1] == 'A') && 
+	if ((ext[0] == 'w' || ext[0] == 'W') && (ext[1] == 'a' || ext[1] == 'A') &&
 	    (ext[2] == 'v' || ext[2] == 'V') && ext[3] == '\0')
 		return FT2_FORMAT_WAV;
-
 	if ((ext[0] == 'a' || ext[0] == 'A') && (ext[1] == 'i' || ext[1] == 'I') &&
 	    (ext[2] == 'f' || ext[2] == 'F') && (ext[3] == 'f' || ext[3] == 'F' || ext[3] == '\0'))
 		return FT2_FORMAT_AIFF;
-
 	if ((ext[0] == 'r' || ext[0] == 'R') && (ext[1] == 'a' || ext[1] == 'A') &&
 	    (ext[2] == 'w' || ext[2] == 'W') && ext[3] == '\0')
 		return FT2_FORMAT_RAW;
-
 	if ((ext[0] == 'p' || ext[0] == 'P') && (ext[1] == 'a' || ext[1] == 'A') &&
 	    (ext[2] == 't' || ext[2] == 'T') && ext[3] == '\0')
 		return FT2_FORMAT_PAT;
@@ -1001,35 +781,23 @@ ft2_file_format ft2_detect_format_by_ext(const char *filename)
 	return FT2_FORMAT_UNKNOWN;
 }
 
+/* Detect format by file header magic bytes */
 ft2_file_format ft2_detect_format_by_header(const uint8_t *data, uint32_t dataSize)
 {
-	if (data == NULL || dataSize < 4)
-		return FT2_FORMAT_UNKNOWN;
+	if (data == NULL || dataSize < 4) return FT2_FORMAT_UNKNOWN;
 
-	/* XM signature */
 	if (dataSize >= 17 && memcmp(data, "Extended Module: ", 17) == 0)
 		return FT2_FORMAT_XM;
-
-	/* XI signature */
 	if (dataSize >= 21 && memcmp(data, "Extended Instrument: ", 21) == 0)
 		return FT2_FORMAT_XI;
-
-	/* WAV signature */
 	if (dataSize >= 12 && memcmp(data, "RIFF", 4) == 0 && memcmp(data + 8, "WAVE", 4) == 0)
 		return FT2_FORMAT_WAV;
-
-	/* AIFF signature */
-	if (dataSize >= 12 && memcmp(data, "FORM", 4) == 0 && 
+	if (dataSize >= 12 && memcmp(data, "FORM", 4) == 0 &&
 	    (memcmp(data + 8, "AIFF", 4) == 0 || memcmp(data + 8, "AIFC", 4) == 0))
 		return FT2_FORMAT_AIFF;
-
-	/* S3M signature ("SCRM" at offset 0x2C) */
 	if (dataSize >= 48 && memcmp(data + 0x2C, "SCRM", 4) == 0 && data[0x1D] == 16)
 		return FT2_FORMAT_S3M;
-
-	/* MOD signatures (M.K., M!K!, FLT4, FLT8, 4CHN, 6CHN, 8CHN, etc.) */
-	if (dataSize >= 1084)
-	{
+	if (dataSize >= 1084) {
 		const uint8_t *sig = data + 1080;
 		if (memcmp(sig, "M.K.", 4) == 0 || memcmp(sig, "M!K!", 4) == 0 ||
 		    memcmp(sig, "FLT4", 4) == 0 || memcmp(sig, "FLT8", 4) == 0 ||
@@ -1041,52 +809,38 @@ ft2_file_format ft2_detect_format_by_header(const uint8_t *data, uint32_t dataSi
 	return FT2_FORMAT_UNKNOWN;
 }
 
-/* ft2_load_module moved to ft2_plugin_loader.c - use ft2_load_module() from ft2_plugin_loader.h */
+/* ---------- Module save/load ---------- */
 
-/**
- * Helper: Count used samples in an instrument (ported from getUsedSamples).
- */
+/* Count used samples: highest index with data/name, or referenced in note2SampleLUT */
 static int16_t countUsedSamples(ft2_instr_t *ins)
 {
-	if (ins == NULL)
-		return 0;
+	if (ins == NULL) return 0;
 
-	int16_t i = 16 - 1;
+	int16_t i = 15;
 	while (i >= 0 && ins->smp[i].dataPtr == NULL && ins->smp[i].name[0] == '\0')
 		i--;
 
-	/* Check note2SampleLUT for higher sample indices */
 	for (int16_t j = 0; j < 96; j++)
-	{
-		if (ins->note2SampleLUT[j] > i)
-			i = ins->note2SampleLUT[j];
-	}
+		if (ins->note2SampleLUT[j] > i) i = ins->note2SampleLUT[j];
 
 	return i + 1;
 }
 
-/* XM instrument header size */
+/* XM file format structures (packed for file I/O) */
 #define XM_INSTR_HEADER_SIZE 263
 
-/* XM pattern header structure */
 #ifdef _MSC_VER
 #pragma pack(push, 1)
 #endif
-typedef struct xm_patt_hdr_t
-{
+
+typedef struct xm_patt_hdr_t {
 	int32_t headerSize;
 	uint8_t type;
 	int16_t numRows;
 	uint16_t dataSize;
-}
-#ifdef __GNUC__
-__attribute__((packed))
-#endif
-xm_patt_hdr_t;
+} __attribute__((packed)) xm_patt_hdr_t;
 
-/* XM sample header structure (40 bytes) */
-typedef struct xm_smp_hdr_t
-{
+typedef struct xm_smp_hdr_t {
 	uint32_t length, loopStart, loopLength;
 	uint8_t volume;
 	int8_t finetune;
@@ -1094,15 +848,9 @@ typedef struct xm_smp_hdr_t
 	int8_t relativeNote;
 	uint8_t nameLength;
 	char name[22];
-}
-#ifdef __GNUC__
-__attribute__((packed))
-#endif
-xm_smp_hdr_t;
+} __attribute__((packed)) xm_smp_hdr_t;
 
-/* XM instrument header structure (263 bytes + sample headers) */
-typedef struct xm_ins_hdr_t
-{
+typedef struct xm_ins_hdr_t {
 	uint32_t instrSize;
 	char name[22];
 	uint8_t type;
@@ -1122,133 +870,95 @@ typedef struct xm_ins_hdr_t
 	int8_t mute;
 	uint8_t reserved[15];
 	xm_smp_hdr_t smp[16];
-}
-#ifdef __GNUC__
-__attribute__((packed))
-#endif
-xm_ins_hdr_t;
+} __attribute__((packed)) xm_ins_hdr_t;
+
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif
 
-/**
- * Convert sample data to delta encoding for XM/XI file saving.
- * Ported from standalone samp2Delta().
- */
+/* Delta encoding for XM/XI sample data (saves space) */
 static void sample_to_delta(int8_t *p, int32_t length, uint8_t smpFlags)
 {
-	if (smpFlags & FT2_SAMPLE_16BIT)
-	{
-		int16_t *p16 = (int16_t *)p;
-		int16_t newS16 = 0;
-		for (int32_t i = 0; i < length; i++)
-		{
-			const int16_t oldS16 = p16[i];
-			p16[i] -= newS16;
-			newS16 = oldS16;
+	if (smpFlags & FT2_SAMPLE_16BIT) {
+		int16_t *p16 = (int16_t *)p, prev = 0;
+		for (int32_t i = 0; i < length; i++) {
+			int16_t cur = p16[i];
+			p16[i] -= prev;
+			prev = cur;
 		}
-	}
-	else
-	{
-		int8_t newS8 = 0;
-		for (int32_t i = 0; i < length; i++)
-		{
-			const int8_t oldS8 = p[i];
-			p[i] -= newS8;
-			newS8 = oldS8;
+	} else {
+		int8_t prev = 0;
+		for (int32_t i = 0; i < length; i++) {
+			int8_t cur = p[i];
+			p[i] -= prev;
+			prev = cur;
 		}
 	}
 }
 
-/**
- * Convert delta-encoded sample data back to normal.
- * Ported from standalone delta2Samp() - mono-only version for save/restore.
- */
+/* Decode delta-encoded sample data */
 static void delta_to_sample(int8_t *p, int32_t length, uint8_t smpFlags)
 {
-	if (smpFlags & FT2_SAMPLE_16BIT)
-	{
-		int16_t *p16 = (int16_t *)p;
-		int16_t olds16 = 0;
-		for (int32_t i = 0; i < length; i++)
-		{
-			const int16_t news16 = p16[i] + olds16;
-			p16[i] = news16;
-			olds16 = news16;
+	if (smpFlags & FT2_SAMPLE_16BIT) {
+		int16_t *p16 = (int16_t *)p, acc = 0;
+		for (int32_t i = 0; i < length; i++) {
+			acc += p16[i];
+			p16[i] = acc;
 		}
-	}
-	else
-	{
-		int8_t olds8 = 0;
-		for (int32_t i = 0; i < length; i++)
-		{
-			const int8_t news8 = p[i] + olds8;
-			p[i] = news8;
-			olds8 = news8;
+	} else {
+		int8_t acc = 0;
+		for (int32_t i = 0; i < length; i++) {
+			acc += p[i];
+			p[i] = acc;
 		}
 	}
 }
 
-/**
- * Pack pattern data for XM file saving.
- * Ported from standalone packPatt().
- * @param writePtr Output buffer (must be large enough for packed data)
- * @param pattPtr Pattern data (32 channels * 5 bytes per note)
- * @param numRows Number of rows in pattern
- * @param numChannels Number of channels to pack
- * @return Number of bytes written
+/*
+ * Pack pattern data for XM file.
+ * XM uses run-length packing: if a field is 0, omit it and set a bit flag.
+ * If all 4 main fields are non-zero, store unpacked (5 bytes).
+ * Otherwise, store pack byte (with bit 7 set) + only non-zero fields.
  */
 static uint16_t packPatt(uint8_t *writePtr, uint8_t *pattPtr, uint16_t numRows, uint16_t numChannels)
 {
-	uint8_t bytes[5];
-
-	if (pattPtr == NULL)
-		return 0;
+	if (pattPtr == NULL) return 0;
 
 	uint16_t totalPackLen = 0;
-
-	/* Pitch = bytes to skip per row for unused channels (32 - numChannels) */
 	const int32_t pitch = 5 * (FT2_MAX_CHANNELS - numChannels);
-	for (int32_t row = 0; row < numRows; row++)
-	{
-		for (int32_t chn = 0; chn < numChannels; chn++)
-		{
-			bytes[0] = *pattPtr++;  /* note */
-			bytes[1] = *pattPtr++;  /* instrument */
-			bytes[2] = *pattPtr++;  /* volume column */
-			bytes[3] = *pattPtr++;  /* effect */
-			bytes[4] = *pattPtr++;  /* effect parameter */
+
+	for (int32_t row = 0; row < numRows; row++) {
+		for (int32_t chn = 0; chn < numChannels; chn++) {
+			uint8_t bytes[5];
+			bytes[0] = *pattPtr++;
+			bytes[1] = *pattPtr++;
+			bytes[2] = *pattPtr++;
+			bytes[3] = *pattPtr++;
+			bytes[4] = *pattPtr++;
 
 			uint8_t *firstBytePtr = writePtr++;
-
 			uint8_t packBits = 0;
 			if (bytes[0] > 0) { packBits |= 1; *writePtr++ = bytes[0]; }
 			if (bytes[1] > 0) { packBits |= 2; *writePtr++ = bytes[1]; }
 			if (bytes[2] > 0) { packBits |= 4; *writePtr++ = bytes[2]; }
 			if (bytes[3] > 0) { packBits |= 8; *writePtr++ = bytes[3]; }
 
-			if (packBits == 15)
-			{
-				/* All 4 fields set - no packing needed, write as-is */
+			if (packBits == 15) {
+				/* All 4 fields set - write unpacked */
 				writePtr = firstBytePtr;
-
 				*writePtr++ = bytes[0];
 				*writePtr++ = bytes[1];
 				*writePtr++ = bytes[2];
 				*writePtr++ = bytes[3];
 				*writePtr++ = bytes[4];
-
 				totalPackLen += 5;
 				continue;
 			}
 
 			if (bytes[4] > 0) { packBits |= 16; *writePtr++ = bytes[4]; }
-
-			*firstBytePtr = packBits | 128;  /* Write pack bits byte with high bit set */
+			*firstBytePtr = packBits | 128;
 			totalPackLen += (uint16_t)(writePtr - firstBytePtr);
 		}
-
-		/* Skip unused channels (unpacked patterns always have 32 channels) */
 		pattPtr += pitch;
 	}
 
@@ -1562,15 +1272,15 @@ bool ft2_save_module(ft2_instance_t *inst, uint8_t **outData, uint32_t *outSize)
 	return true;
 }
 
-/* XI header size (without sample headers) */
+/* ---------- Instrument save/load (XI format) ---------- */
+
 #define XI_HEADER_SIZE 298
 
-/* XI header structure */
 #ifdef _MSC_VER
 #pragma pack(push, 1)
 #endif
-typedef struct xi_header_t
-{
+
+typedef struct xi_header_t {
 	char id[21];
 	char name[23];       /* 22 chars + 0x1A terminator */
 	char progName[20];
@@ -1588,15 +1298,9 @@ typedef struct xi_header_t
 	int16_t midiProgram, midiBend;
 	uint8_t mute, reserved[15];
 	int16_t numSamples;
-}
-#ifdef __GNUC__
-__attribute__((packed))
-#endif
-xi_header_t;
+} __attribute__((packed)) xi_header_t;
 
-/* XI sample header structure */
-typedef struct xi_sample_header_t
-{
+typedef struct xi_sample_header_t {
 	uint32_t length, loopStart, loopLength;
 	uint8_t volume;
 	int8_t finetune;
@@ -1604,34 +1308,22 @@ typedef struct xi_sample_header_t
 	int8_t relativeNote;
 	uint8_t nameLength;
 	char name[22];
-}
-#ifdef __GNUC__
-__attribute__((packed))
-#endif
-xi_sample_header_t;
+} __attribute__((packed)) xi_sample_header_t;
+
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif
 
-/* Delta decoding for XI samples */
 static void xi_delta_to_sample_8bit(int8_t *p, int32_t length)
 {
-	int8_t sample = 0;
-	for (int32_t i = 0; i < length; i++)
-	{
-		sample += p[i];
-		p[i] = sample;
-	}
+	int8_t acc = 0;
+	for (int32_t i = 0; i < length; i++) { acc += p[i]; p[i] = acc; }
 }
 
 static void xi_delta_to_sample_16bit(int16_t *p, int32_t length)
 {
-	int16_t sample = 0;
-	for (int32_t i = 0; i < length; i++)
-	{
-		sample += p[i];
-		p[i] = sample;
-	}
+	int16_t acc = 0;
+	for (int32_t i = 0; i < length; i++) { acc += p[i]; p[i] = acc; }
 }
 
 bool ft2_load_instrument(ft2_instance_t *inst, int16_t instrNum,
@@ -2207,93 +1899,53 @@ bool ft2_save_sample(ft2_instance_t *inst, int16_t instrNum, int16_t sampleNum,
 	                       outData, outSize);
 }
 
-/* XP pattern file header */
+/* ---------- Pattern save/load (XP format) ---------- */
+
 #ifdef _MSC_VER
 #pragma pack(push, 1)
 #endif
-typedef struct xp_header_t
-{
+typedef struct xp_header_t {
 	uint16_t version;
 	uint16_t numRows;
-}
-#ifdef __GNUC__
-__attribute__((packed))
-#endif
-xp_header_t;
+} __attribute__((packed)) xp_header_t;
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif
 
-/* TRACK_WIDTH = 5 bytes per note * 32 channels */
 #define XP_TRACK_WIDTH (5 * FT2_MAX_CHANNELS)
 
 bool ft2_load_pattern(ft2_instance_t *inst, int16_t pattNum,
                        const uint8_t *data, uint32_t dataSize)
 {
-	if (inst == NULL || data == NULL)
-		return false;
+	if (inst == NULL || data == NULL) return false;
+	if (pattNum < 0 || pattNum >= FT2_MAX_PATTERNS) return false;
+	if (dataSize < sizeof(xp_header_t)) return false;
 
-	if (pattNum < 0 || pattNum >= FT2_MAX_PATTERNS)
-		return false;
-
-	/* Check minimum size for header */
-	if (dataSize < sizeof(xp_header_t))
-		return false;
-
-	/* Read header */
 	xp_header_t hdr;
 	memcpy(&hdr, data, sizeof(hdr));
+	if (hdr.version != 1) return false;
+	if (hdr.numRows > FT2_MAX_PATT_LEN) hdr.numRows = FT2_MAX_PATT_LEN;
 
-	/* Validate version */
-	if (hdr.version != 1)
-		return false;
-
-	/* Clamp numRows */
-	if (hdr.numRows > FT2_MAX_PATT_LEN)
-		hdr.numRows = FT2_MAX_PATT_LEN;
-
-	/* Check data size */
 	uint32_t expectedSize = sizeof(xp_header_t) + (hdr.numRows * XP_TRACK_WIDTH);
-	if (dataSize < expectedSize)
-		return false;
+	if (dataSize < expectedSize) return false;
 
-	/* Allocate pattern if needed */
 	if (inst->replayer.pattern[pattNum] == NULL)
-	{
-		if (!allocatePattern(inst, pattNum))
-			return false;
-	}
+		if (!allocatePattern(inst, pattNum)) return false;
 
 	ft2_note_t *patt = inst->replayer.pattern[pattNum];
-
-	/* Copy pattern data */
 	memcpy(patt, data + sizeof(xp_header_t), hdr.numRows * XP_TRACK_WIDTH);
 
-	/* Sanitize data */
-	for (int32_t row = 0; row < hdr.numRows; row++)
-	{
-		for (int32_t ch = 0; ch < FT2_MAX_CHANNELS; ch++)
-		{
+	/* Sanitize: clamp note/instr/effect values */
+	for (int32_t row = 0; row < hdr.numRows; row++) {
+		for (int32_t ch = 0; ch < FT2_MAX_CHANNELS; ch++) {
 			ft2_note_t *note = &patt[(row * FT2_MAX_CHANNELS) + ch];
-
-			if (note->note > 97)
-				note->note = 0;
-
-			if (note->instr > 128)
-				note->instr = 128;
-
-			if (note->efx > 35)
-			{
-				note->efx = 0;
-				note->efxData = 0;
-			}
+			if (note->note > 97) note->note = 0;
+			if (note->instr > 128) note->instr = 128;
+			if (note->efx > 35) { note->efx = 0; note->efxData = 0; }
 		}
 	}
 
-	/* Set pattern length */
 	inst->replayer.patternNumRows[pattNum] = hdr.numRows;
-
-	/* Update current song if this is the active pattern */
 	if (inst->replayer.song.pattNum == pattNum)
 		inst->replayer.song.currNumRows = hdr.numRows;
 
@@ -2303,58 +1955,37 @@ bool ft2_load_pattern(ft2_instance_t *inst, int16_t pattNum,
 bool ft2_save_pattern(ft2_instance_t *inst, int16_t pattNum,
                        uint8_t **outData, uint32_t *outSize)
 {
-	if (inst == NULL || outData == NULL || outSize == NULL)
-		return false;
-
-	if (pattNum < 0 || pattNum >= FT2_MAX_PATTERNS)
-		return false;
+	if (inst == NULL || outData == NULL || outSize == NULL) return false;
+	if (pattNum < 0 || pattNum >= FT2_MAX_PATTERNS) return false;
 
 	ft2_note_t *patt = inst->replayer.pattern[pattNum];
-	if (patt == NULL)
-		return false;
+	if (patt == NULL) return false;
 
 	int16_t numRows = inst->replayer.patternNumRows[pattNum];
-	if (numRows < 1)
-		numRows = 64;
+	if (numRows < 1) numRows = 64;
 
-	/* Calculate size: header + pattern data */
 	uint32_t totalSize = sizeof(xp_header_t) + (numRows * XP_TRACK_WIDTH);
-
-	/* Allocate buffer */
 	*outData = (uint8_t *)malloc(totalSize);
-	if (*outData == NULL)
-		return false;
+	if (*outData == NULL) return false;
 
-	/* Write header */
-	xp_header_t hdr;
-	hdr.version = 1;
-	hdr.numRows = numRows;
-
+	xp_header_t hdr = { .version = 1, .numRows = numRows };
 	memcpy(*outData, &hdr, sizeof(hdr));
-
-	/* Write pattern data */
 	memcpy(*outData + sizeof(hdr), patt, numRows * XP_TRACK_WIDTH);
-
 	*outSize = totalSize;
 	return true;
 }
 
+/* ---------- WAV helpers ---------- */
+
+/* Parse WAV file: find fmt and data chunks, extract audio info */
 bool ft2_parse_wav(const uint8_t *data, uint32_t dataSize,
                     const uint8_t **outAudioData, uint32_t *outAudioSize,
                     int16_t *outChannels, int16_t *outBitsPerSample,
                     uint32_t *outSampleRate)
 {
-	if (data == NULL || dataSize < 44)
-		return false;
-
-	/* Check RIFF header */
-	if (memcmp(data, "RIFF", 4) != 0)
-		return false;
-
-	if (memcmp(data + 8, "WAVE", 4) != 0)
-		return false;
-
-	/* Parse chunks */
+	if (data == NULL || dataSize < 44) return false;
+	if (memcmp(data, "RIFF", 4) != 0) return false;
+	if (memcmp(data + 8, "WAVE", 4) != 0) return false;
 	uint32_t pos = 12;
 	bool foundFmt = false;
 	bool foundData = false;
@@ -2495,43 +2126,34 @@ bool ft2_create_wav(const int8_t *sampleData, int32_t sampleLength,
 	return true;
 }
 
-/* Callback for unsaved changes confirmation when loading a dropped module */
+/* ---------- Drag-and-drop loading ---------- */
+
 static void unsavedChangesDropCallback(ft2_instance_t *inst, ft2_dialog_result_t result,
                                        const char *inputText, void *userData)
 {
 	(void)inputText;
 	(void)userData;
-
-	if (result == DIALOG_RESULT_YES)
-	{
+	if (result == DIALOG_RESULT_YES) {
 		inst->diskop.requestDropLoad = true;
 		inst->uiState.needsFullRedraw = true;
 	}
 }
 
+/* Handle file drop: if unsaved changes, confirm; otherwise load directly */
 void ft2_diskop_request_drop_load(ft2_instance_t *inst, const char *path)
 {
-	if (inst == NULL || path == NULL)
-		return;
+	if (inst == NULL || path == NULL) return;
 
-	/* Store the path for later loading */
 	strncpy(inst->diskop.pendingDropPath, path, FT2_PATH_MAX - 1);
 	inst->diskop.pendingDropPath[FT2_PATH_MAX - 1] = '\0';
 
-	if (inst->replayer.song.isModified)
-	{
-		/* Show confirmation dialog */
+	if (inst->replayer.song.isModified) {
 		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 		if (ui != NULL)
-		{
 			ft2_dialog_show_yesno_cb(&ui->dialog, "System request",
 				"You have unsaved changes in your song. Load new song and lose ALL changes?",
 				inst, unsavedChangesDropCallback, NULL);
-		}
-	}
-	else
-	{
-		/* No unsaved changes - load directly */
+	} else {
 		inst->diskop.requestDropLoad = true;
 	}
 }

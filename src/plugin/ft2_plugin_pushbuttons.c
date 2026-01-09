@@ -1,10 +1,8 @@
-/**
- * @file ft2_plugin_pushbuttons.c
- * @brief Push button implementation for the FT2 plugin UI.
- * 
- * Ported from ft2_pushbuttons.c - exact coordinates preserved.
- * Modified for multi-instance support: visibility/state stored per-instance.
- */
+/*
+** FT2 Plugin - Push Button Widget
+** Ported from ft2_pushbuttons.c with exact coordinates preserved.
+** Per-instance visibility/state stored in ft2_widgets_t.
+*/
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -17,9 +15,13 @@
 
 #define BUTTON_GFX_BMP_WIDTH 90
 
+/* ------------------------------------------------------------------------- */
+/*                          BUTTON DEFINITION TABLE                          */
+/* ------------------------------------------------------------------------- */
+
 const pushButton_t pushButtonsTemplate[NUM_PUSHBUTTONS] =
 {
-	/* Reserved pushbuttons */
+	/* Reserved for system dialogs (indices 0-7) */
 	{ 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 },
 
 	/* Position editor */
@@ -422,19 +424,20 @@ const pushButton_t pushButtonsTemplate[NUM_PUSHBUTTONS] =
 	{ 492, 142, 16, 11, 1, 4, ARROW_UP_STRING, NULL, NULL, NULL }, { 508, 142, 16, 11, 1, 4, ARROW_DOWN_STRING, NULL, NULL, NULL }
 };
 
+/* ------------------------------------------------------------------------- */
+/*                               INIT / DRAW                                 */
+/* ------------------------------------------------------------------------- */
+
 void initPushButtons(struct ft2_widgets_t *widgets)
 {
-	if (widgets == NULL)
+	if (!widgets)
 		return;
 
-	/* Initialize per-instance button properties */
 	for (int i = 0; i < NUM_PUSHBUTTONS; i++)
 	{
-		/* Logo and badge buttons use bitmap graphics */
+		/* Logo and badge use bitmap graphics; others use procedural drawing */
 		if (i == PB_LOGO || i == PB_BADGE)
-		{
 			widgets->pushButtons[i].bitmapFlag = true;
-		}
 		else
 		{
 			widgets->pushButtons[i].bitmapFlag = false;
@@ -446,177 +449,141 @@ void initPushButtons(struct ft2_widgets_t *widgets)
 
 void drawPushButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t pushButtonID)
 {
-	if (widgets == NULL || video == NULL || video->frameBuffer == NULL || pushButtonID >= NUM_PUSHBUTTONS)
+	if (!widgets || !video || !video->frameBuffer || pushButtonID >= NUM_PUSHBUTTONS)
 		return;
-
 	if (!widgets->pushButtonVisible[pushButtonID])
 		return;
 
 	pushButton_t *b = &widgets->pushButtons[pushButtonID];
-	/* Use locked state if set, otherwise use normal state */
-	uint8_t state = widgets->pushButtonLocked[pushButtonID]
-		? PUSHBUTTON_PRESSED
-		: widgets->pushButtonState[pushButtonID];
-	uint16_t x = b->x;
-	uint16_t y = b->y;
-	uint16_t w = b->w;
-	uint16_t h = b->h;
+	uint8_t state = widgets->pushButtonLocked[pushButtonID] ? PUSHBUTTON_PRESSED : widgets->pushButtonState[pushButtonID];
+	uint16_t x = b->x, y = b->y, w = b->w, h = b->h;
 
 	if (w < 4 || h < 4)
 		return;
 
-	if (b->bitmapFlag && b->bitmapUnpressed != NULL && b->bitmapPressed != NULL)
+	/* Bitmap buttons (logo/badge) */
+	if (b->bitmapFlag && b->bitmapUnpressed && b->bitmapPressed)
 	{
 		blitFast(video, x, y, (state == PUSHBUTTON_UNPRESSED) ? b->bitmapUnpressed : b->bitmapPressed, w, h);
 		return;
 	}
 
-	/* Fill button background */
+	/* Procedural button: fill + border */
 	fillRect(video, x + 1, y + 1, w - 2, h - 2, PAL_BUTTONS);
 
-	/* Draw outer border */
-	hLine(video, x,         y,         w, PAL_BCKGRND);
-	hLine(video, x,         y + h - 1, w, PAL_BCKGRND);
-	vLine(video, x,         y,         h, PAL_BCKGRND);
-	vLine(video, x + w - 1, y,         h, PAL_BCKGRND);
+	/* Outer border (1px black frame) */
+	hLine(video, x, y, w, PAL_BCKGRND);
+	hLine(video, x, y + h - 1, w, PAL_BCKGRND);
+	vLine(video, x, y, h, PAL_BCKGRND);
+	vLine(video, x + w - 1, y, h, PAL_BCKGRND);
 
-	/* Draw inner borders */
+	/* Inner 3D border: highlight top-left, shadow bottom-right */
 	if (state == PUSHBUTTON_UNPRESSED)
 	{
-		/* Top left corner inner border */
 		hLine(video, x + 1, y + 1, w - 3, PAL_BUTTON1);
 		vLine(video, x + 1, y + 2, h - 4, PAL_BUTTON1);
-
-		/* Bottom right corner inner border */
-		hLine(video, x + 1,     y + h - 2, w - 2, PAL_BUTTON2);
-		vLine(video, x + w - 2, y + 1,     h - 3, PAL_BUTTON2);
+		hLine(video, x + 1, y + h - 2, w - 2, PAL_BUTTON2);
+		vLine(video, x + w - 2, y + 1, h - 3, PAL_BUTTON2);
 	}
 	else
 	{
-		/* Top left corner inner border */
+		/* Pressed: invert shading */
 		hLine(video, x + 1, y + 1, w - 2, PAL_BUTTON2);
 		vLine(video, x + 1, y + 2, h - 3, PAL_BUTTON2);
 	}
 
-	/* Render button text */
-	if (b->caption != NULL && b->caption[0] != '\0')
+	/* Caption rendering */
+	if (!b->caption || b->caption[0] == '\0')
+		return;
+
+	/* Special glyph (arrows, small digits) - single control char */
+	if ((uint8_t)b->caption[0] < 32 && b->caption[1] == '\0')
 	{
-		/* Check for special button graphics (arrow chars etc) */
-		if ((uint8_t)b->caption[0] < 32 && b->caption[1] == '\0')
+		uint8_t ch = (uint8_t)b->caption[0];
+		uint16_t textW = 8;
+		if (ch == 0x01 || ch == 0x02)      textW = 6;  /* arrow up/down */
+		else if (ch == 0x03 || ch == 0x04) textW = 7;  /* arrow left/right */
+		else if (ch >= 0x05 && ch <= 0x0A) textW = 5;  /* small digits 1-6 */
+
+		uint16_t textX = x + ((w - textW) / 2);
+		uint16_t textY = y + ((h - 8) / 2);
+		if (state == PUSHBUTTON_PRESSED) { textX++; textY++; }
+
+		/* Blit glyph from buttonGfx bitmap */
+		if (bmp && bmp->buttonGfx && textX + textW <= SCREEN_W && textY + 8 <= SCREEN_H)
 		{
-			uint16_t textW = 8;
-			uint8_t ch = (uint8_t)b->caption[0];
-
-			if (ch == 0x01 || ch == 0x02) /* arrow up/down */
-				textW = 6;
-			else if (ch == 0x03 || ch == 0x04) /* arrow left/right */
-				textW = 7;
-			else if (ch >= 0x05 && ch <= 0x0A) /* small digits 1-6 */
-				textW = 5;
-
-			uint16_t textX = x + ((w - textW) / 2);
-			uint16_t textY = y + ((h - 8) / 2);
-
-			if (state == PUSHBUTTON_PRESSED)
+			const uint8_t *src8 = &bmp->buttonGfx[(ch - 1) * 8];
+			uint32_t *dst32 = &video->frameBuffer[(textY * SCREEN_W) + textX];
+			for (int row = 0; row < 8; row++, src8 += BUTTON_GFX_BMP_WIDTH, dst32 += SCREEN_W)
 			{
-				textX++;
-				textY++;
-			}
-
-			/* Blit button graphics from buttonGfx */
-			if (bmp != NULL && bmp->buttonGfx != NULL && video != NULL && video->frameBuffer != NULL)
-			{
-				/* Bounds check for direct framebuffer access */
-				if (textX + textW <= SCREEN_W && textY + 8 <= SCREEN_H)
-				{
-					const uint8_t *src8 = &bmp->buttonGfx[(ch - 1) * 8];
-					uint32_t *dst32 = &video->frameBuffer[(textY * SCREEN_W) + textX];
-
-					for (int row = 0; row < 8; row++)
-					{
-						for (int col = 0; col < textW; col++)
-						{
-							if (src8[col] != 0)
-								dst32[col] = video->palette[PAL_BTNTEXT];
-						}
-						src8 += BUTTON_GFX_BMP_WIDTH;
-						dst32 += SCREEN_W;
-					}
-				}
+				for (int col = 0; col < textW; col++)
+					if (src8[col] != 0) dst32[col] = video->palette[PAL_BTNTEXT];
 			}
 		}
-		else
+	}
+	else
+	{
+		/* Normal text caption */
+		uint16_t textW = textWidth(b->caption);
+		uint16_t textX = x + ((w - textW) / 2);
+		uint16_t textY = y + ((h - 8) / 2);
+
+		/* Two-line caption (e.g. "Swap" + "Bank") */
+		if (b->caption2 && b->caption2[0] != '\0')
 		{
-			/* Normal text */
-			uint16_t textW = textWidth(b->caption);
-			uint16_t textX = x + ((w - textW) / 2);
-			uint16_t textY = y + ((h - 8) / 2);
-
-			/* If there's a second caption, adjust positions */
-			if (b->caption2 != NULL && b->caption2[0] != '\0')
-			{
-				uint16_t text2W = textWidth(b->caption2);
-				uint16_t text2X = x + ((w - text2W) / 2);
-				uint16_t text2Y = textY + 6;
-
-				if (state == PUSHBUTTON_PRESSED)
-					textOut(video, bmp, text2X + 1, text2Y + 1, PAL_BTNTEXT, b->caption2);
-				else
-					textOut(video, bmp, text2X, text2Y, PAL_BTNTEXT, b->caption2);
-
-				textY -= 5;
-			}
-
+			uint16_t text2W = textWidth(b->caption2);
+			uint16_t text2X = x + ((w - text2W) / 2);
+			uint16_t text2Y = textY + 6;
 			if (state == PUSHBUTTON_PRESSED)
-				textOut(video, bmp, textX + 1, textY + 1, PAL_BTNTEXT, b->caption);
+				textOut(video, bmp, text2X + 1, text2Y + 1, PAL_BTNTEXT, b->caption2);
 			else
-				textOut(video, bmp, textX, textY, PAL_BTNTEXT, b->caption);
+				textOut(video, bmp, text2X, text2Y, PAL_BTNTEXT, b->caption2);
+			textY -= 5;
 		}
+
+		if (state == PUSHBUTTON_PRESSED)
+			textOut(video, bmp, textX + 1, textY + 1, PAL_BTNTEXT, b->caption);
+		else
+			textOut(video, bmp, textX, textY, PAL_BTNTEXT, b->caption);
 	}
 }
 
+/* ------------------------------------------------------------------------- */
+/*                            SHOW / HIDE                                    */
+/* ------------------------------------------------------------------------- */
+
 void showPushButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t pushButtonID)
 {
-	if (widgets == NULL || pushButtonID >= NUM_PUSHBUTTONS)
+	if (!widgets || pushButtonID >= NUM_PUSHBUTTONS)
 		return;
-
 	widgets->pushButtonVisible[pushButtonID] = true;
 	drawPushButton(widgets, video, bmp, pushButtonID);
 }
 
 void hidePushButton(struct ft2_widgets_t *widgets, uint16_t pushButtonID)
 {
-	if (widgets == NULL || pushButtonID >= NUM_PUSHBUTTONS)
+	if (!widgets || pushButtonID >= NUM_PUSHBUTTONS)
 		return;
-
 	widgets->pushButtonState[pushButtonID] = PUSHBUTTON_UNPRESSED;
 	widgets->pushButtonVisible[pushButtonID] = false;
 }
 
+/* ------------------------------------------------------------------------- */
+/*                           MOUSE HANDLING                                  */
+/* ------------------------------------------------------------------------- */
+
+/* Returns button ID if clicked, -1 otherwise. System dialogs use buttons 0-7. */
 int16_t testPushButtonMouseDown(struct ft2_widgets_t *widgets, struct ft2_instance_t *inst, int32_t mouseX, int32_t mouseY, bool sysReqShown)
 {
-	if (widgets == NULL)
+	if (!widgets)
 		return -1;
 
-	uint16_t start, end;
-
-	if (sysReqShown)
-	{
-		start = 0;
-		end = 8;
-	}
-	else
-	{
-		start = 8;
-		end = NUM_PUSHBUTTONS;
-	}
+	uint16_t start = sysReqShown ? 0 : 8;
+	uint16_t end = sysReqShown ? 8 : NUM_PUSHBUTTONS;
 
 	for (uint16_t i = start; i < end; i++)
 	{
-		if (!widgets->pushButtonVisible[i])
-			continue;
-
-		if (widgets->pushButtonDisabled[i])
+		if (!widgets->pushButtonVisible[i] || widgets->pushButtonDisabled[i])
 			continue;
 
 		pushButton_t *pb = &widgets->pushButtons[i];
@@ -624,24 +591,19 @@ int16_t testPushButtonMouseDown(struct ft2_widgets_t *widgets, struct ft2_instan
 		    mouseY >= pb->y && mouseY < pb->y + pb->h)
 		{
 			widgets->pushButtonState[i] = PUSHBUTTON_PRESSED;
-			
-			/* Call callback immediately on first press (matching original FT2 behavior) */
-			if (pb->callbackFuncOnDown != NULL)
+			if (pb->callbackFuncOnDown)
 				pb->callbackFuncOnDown(inst);
-			
 			return (int16_t)i;
 		}
 	}
-
 	return -1;
 }
 
 int16_t testPushButtonMouseRelease(struct ft2_widgets_t *widgets, struct ft2_instance_t *inst, struct ft2_video_t *video,
 	const struct ft2_bmp_t *bmp, int32_t mouseX, int32_t mouseY, int16_t lastButtonID, bool runCallback)
 {
-	if (widgets == NULL || lastButtonID < 0 || lastButtonID >= NUM_PUSHBUTTONS)
+	if (!widgets || lastButtonID < 0 || lastButtonID >= NUM_PUSHBUTTONS)
 		return -1;
-
 	if (!widgets->pushButtonVisible[lastButtonID])
 		return -1;
 
@@ -649,47 +611,42 @@ int16_t testPushButtonMouseRelease(struct ft2_widgets_t *widgets, struct ft2_ins
 	widgets->pushButtonState[lastButtonID] = PUSHBUTTON_UNPRESSED;
 	drawPushButton(widgets, video, bmp, lastButtonID);
 
+	/* Fire callback only if mouse released inside button bounds */
 	if (mouseX >= pb->x && mouseX < pb->x + pb->w &&
 	    mouseY >= pb->y && mouseY < pb->y + pb->h)
 	{
-		if (runCallback && pb->callbackFuncOnUp != NULL)
+		if (runCallback && pb->callbackFuncOnUp)
 			pb->callbackFuncOnUp(inst);
-
 		return lastButtonID;
 	}
-
 	return -1;
 }
 
+/* Handles auto-repeat for held buttons (e.g. arrow spinners). */
 void handlePushButtonWhileMouseDown(struct ft2_widgets_t *widgets, struct ft2_instance_t *inst, struct ft2_video_t *video,
 	const struct ft2_bmp_t *bmp, int32_t mouseX, int32_t mouseY, int16_t buttonID,
 	bool *firstTimePressingButton, uint8_t *buttonCounter)
 {
-	if (widgets == NULL || buttonID < 0 || buttonID >= NUM_PUSHBUTTONS)
+	if (!widgets || buttonID < 0 || buttonID >= NUM_PUSHBUTTONS)
 		return;
-
 	if (!widgets->pushButtonVisible[buttonID])
 		return;
 
 	pushButton_t *pb = &widgets->pushButtons[buttonID];
+	bool mouseOver = (mouseX >= pb->x && mouseX < pb->x + pb->w &&
+	                  mouseY >= pb->y && mouseY < pb->y + pb->h);
 
-	/* Check if mouse is still over the button */
-	bool mouseOverButton = (mouseX >= pb->x && mouseX < pb->x + pb->w &&
-	                        mouseY >= pb->y && mouseY < pb->y + pb->h);
-
-	/* Update button state and visual */
-	uint8_t newState = mouseOverButton ? PUSHBUTTON_PRESSED : PUSHBUTTON_UNPRESSED;
+	uint8_t newState = mouseOver ? PUSHBUTTON_PRESSED : PUSHBUTTON_UNPRESSED;
 	if (widgets->pushButtonState[buttonID] != newState)
 	{
 		widgets->pushButtonState[buttonID] = newState;
 		drawPushButton(widgets, video, bmp, buttonID);
 	}
 
-	/* Handle repeat functionality - match original FT2 behavior from handlePushButtonsWhileMouseDown() */
-	if (widgets->pushButtonState[buttonID] != PUSHBUTTON_PRESSED || pb->callbackFuncOnDown == NULL)
+	if (widgets->pushButtonState[buttonID] != PUSHBUTTON_PRESSED || !pb->callbackFuncOnDown)
 		return;
 
-	/* Pre-delay: long delay before repeat starts (BUTTON_DOWN_DELAY = 25 in original) */
+	/* Initial delay before repeat starts */
 	if (pb->preDelay && *firstTimePressingButton)
 	{
 		if (++(*buttonCounter) >= BUTTON_DOWN_DELAY)
@@ -700,66 +657,65 @@ void handlePushButtonWhileMouseDown(struct ft2_widgets_t *widgets, struct ft2_in
 		return;
 	}
 
-	/* Calculate delay frames for repeat rate */
-	uint8_t buttonDelay = pb->delayFrames;
-	if (buttonDelay == 0)
-		buttonDelay = 1;
-	
-	/* Increment counter and call callback when it wraps */
-	if (++(*buttonCounter) >= buttonDelay)
+	/* Repeat at delayFrames rate */
+	uint8_t delay = pb->delayFrames ? pb->delayFrames : 1;
+	if (++(*buttonCounter) >= delay)
 	{
 		*buttonCounter = 0;
 		pb->callbackFuncOnDown(inst);
 	}
 }
 
+/* ------------------------------------------------------------------------- */
+/*                          LOGO / BADGE BUTTONS                             */
+/* ------------------------------------------------------------------------- */
+
+/* Logo bitmap is 154x32, 4 frames: type0 unpressed, type0 pressed, type1 unpressed, type1 pressed */
 void changeLogoType(ft2_widgets_t *widgets, const struct ft2_bmp_t *bmp, uint8_t logoType)
 {
-	if (bmp == NULL || bmp->ft2LogoBadges == NULL)
+	if (!bmp || !bmp->ft2LogoBadges)
 		return;
 
 	widgets->pushButtons[PB_LOGO].bitmapFlag = true;
-
+	const size_t frameSize = 154 * 32;
 	if (logoType == 0)
 	{
-		widgets->pushButtons[PB_LOGO].bitmapUnpressed = &bmp->ft2LogoBadges[(154 * 32) * 0];
-		widgets->pushButtons[PB_LOGO].bitmapPressed = &bmp->ft2LogoBadges[(154 * 32) * 1];
+		widgets->pushButtons[PB_LOGO].bitmapUnpressed = &bmp->ft2LogoBadges[frameSize * 0];
+		widgets->pushButtons[PB_LOGO].bitmapPressed = &bmp->ft2LogoBadges[frameSize * 1];
 	}
 	else
 	{
-		widgets->pushButtons[PB_LOGO].bitmapUnpressed = &bmp->ft2LogoBadges[(154 * 32) * 2];
-		widgets->pushButtons[PB_LOGO].bitmapPressed = &bmp->ft2LogoBadges[(154 * 32) * 3];
+		widgets->pushButtons[PB_LOGO].bitmapUnpressed = &bmp->ft2LogoBadges[frameSize * 2];
+		widgets->pushButtons[PB_LOGO].bitmapPressed = &bmp->ft2LogoBadges[frameSize * 3];
 	}
 
-	if (widgets != NULL)
+	if (widgets)
 	{
 		widgets->pushButtonState[PB_LOGO] = PUSHBUTTON_UNPRESSED;
 		widgets->pushButtonVisible[PB_LOGO] = true;
 	}
 }
 
+/* Badge bitmap is 25x32, 4 frames: type0 unpressed, type0 pressed, type1 unpressed, type1 pressed */
 void changeBadgeType(ft2_widgets_t *widgets, const struct ft2_bmp_t *bmp, uint8_t badgeType)
 {
-	if (bmp == NULL || bmp->ft2ByBadges == NULL)
+	if (!bmp || !bmp->ft2ByBadges)
 		return;
 
 	widgets->pushButtons[PB_BADGE].bitmapFlag = true;
-
-	/* Each badge is 25x32 pixels, 4 frames total:
-	 * Frame 0: type 0 unpressed, Frame 1: type 0 pressed
-	 * Frame 2: type 1 unpressed, Frame 3: type 1 pressed */
+	const size_t frameSize = 25 * 32;
 	if (badgeType == 0)
 	{
-		widgets->pushButtons[PB_BADGE].bitmapUnpressed = &bmp->ft2ByBadges[(25 * 32) * 0];
-		widgets->pushButtons[PB_BADGE].bitmapPressed = &bmp->ft2ByBadges[(25 * 32) * 1];
+		widgets->pushButtons[PB_BADGE].bitmapUnpressed = &bmp->ft2ByBadges[frameSize * 0];
+		widgets->pushButtons[PB_BADGE].bitmapPressed = &bmp->ft2ByBadges[frameSize * 1];
 	}
 	else
 	{
-		widgets->pushButtons[PB_BADGE].bitmapUnpressed = &bmp->ft2ByBadges[(25 * 32) * 2];
-		widgets->pushButtons[PB_BADGE].bitmapPressed = &bmp->ft2ByBadges[(25 * 32) * 3];
+		widgets->pushButtons[PB_BADGE].bitmapUnpressed = &bmp->ft2ByBadges[frameSize * 2];
+		widgets->pushButtons[PB_BADGE].bitmapPressed = &bmp->ft2ByBadges[frameSize * 3];
 	}
 
-	if (widgets != NULL)
+	if (widgets)
 	{
 		widgets->pushButtonState[PB_BADGE] = PUSHBUTTON_UNPRESSED;
 		widgets->pushButtonVisible[PB_BADGE] = true;

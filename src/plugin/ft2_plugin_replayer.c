@@ -1,10 +1,11 @@
-/**
- * @file ft2_plugin_replayer.c
- * @brief Instance-based replayer core for plugin architecture.
- *
- * This is a complete port of ft2_replayer.c that operates on
- * ft2_instance_t rather than global state.
- */
+/*
+** FT2 Plugin - Replayer Core
+** Instance-based port of ft2_replayer.c operating on ft2_instance_t.
+**
+** This implements the XM playback engine: pattern parsing, effect processing,
+** envelope handling, and sample mixing. Preserves all original FT2 quirks
+** for accurate playback.
+*/
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -17,7 +18,7 @@
 #include "ft2_plugin_config.h"
 #include "../ft2_instance.h"
 
-/* Period lookup tables from ft2_tables_plugin.c */
+/* Period tables from ft2_tables_plugin.c */
 extern const uint16_t linearPeriodLUT[1936];
 extern const uint16_t amigaPeriodLUT[1936];
 extern const uint8_t vibratoTab[32];
@@ -25,28 +26,21 @@ extern const int8_t autoVibSineTab[256];
 extern const uint8_t arpeggioTab[32];
 extern const uint32_t songTickDuration35fp[(255-32)+1];
 
-/* -------------------------------------------------------------------------
- * Helper macros
- * ------------------------------------------------------------------------- */
-
 #define CLAMP(x, low, high) (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
 
-/* -------------------------------------------------------------------------
- * Forward declarations for internal functions
- * ------------------------------------------------------------------------- */
-
+/* Forward declarations */
 static void doVibrato(ft2_instance_t *inst, ft2_channel_t *ch);
 static void portamento(ft2_instance_t *inst, ft2_channel_t *ch);
 static void volSlide(ft2_instance_t *inst, ft2_channel_t *ch, uint8_t param);
 static uint16_t period2NotePeriod(ft2_instance_t *inst, uint16_t period, uint8_t noteOffset, ft2_channel_t *ch);
 
-/* -------------------------------------------------------------------------
- * Voice management
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                          VOICE MANAGEMENT                                 */
+/* ------------------------------------------------------------------------- */
 
 void ft2_stop_voice(ft2_instance_t *inst, int32_t voiceNum)
 {
-	if (inst == NULL || voiceNum < 0 || voiceNum >= FT2_MAX_CHANNELS)
+	if (!inst || voiceNum < 0 || voiceNum >= FT2_MAX_CHANNELS)
 		return;
 
 	/* Clear main voice */
@@ -54,7 +48,7 @@ void ft2_stop_voice(ft2_instance_t *inst, int32_t voiceNum)
 	memset(v, 0, sizeof(ft2_voice_t));
 	v->panning = 128;
 
-	/* Clear fadeout voice too (matches standalone behavior) */
+	/* Clear fadeout voice */
 	v = &inst->voice[FT2_MAX_CHANNELS + voiceNum];
 	memset(v, 0, sizeof(ft2_voice_t));
 	v->panning = 128;
@@ -62,24 +56,22 @@ void ft2_stop_voice(ft2_instance_t *inst, int32_t voiceNum)
 
 void ft2_stop_all_voices(ft2_instance_t *inst)
 {
-	if (inst == NULL)
+	if (!inst)
 		return;
 
-	/* Stop all voices (main + fadeout voices) */
 	for (int32_t i = 0; i < FT2_MAX_CHANNELS * 2; i++)
 	{
 		ft2_voice_t *v = &inst->voice[i];
 		memset(v, 0, sizeof(ft2_voice_t));
 		v->panning = 128;
 	}
-
-	/* Request scope clear (matches standalone stopVoices -> stopAllScopes) */
 	inst->scopesClearRequested = true;
 }
 
+/* Ramps all active voices to zero volume (5ms quick ramp) */
 void ft2_fadeout_all_voices(ft2_instance_t *inst)
 {
-	if (inst == NULL)
+	if (!inst)
 		return;
 
 	for (int32_t i = 0; i < FT2_MAX_CHANNELS; i++)
@@ -88,11 +80,9 @@ void ft2_fadeout_all_voices(ft2_instance_t *inst)
 		if (!v->active || (v->fCurrVolumeL == 0.0f && v->fCurrVolumeR == 0.0f))
 			continue;
 
-		/* Copy to fadeout slot */
+		/* Copy to fadeout slot and setup ramp to zero */
 		ft2_voice_t *f = &inst->voice[FT2_MAX_CHANNELS + i];
 		*f = *v;
-
-		/* Setup volume ramp to zero */
 		f->volumeRampLength = inst->audio.quickVolRampSamples;
 		f->fVolumeLDelta = -f->fCurrVolumeL * inst->audio.fQuickVolRampSamplesMul;
 		f->fVolumeRDelta = -f->fCurrVolumeR * inst->audio.fQuickVolRampSamplesMul;
@@ -100,33 +90,25 @@ void ft2_fadeout_all_voices(ft2_instance_t *inst)
 		f->fTargetVolumeR = 0.0f;
 		f->isFadeOutVoice = true;
 
-		/* Clear main voice */
 		memset(v, 0, sizeof(ft2_voice_t));
 		v->panning = 128;
 	}
-
-	/* Request scope clear */
 	inst->scopesClearRequested = true;
 }
 
 void ft2_stop_sample_voices(ft2_instance_t *inst, ft2_sample_t *smp)
 {
-	if (inst == NULL || smp == NULL)
+	if (!inst || !smp)
 		return;
 
-	/* Stop only voices that are playing the specified sample */
 	for (int32_t i = 0; i < FT2_MAX_CHANNELS * 2; i++)
 	{
 		ft2_voice_t *v = &inst->voice[i];
 		if (!v->active)
 			continue;
 
-		bool isSameSample = false;
-		if (v->base8 != NULL && v->base8 == (const int8_t *)smp->dataPtr)
-			isSameSample = true;
-		else if (v->base16 != NULL && v->base16 == (const int16_t *)smp->dataPtr)
-			isSameSample = true;
-
+		bool isSameSample = (v->base8 && v->base8 == (const int8_t *)smp->dataPtr) ||
+		                    (v->base16 && v->base16 == (const int16_t *)smp->dataPtr);
 		if (isSameSample)
 		{
 			memset(v, 0, sizeof(ft2_voice_t));
@@ -135,15 +117,16 @@ void ft2_stop_sample_voices(ft2_instance_t *inst, ft2_sample_t *smp)
 	}
 }
 
+/* Converts period to 32.32 fixed-point delta for the mixer */
 uint64_t ft2_period_to_delta(ft2_instance_t *inst, uint32_t period)
 {
 	period &= 0xFFFF;
-
-	if (inst == NULL || period == 0)
+	if (!inst || period == 0)
 		return 0;
 
 	if (inst->audio.linearPeriodsFlag)
 	{
+		/* Linear: use log table for accurate frequency calculation */
 		const uint32_t invPeriod = ((12 * 192 * 4) - period) & 0xFFFF;
 		const uint32_t quotient  = invPeriod / (12 * 16 * 4);
 		const uint32_t remainder = invPeriod % (12 * 16 * 4);
@@ -151,20 +134,18 @@ uint64_t ft2_period_to_delta(ft2_instance_t *inst, uint32_t period)
 	}
 	else
 	{
+		/* Amiga: simple division (period = clock / freq) */
 		return inst->replayer.amigaPeriodDiv / period;
 	}
 }
 
+/* Sets up voice for sample playback. Fadeout voice handling is in ft2_voice_update_volumes(). */
 void ft2_trigger_voice(ft2_instance_t *inst, int32_t voiceNum, ft2_sample_t *smp, int32_t startPos)
 {
-	if (inst == NULL || smp == NULL || voiceNum < 0 || voiceNum >= FT2_MAX_CHANNELS)
+	if (!inst || !smp || voiceNum < 0 || voiceNum >= FT2_MAX_CHANNELS)
 		return;
 
 	ft2_voice_t *v = &inst->voice[voiceNum];
-
-	/* Note: fadeout voice is set up in ft2_voice_update_volumes(), not here.
-	** This matches the standalone behavior where voiceUpdateVolumes() handles
-	** fadeout and voiceTrigger() only sets sample-related fields. */
 
 	const int32_t length = smp->length;
 	const int32_t loopStart = smp->loopStart;
@@ -173,31 +154,31 @@ void ft2_trigger_voice(ft2_instance_t *inst, int32_t voiceNum, ft2_sample_t *smp
 	const bool sample16Bit = !!(smp->flags & FT2_SAMPLE_16BIT);
 	uint8_t loopType = smp->flags & (FT2_LOOP_FWD | FT2_LOOP_BIDI);
 
-	if (smp->dataPtr == NULL || length < 1)
+	if (!smp->dataPtr || length < 1)
 	{
-		v->active = false; /* shut down voice (illegal parameters) */
+		v->active = false;
 		return;
 	}
 
-	if (loopLength < 1) /* disable loop if loopLength is below 1 */
+	if (loopLength < 1)
 		loopType = 0;
 
 	if (sample16Bit)
 	{
 		v->base16 = (const int16_t *)smp->dataPtr;
-		v->base8 = NULL; /* Clear unused pointer for correct mixer type detection */
-		v->revBase16 = &v->base16[loopStart + loopEnd]; /* for pingpong loops */
+		v->base8 = NULL;
+		v->revBase16 = &v->base16[loopStart + loopEnd];
 		v->leftEdgeTaps16 = smp->leftEdgeTapSamples16 + FT2_MAX_LEFT_TAPS;
 	}
 	else
 	{
 		v->base8 = smp->dataPtr;
-		v->base16 = NULL; /* Clear unused pointer for correct mixer type detection */
-		v->revBase8 = &v->base8[loopStart + loopEnd]; /* for pingpong loops */
+		v->base16 = NULL;
+		v->revBase8 = &v->base8[loopStart + loopEnd];
 		v->leftEdgeTaps8 = smp->leftEdgeTapSamples8 + FT2_MAX_LEFT_TAPS;
 	}
 
-	v->hasLooped = false; /* for cubic/sinc interpolation special case */
+	v->hasLooped = false;
 	v->samplingBackwards = false;
 	v->loopType = loopType;
 	v->sampleEnd = (loopType == 0) ? length : loopEnd;
@@ -206,14 +187,13 @@ void ft2_trigger_voice(ft2_instance_t *inst, int32_t voiceNum, ft2_sample_t *smp
 	v->position = startPos;
 	v->positionFrac = 0;
 
-	/* if position overflows, shut down voice (f.ex. through 9xx command) */
 	if (v->position >= v->sampleEnd)
 	{
 		v->active = false;
 		return;
 	}
 
-	/* Set mix function offset based on sample type and loop type */
+	/* Mix function offset encodes: bit depth (8/16), loop type, interpolation mode */
 	int32_t mixFuncOffset = ((int32_t)sample16Bit * 3) + loopType;
 	mixFuncOffset += inst->audio.interpolationType * 6;
 	v->mixFuncOffset = (uint8_t)mixFuncOffset;
@@ -221,56 +201,45 @@ void ft2_trigger_voice(ft2_instance_t *inst, int32_t voiceNum, ft2_sample_t *smp
 	v->active = true;
 }
 
+/* Calculates target L/R volumes from mono volume + panning, sets up volume ramp */
 void ft2_voice_update_volumes(ft2_instance_t *inst, int32_t voiceNum, uint8_t status)
 {
-	if (inst == NULL || voiceNum < 0 || voiceNum >= FT2_MAX_CHANNELS)
+	if (!inst || voiceNum < 0 || voiceNum >= FT2_MAX_CHANNELS)
 		return;
 
 	ft2_voice_t *v = &inst->voice[voiceNum];
 
+	/* Apply sqrt panning law */
 	v->fTargetVolumeL = v->fVolume * inst->fSqrtPanningTable[256 - v->panning];
 	v->fTargetVolumeR = v->fVolume * inst->fSqrtPanningTable[v->panning];
 
 	if (!inst->audio.volumeRampingFlag)
 	{
-		/* Volume ramping is disabled, set volume directly */
 		v->fCurrVolumeL = v->fTargetVolumeL;
 		v->fCurrVolumeR = v->fTargetVolumeR;
 		v->volumeRampLength = 0;
 		return;
 	}
 
-	/* Now we need to handle volume ramping */
-
 	const bool voiceTriggerFlag = !!(status & FT2_CS_TRIGGER_VOICE);
 	if (voiceTriggerFlag)
 	{
-		/* Voice is about to start, ramp out/in at the same time */
-
+		/* On retrigger: copy old voice to fadeout slot, start new voice from zero */
 		if (v->fCurrVolumeL > 0.0f || v->fCurrVolumeR > 0.0f)
 		{
-			/* Setup fadeout voice */
 			ft2_voice_t *f = &inst->voice[FT2_MAX_CHANNELS + voiceNum];
-
-			*f = *v; /* Copy current voice to new fadeout-ramp voice */
-
-			const float fVolumeLDiff = 0.0f - f->fCurrVolumeL;
-			const float fVolumeRDiff = 0.0f - f->fCurrVolumeR;
-
-			f->volumeRampLength = inst->audio.quickVolRampSamples; /* 5ms */
-			f->fVolumeLDelta = fVolumeLDiff * inst->audio.fQuickVolRampSamplesMul;
-			f->fVolumeRDelta = fVolumeRDiff * inst->audio.fQuickVolRampSamplesMul;
-
+			*f = *v;
+			f->volumeRampLength = inst->audio.quickVolRampSamples;
+			f->fVolumeLDelta = -f->fCurrVolumeL * inst->audio.fQuickVolRampSamplesMul;
+			f->fVolumeRDelta = -f->fCurrVolumeR * inst->audio.fQuickVolRampSamplesMul;
 			f->isFadeOutVoice = true;
 		}
-
-		/* Make current voice fade in from zero when it starts */
 		v->fCurrVolumeL = v->fCurrVolumeR = 0.0f;
 	}
 
 	if (!voiceTriggerFlag && v->fTargetVolumeL == v->fCurrVolumeL && v->fTargetVolumeR == v->fCurrVolumeR)
 	{
-		v->volumeRampLength = 0; /* No ramp needed for now */
+		v->volumeRampLength = 0;
 	}
 	else
 	{
@@ -278,14 +247,14 @@ void ft2_voice_update_volumes(ft2_instance_t *inst, int32_t voiceNum, uint8_t st
 		const float fVolumeRDiff = v->fTargetVolumeR - v->fCurrVolumeR;
 
 		float fRampLengthMul;
-		if (status & FT2_CS_USE_QUICK_VOLRAMP) /* 5ms duration */
+		if (status & FT2_CS_USE_QUICK_VOLRAMP)
 		{
 			v->volumeRampLength = inst->audio.quickVolRampSamples;
 			fRampLengthMul = inst->audio.fQuickVolRampSamplesMul;
 		}
-		else /* Duration of a tick */
-	{
-		v->volumeRampLength = inst->audio.samplesPerTickInt;
+		else
+		{
+			v->volumeRampLength = inst->audio.samplesPerTickInt;
 			fRampLengthMul = inst->audio.fSamplesPerTickIntMul;
 		}
 
@@ -294,13 +263,14 @@ void ft2_voice_update_volumes(ft2_instance_t *inst, int32_t voiceNum, uint8_t st
 	}
 }
 
-/* -------------------------------------------------------------------------
- * Volume ramp reset (called at start of each tick)
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                            BPM / TIMING                                   */
+/* ------------------------------------------------------------------------- */
 
+/* Snaps current volume to target (called at tick start to finalize previous ramps) */
 void ft2_reset_ramp_volumes(ft2_instance_t *inst)
 {
-	if (inst == NULL)
+	if (!inst)
 		return;
 
 	ft2_voice_t *v = inst->voice;
@@ -312,64 +282,50 @@ void ft2_reset_ramp_volumes(ft2_instance_t *inst)
 	}
 }
 
-/* -------------------------------------------------------------------------
- * BPM/Tempo management
- * ------------------------------------------------------------------------- */
-
 void ft2_set_bpm(ft2_instance_t *inst, int32_t bpm)
 {
-	if (inst == NULL)
+	if (!inst)
 		return;
 
-	if (bpm < FT2_MIN_BPM)
-		bpm = FT2_MIN_BPM;
-	else if (bpm > FT2_MAX_BPM)
-		bpm = FT2_MAX_BPM;
-
+	bpm = CLAMP(bpm, FT2_MIN_BPM, FT2_MAX_BPM);
 	inst->replayer.song.BPM = bpm;
 	ft2_instance_init_bpm_vars(inst);
 }
 
 void ft2_set_interpolation(ft2_instance_t *inst, uint8_t type)
 {
-	if (inst == NULL)
+	if (!inst)
 		return;
-	
-	/* Clamp to valid range */
 	if (type >= FT2_NUM_INTERP_MODES)
 		type = FT2_INTERP_LINEAR;
-	
 	inst->audio.interpolationType = type;
 }
 
-/* Update sinc LUT pointer for a voice based on its delta */
+/* Selects appropriate sinc kernel based on playback rate (delta) */
 static void updateVoiceSincLUT(ft2_instance_t *inst, ft2_voice_t *v)
 {
 	if (inst->audio.interpolationType != FT2_INTERP_SINC8 &&
 	    inst->audio.interpolationType != FT2_INTERP_SINC16)
 		return;
-	
+
 	ft2_interp_tables_t *tables = ft2_interp_tables_get();
-	if (tables == NULL)
+	if (!tables)
 		return;
-	
+
 	bool is16Point;
 	v->fSincLUT = ft2_select_sinc_kernel(v->delta, tables, &is16Point);
-	
-	/* Override interpolation type based on selected kernel */
-	/* This is handled per-voice for sinc since kernel selection depends on delta */
 }
 
-/* -------------------------------------------------------------------------
- * Key off and trigger helpers
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                       KEY OFF / TRIGGER HELPERS                           */
+/* ------------------------------------------------------------------------- */
 
 static void keyOff(ft2_instance_t *inst, ft2_channel_t *ch)
 {
 	ch->keyOff = true;
 
 	ft2_instr_t *ins = ch->instrPtr;
-	if (ins == NULL)
+	if (!ins)
 		return;
 
 	if (ins->volEnvFlags & FT2_ENV_ENABLED)
@@ -384,28 +340,26 @@ static void keyOff(ft2_instance_t *inst, ft2_channel_t *ch)
 		ch->status |= FT2_CS_UPDATE_VOL | FT2_CS_USE_QUICK_VOLRAMP;
 	}
 
-	if (!(ins->panEnvFlags & FT2_ENV_ENABLED)) // FT2 logic bug!
+	/* FT2 bug: checks volEnvFlags instead of panEnvFlags for panning envelope! */
+	if (!(ins->panEnvFlags & FT2_ENV_ENABLED))
 	{
 		if (ch->panEnvTick >= (uint16_t)ins->panEnvPoints[ch->panEnvPos][0])
 			ch->panEnvTick = ins->panEnvPoints[ch->panEnvPos][0] - 1;
 	}
 
-	/* MIDI Output - send note off if instrument has midiOn enabled */
+	/* MIDI output: note off */
 	if (ins->midiOn && ch->midiNoteActive)
 	{
-		ft2_midi_event_t offEvent;
+		ft2_midi_event_t offEvent = {0};
 		offEvent.type = FT2_MIDI_NOTE_OFF;
 		offEvent.channel = ins->midiChannel;
 		offEvent.note = ch->lastMidiNote;
-		offEvent.velocity = 0;
-		offEvent.program = 0;
-		offEvent.samplePos = 0;
 		ft2_midi_queue_push(inst, &offEvent);
-
 		ch->midiNoteActive = false;
 	}
 }
 
+/* Restores volume/pan from sample defaults (on instrument number entry) */
 static void resetVolumes(ft2_channel_t *ch)
 {
 	ch->realVol = ch->oldVol;
@@ -414,6 +368,7 @@ static void resetVolumes(ft2_channel_t *ch)
 	ch->status |= FT2_CS_UPDATE_VOL | FT2_CS_UPDATE_PAN | FT2_CS_USE_QUICK_VOLRAMP;
 }
 
+/* Resets envelopes, fadeout, and auto-vibrato for new note */
 static void triggerInstrument(ft2_channel_t *ch)
 {
 	if (!(ch->vibTremCtrl & 0x04)) ch->vibratoPos = 0;
@@ -424,64 +379,56 @@ static void triggerInstrument(ft2_channel_t *ch)
 	ch->keyOff = false;
 
 	ft2_instr_t *ins = ch->instrPtr;
-	if (ins != NULL)
+	if (!ins)
+		return;
+
+	if (ins->volEnvFlags & FT2_ENV_ENABLED)
 	{
-		// reset volume envelope
-		if (ins->volEnvFlags & FT2_ENV_ENABLED)
+		ch->volEnvTick = 65535;
+		ch->volEnvPos = 0;
+	}
+
+	if (ins->panEnvFlags & FT2_ENV_ENABLED)
+	{
+		ch->panEnvTick = 65535;
+		ch->panEnvPos = 0;
+	}
+
+	ch->fadeoutSpeed = ins->fadeout;
+	ch->fadeoutVol = 32768;
+
+	if (ins->autoVibDepth > 0)
+	{
+		ch->autoVibPos = 0;
+		if (ins->autoVibSweep > 0)
 		{
-			ch->volEnvTick = 65535;
-			ch->volEnvPos = 0;
+			ch->autoVibAmp = 0;
+			ch->autoVibSweep = (ins->autoVibDepth << 8) / ins->autoVibSweep;
 		}
-
-		// reset panning envelope
-		if (ins->panEnvFlags & FT2_ENV_ENABLED)
+		else
 		{
-			ch->panEnvTick = 65535;
-			ch->panEnvPos = 0;
-		}
-
-		// reset fadeout
-		ch->fadeoutSpeed = ins->fadeout;
-		ch->fadeoutVol = 32768;
-
-		// reset auto-vibrato
-		if (ins->autoVibDepth > 0)
-		{
-			ch->autoVibPos = 0;
-			if (ins->autoVibSweep > 0)
-			{
-				ch->autoVibAmp = 0;
-				ch->autoVibSweep = (ins->autoVibDepth << 8) / ins->autoVibSweep;
-			}
-			else
-			{
-				ch->autoVibAmp = ins->autoVibDepth << 8;
-				ch->autoVibSweep = 0;
-			}
+			ch->autoVibAmp = ins->autoVibDepth << 8;
+			ch->autoVibSweep = 0;
 		}
 	}
 }
 
-/* -------------------------------------------------------------------------
- * Period/note helpers
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                           PERIOD / NOTE HELPERS                           */
+/* ------------------------------------------------------------------------- */
 
 static uint16_t getNotePeriod(ft2_instance_t *inst, int8_t note, int8_t finetune)
 {
-	if (note < 0)
-		note = 0;
-	else if (note >= 10 * 12)
-		note = (10 * 12) - 1;
+	if (note < 0) note = 0;
+	else if (note >= 10 * 12) note = (10 * 12) - 1;
 
 	const int32_t index = ((note % 12) << 4) + ((finetune >> 3) + 16);
 	const int32_t octave = note / 12;
 
-	if (inst->audio.linearPeriodsFlag)
-		return linearPeriodLUT[index] >> octave;
-	else
-		return amigaPeriodLUT[index] >> octave;
+	return (inst->audio.linearPeriodsFlag ? linearPeriodLUT : amigaPeriodLUT)[index] >> octave;
 }
 
+/* Binary search for period -> note, then applies offset (for arpeggio/porta) */
 static uint16_t period2NotePeriod(ft2_instance_t *inst, uint16_t period, uint8_t noteOffset, ft2_channel_t *ch)
 {
 	const int32_t fineTune = ((int8_t)ch->finetune >> 3) + 16;
@@ -493,10 +440,8 @@ static uint16_t period2NotePeriod(ft2_instance_t *inst, uint16_t period, uint8_t
 	for (int32_t i = 0; i < 8; i++)
 	{
 		int32_t tmpPeriod = (((loPeriod + hiPeriod) >> 1) & ~15) + fineTune;
-
 		int32_t lookUp = tmpPeriod - 8;
-		if (lookUp < 0)
-			lookUp = 0;
+		if (lookUp < 0) lookUp = 0;
 
 		if (period >= lut[lookUp])
 			hiPeriod = (tmpPeriod - fineTune) & ~15;
@@ -511,9 +456,9 @@ static uint16_t period2NotePeriod(ft2_instance_t *inst, uint16_t period, uint8_t
 	return lut[tmpPeriod];
 }
 
-/* -------------------------------------------------------------------------
- * Trigger note
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                             TRIGGER NOTE                                  */
+/* ------------------------------------------------------------------------- */
 
 static void triggerNote(ft2_instance_t *inst, uint8_t note, uint8_t efx, uint8_t efxData, ft2_channel_t *ch)
 {
@@ -526,34 +471,30 @@ static void triggerNote(ft2_instance_t *inst, uint8_t note, uint8_t efx, uint8_t
 	if (note == 0)
 	{
 		note = ch->noteNum;
-		if (note == 0)
-			return;
+		if (note == 0) return;
 	}
 
 	ch->noteNum = note;
 
 	ft2_instr_t *ins = inst->replayer.instr[ch->instrNum];
-	if (ins == NULL)
-		ins = inst->replayer.instr[0];
+	if (!ins) ins = inst->replayer.instr[0];
 
 	ch->instrPtr = ins;
 	ch->mute = ins ? ins->mute : false;
 
-	if (note > 96)
-		note = 96;
+	if (note > 96) note = 96;
 
 	ch->smpNum = ins ? (ins->note2SampleLUT[note - 1] & 0xF) : 0;
 	ft2_sample_t *s = ins ? &ins->smp[ch->smpNum] : NULL;
-
 	ch->smpPtr = s;
-	
+
 	if (s)
 	{
 		ch->relativeNote = s->relativeNote;
 		ch->oldVol = s->volume;
 		ch->oldPan = s->panning;
 
-		if (efx == 0x0E && (efxData & 0xF0) == 0x50) // E5x (Set Finetune)
+		if (efx == 0x0E && (efxData & 0xF0) == 0x50)  /* E5x: Set Finetune */
 			ch->finetune = ((efxData & 0x0F) * 16) - 128;
 		else
 			ch->finetune = s->finetune;
@@ -570,13 +511,12 @@ static void triggerNote(ft2_instance_t *inst, uint8_t note, uint8_t efx, uint8_t
 		ch->outPeriod = ch->realPeriod = lut[noteIndex];
 	}
 
-	ch->status |= FT2_CF_UPDATE_PERIOD | FT2_CS_UPDATE_VOL | FT2_CS_UPDATE_PAN | 
+	ch->status |= FT2_CF_UPDATE_PERIOD | FT2_CS_UPDATE_VOL | FT2_CS_UPDATE_PAN |
 	              FT2_CS_TRIGGER_VOICE | FT2_CS_USE_QUICK_VOLRAMP;
 
-	if (efx == 9) // 9xx (Set Sample Offset)
+	if (efx == 9)  /* 9xx: Sample Offset */
 	{
-		if (efxData > 0)
-			ch->sampleOffset = efxData;
+		if (efxData > 0) ch->sampleOffset = efxData;
 		ch->smpStartPos = ch->sampleOffset << 8;
 	}
 	else
@@ -584,36 +524,26 @@ static void triggerNote(ft2_instance_t *inst, uint8_t note, uint8_t efx, uint8_t
 		ch->smpStartPos = 0;
 	}
 
-	/* MIDI Output - send note on if instrument has midiOn enabled */
-	if (ins != NULL && ins->midiOn && !ins->mute)
+	/* MIDI output: note on (FT2 note 48 = C-4 = MIDI 60) */
+	if (ins && ins->midiOn && !ins->mute)
 	{
-		/* Convert FT2 note (1-96) to MIDI note (0-127) */
-		/* FT2 note 48 = C-4 = MIDI 60, so: midiNote = ft2Note + 12 */
-		int midiNote = finalNote + 11;  /* Match offset from ft2_midi.c */
+		int midiNote = finalNote + 11;
 		if (midiNote >= 0 && midiNote <= 127)
 		{
-			/* Send note off for previous note on this channel's MIDI channel */
 			if (ch->midiNoteActive && ch->lastMidiNote != (uint8_t)midiNote)
 			{
-				ft2_midi_event_t offEvent;
+				ft2_midi_event_t offEvent = {0};
 				offEvent.type = FT2_MIDI_NOTE_OFF;
 				offEvent.channel = ins->midiChannel;
 				offEvent.note = ch->lastMidiNote;
-				offEvent.velocity = 0;
-				offEvent.program = 0;
-				offEvent.samplePos = 0;
 				ft2_midi_queue_push(inst, &offEvent);
 			}
 
-			/* Send note on */
-			ft2_midi_event_t onEvent;
+			ft2_midi_event_t onEvent = {0};
 			onEvent.type = FT2_MIDI_NOTE_ON;
 			onEvent.channel = ins->midiChannel;
 			onEvent.note = (uint8_t)midiNote;
-			/* Convert FT2 volume (0-64) to MIDI velocity (0-127) */
 			onEvent.velocity = (ch->outVol > 0) ? (uint8_t)((ch->outVol * 127) / 64) : 100;
-			onEvent.program = 0;
-			onEvent.samplePos = 0;
 			ft2_midi_queue_push(inst, &onEvent);
 
 			ch->lastMidiNote = (uint8_t)midiNote;
@@ -622,9 +552,9 @@ static void triggerNote(ft2_instance_t *inst, uint8_t note, uint8_t efx, uint8_t
 	}
 }
 
-/* -------------------------------------------------------------------------
- * Effects - Tick Zero
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                        EFFECTS - TICK ZERO                                */
+/* ------------------------------------------------------------------------- */
 
 static void finePitchSlideUp(ft2_instance_t *inst, ft2_channel_t *ch, uint8_t param)
 {
@@ -1252,9 +1182,9 @@ static void handleEffects_TickZero(ft2_instance_t *inst, ft2_channel_t *ch)
 	handleMoreEffects_TickZero(inst, ch);
 }
 
-/* -------------------------------------------------------------------------
- * Effects - Tick Non-Zero
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                       EFFECTS - TICK NON-ZERO                             */
+/* ------------------------------------------------------------------------- */
 
 static void arpeggio(ft2_instance_t *inst, ft2_channel_t *ch, uint8_t param)
 {
@@ -1416,7 +1346,8 @@ static void tremolo(ft2_instance_t *inst, ft2_channel_t *ch, uint8_t param)
 		case 0: tmpTrem = vibratoTab[tmpTrem]; break;
 		case 1:
 			tmpTrem <<= 3;
-			if ((int8_t)ch->vibratoPos < 0) // FT2 bug
+			/* FT2 bug: uses vibratoPos instead of tremoloPos for sign check */
+			if ((int8_t)ch->vibratoPos < 0)
 				tmpTrem = ~tmpTrem;
 			break;
 		default: tmpTrem = 255; break;
@@ -1676,17 +1607,16 @@ static void handleEffects_TickNonZero(ft2_instance_t *inst, ft2_channel_t *ch)
 	}
 }
 
-/* -------------------------------------------------------------------------
- * Envelope and auto-vibrato processing
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                   ENVELOPE AND AUTO-VIBRATO PROCESSING                    */
+/* ------------------------------------------------------------------------- */
 
 static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 {
 	ft2_instr_t *ins = ch->instrPtr;
-	if (ins == NULL)
-		ins = inst->replayer.instr[0];
+	if (!ins) ins = inst->replayer.instr[0];
 
-	// Fadeout on key off
+	/* Fadeout on key off */
 	if (ch->keyOff)
 	{
 		if (ch->fadeoutSpeed > 0)
@@ -1706,7 +1636,7 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 
 	if (!ch->mute && ins)
 	{
-		// Volume envelope
+		/* Volume envelope */
 		if (ins->volEnvFlags & FT2_ENV_ENABLED)
 		{
 			bool envDidInterpolate = false;
@@ -1806,7 +1736,7 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 		ch->fFinalVol = 0.0f;
 	}
 
-	// Panning envelope
+	/* Panning envelope */
 	if (ins && (ins->panEnvFlags & FT2_ENV_ENABLED))
 	{
 		bool envDidInterpolate = false;
@@ -1895,7 +1825,7 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 		ch->finalPan = ch->outPan;
 	}
 
-	// Auto-vibrato
+	/* Auto-vibrato (instrument-level pitch modulation) */
 	if (ins && ins->autoVibDepth > 0)
 	{
 		uint16_t autoVibAmp;
@@ -1941,10 +1871,11 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 	}
 }
 
-/* -------------------------------------------------------------------------
- * Prepare portamento for note with 3xx/5xx or volume column Fxx
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                           PORTAMENTO SETUP                                */
+/* ------------------------------------------------------------------------- */
 
+/* Sets up portamento target for 3xx/5xx or volume column Fxx */
 static void preparePortamento(ft2_instance_t *inst, ft2_channel_t *ch, ft2_note_t *p, uint8_t instNum)
 {
 	if (p->note > 0)
@@ -1979,9 +1910,9 @@ static void preparePortamento(ft2_instance_t *inst, ft2_channel_t *ch, ft2_note_
 	}
 }
 
-/* -------------------------------------------------------------------------
- * Get new note (tick zero note processing)
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                      TICK ZERO NOTE PROCESSING                            */
+/* ------------------------------------------------------------------------- */
 
 static void getNewNote(ft2_instance_t *inst, ft2_channel_t *ch, ft2_note_t *p)
 {
@@ -2085,9 +2016,9 @@ static void getNewNote(ft2_instance_t *inst, ft2_channel_t *ch, ft2_note_t *p)
 	handleEffects_TickZero(inst, ch);
 }
 
-/* -------------------------------------------------------------------------
- * Get next position
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                         POSITION ADVANCEMENT                              */
+/* ------------------------------------------------------------------------- */
 
 static void getNextPos(ft2_instance_t *inst)
 {
@@ -2150,13 +2081,13 @@ static void getNextPos(ft2_instance_t *inst)
 	}
 }
 
-/* -------------------------------------------------------------------------
- * Main replayer tick
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                          MAIN REPLAYER TICK                               */
+/* ------------------------------------------------------------------------- */
 
 void ft2_replayer_tick(ft2_instance_t *inst)
 {
-	if (inst == NULL)
+	if (!inst)
 		return;
 
 	ft2_replayer_state_t *rep = &inst->replayer;
@@ -2227,13 +2158,13 @@ void ft2_replayer_tick(ft2_instance_t *inst)
 	}
 }
 
-/* -------------------------------------------------------------------------
- * Voice update (channel -> voice)
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                      VOICE UPDATE (CHANNEL -> VOICE)                      */
+/* ------------------------------------------------------------------------- */
 
 void ft2_update_voices(ft2_instance_t *inst)
 {
-	if (inst == NULL)
+	if (!inst)
 		return;
 
 	ft2_replayer_state_t *rep = &inst->replayer;
@@ -2304,13 +2235,14 @@ void ft2_update_voices(ft2_instance_t *inst)
 	}
 }
 
-/* -------------------------------------------------------------------------
- * Voice mixing
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                            VOICE MIXING                                   */
+/* ------------------------------------------------------------------------- */
 
-/* Interpolation helpers */
+/* --- Interpolation functions ---
+** Each takes sample pointer and fractional position, returns normalized float.
+** 8-bit samples normalize to [-1,1] via /128, 16-bit via /32768. */
 
-/* Linear interpolation (2-point) */
 static inline float linearInterp8(const int8_t *s, uint64_t frac)
 {
 	const float f = (float)((uint32_t)(frac) >> 1) * (1.0f / 2147483648.0f);
@@ -2349,7 +2281,7 @@ static inline float cubicInterp16(const int16_t *s, uint64_t frac, const float *
 	return ((s[-1] * t[0]) + (s[0] * t[1]) + (s[1] * t[2]) + (s[2] * t[3])) * (1.0f / 32768.0f);
 }
 
-/* 8-point windowed sinc interpolation */
+/* Windowed sinc (8-point and 16-point versions for low and high frequencies) */
 static inline float sinc8Interp8(const int8_t *s, uint64_t frac, const float *lut)
 {
 	const float *t = lut + (((uint32_t)(frac) >> SINC8_FRACSHIFT) & SINC8_FRACMASK);
@@ -2364,7 +2296,6 @@ static inline float sinc8Interp16(const int16_t *s, uint64_t frac, const float *
 	        (s[1] * t[4]) + (s[2] * t[5]) + (s[3] * t[6]) + (s[4] * t[7])) * (1.0f / 32768.0f);
 }
 
-/* 16-point windowed sinc interpolation */
 static inline float sinc16Interp8(const int8_t *s, uint64_t frac, const float *lut)
 {
 	const float *t = lut + (((uint32_t)(frac) >> SINC16_FRACSHIFT) & SINC16_FRACMASK);
@@ -2383,7 +2314,7 @@ static inline float sinc16Interp16(const int16_t *s, uint64_t frac, const float 
 	        (s[5] * t[12]) + (s[6] * t[13]) + (s[7] * t[14]) + (s[8] * t[15])) * (1.0f / 32768.0f);
 }
 
-/* Sample with interpolation based on mode */
+/* Mode dispatch for interpolation */
 static inline float sampleInterp8(const int8_t *s, uint64_t frac, uint8_t mode, ft2_interp_tables_t *tables, const float *sincLUT)
 {
 	switch (mode)
@@ -2758,9 +2689,10 @@ static void mixVoice16BitBidi(ft2_instance_t *inst, ft2_voice_t *v, uint32_t num
 	v->samplingBackwards = backwards;
 }
 
-/* Silence mix routine - advances sample position without mixing audio.
-** This is called when a voice is active but has zero volume with no ramp.
-** Matches standalone silenceMixRoutine() behavior. */
+/* --- Mix functions ---
+** 6 variants: 8/16-bit x no-loop/forward-loop/bidi-loop */
+
+/* Advances position without mixing (for zero-volume voices) */
 static void silenceMixRoutine(ft2_voice_t *v, int32_t numSamples)
 {
 	const uint64_t samplesToMix64 = (uint64_t)v->delta * (uint32_t)numSamples;
@@ -2816,9 +2748,10 @@ static void silenceMixRoutine(ft2_voice_t *v, int32_t numSamples)
 	v->position = position;
 }
 
+/* Main mixing entry point - mixes all active voices to stereo buffer */
 void ft2_mix_voices(ft2_instance_t *inst, int32_t bufferPos, int32_t samplesToMix)
 {
-	if (inst == NULL || samplesToMix <= 0)
+	if (!inst || samplesToMix <= 0)
 		return;
 
 	for (int32_t i = 0; i < inst->replayer.song.numChannels; i++)
@@ -2903,16 +2836,15 @@ void ft2_mix_voices(ft2_instance_t *inst, int32_t bufferPos, int32_t samplesToMi
 	}
 }
 
+/* Multi-output mixing - routes each channel to its configured output pair */
 void ft2_mix_voices_multiout(ft2_instance_t *inst, int32_t bufferPos, int32_t samplesToMix)
 {
-	if (inst == NULL || samplesToMix <= 0 || !inst->audio.multiOutEnabled)
+	if (!inst || samplesToMix <= 0 || !inst->audio.multiOutEnabled)
 		return;
 
-	/* Save original mix buffer pointers */
 	float *origMixL = inst->audio.fMixBufferL;
 	float *origMixR = inst->audio.fMixBufferR;
 
-	/* Mix each channel's voices to routed output buffer */
 	for (int32_t ch = 0; ch < inst->replayer.song.numChannels && ch < FT2_MAX_CHANNELS; ch++)
 	{
 		/* Route to configured output (0-15 -> Out 1-16) */
@@ -3007,21 +2939,10 @@ void ft2_mix_voices_multiout(ft2_instance_t *inst, int32_t bufferPos, int32_t sa
 	inst->audio.fMixBufferR = origMixR;
 }
 
-/* -------------------------------------------------------------------------
- * Public wrappers for channel state functions (for keyjazz)
- * ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/*                    PUBLIC WRAPPERS (FOR KEYJAZZ)                          */
+/* ------------------------------------------------------------------------- */
 
-void ft2_channel_reset_volumes(ft2_channel_t *ch)
-{
-	resetVolumes(ch);
-}
-
-void ft2_channel_trigger_instrument(ft2_channel_t *ch)
-{
-	triggerInstrument(ch);
-}
-
-void ft2_channel_update_vol_pan_autovib(ft2_instance_t *inst, ft2_channel_t *ch)
-{
-	updateVolPanAutoVib(inst, ch);
-}
+void ft2_channel_reset_volumes(ft2_channel_t *ch)    { resetVolumes(ch); }
+void ft2_channel_trigger_instrument(ft2_channel_t *ch) { triggerInstrument(ch); }
+void ft2_channel_update_vol_pan_autovib(ft2_instance_t *inst, ft2_channel_t *ch) { updateVolPanAutoVib(inst, ch); }

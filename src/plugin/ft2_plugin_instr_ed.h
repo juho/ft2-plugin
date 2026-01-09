@@ -1,6 +1,8 @@
 /**
  * @file ft2_plugin_instr_ed.h
- * @brief Exact port of instrument editor from ft2_inst_ed.c
+ * @brief Instrument editor: vol/pan envelopes, piano, MIDI extension.
+ *
+ * Port of standalone ft2_inst_ed.c with instance-aware state.
  */
 
 #pragma once
@@ -16,46 +18,41 @@ struct ft2_video_t;
 struct ft2_bmp_t;
 struct ft2_instance_t;
 
-/* Instrument editor constants - match original FT2 */
+/* Piano key dimensions */
 #define PIANOKEY_WHITE_W 10
 #define PIANOKEY_WHITE_H 46
 #define PIANOKEY_BLACK_W 7
 #define PIANOKEY_BLACK_H 29
 
-/* Envelope constants */
-#define ENV_WIDTH 333
-#define ENV_HEIGHT 67
-#define VOL_ENV_Y 189
-#define PAN_ENV_Y 276
+/* Envelope area */
+#define ENV_WIDTH      333
+#define ENV_HEIGHT     67
+#define VOL_ENV_Y      189
+#define PAN_ENV_Y      276
 #define ENV_MAX_POINTS 12
 
-/* Envelope flags */
-#define ENV_ENABLED  (1 << 0)
-#define ENV_SUSTAIN  (1 << 1)
-#define ENV_LOOP     (1 << 2)
+/* Envelope flags (bit flags) */
+#define ENV_ENABLED (1 << 0)
+#define ENV_SUSTAIN (1 << 1)
+#define ENV_LOOP    (1 << 2)
 
-/* Piano constants */
-#define PIANO_X 8
-#define PIANO_Y 351
+/* Piano position */
+#define PIANO_X       8
+#define PIANO_Y       351
 #define PIANO_OCTAVES 8
 
-typedef struct ft2_instrument_editor_t
-{
-	/* Envelope dragging state (UI-specific, not in inst->editor) */
+typedef struct ft2_instrument_editor_t {
 	bool draggingVolEnv;
 	bool draggingPanEnv;
-	int32_t saveMouseX;   /* Offset from point center for precise dragging */
+	int32_t saveMouseX;      /* Drag offset from point center */
 	int32_t saveMouseY;
-	
-	/* Piano state */
-	bool pianoKeyStatus[96];
-	bool draggingPiano;   /* For click-drag sample assignment */
-	
-	/* Mouse state */
+	bool pianoKeyStatus[96]; /* Key pressed state */
+	bool draggingPiano;      /* Click-drag sample assignment */
 	int32_t lastMouseX;
 	int32_t lastMouseY;
 } ft2_instrument_editor_t;
 
+/* Init/draw */
 void ft2_instr_ed_init(ft2_instrument_editor_t *editor);
 void ft2_instr_ed_draw(struct ft2_instance_t *inst);
 void ft2_instr_ed_draw_vol_env(struct ft2_instance_t *inst);
@@ -65,7 +62,7 @@ void ft2_instr_ed_draw_note_map(struct ft2_instance_t *inst);
 void ft2_instr_ed_draw_piano(struct ft2_instance_t *inst);
 void updateInstEditor(struct ft2_instance_t *inst);
 
-/* Mouse handling */
+/* Mouse */
 void ft2_instr_ed_mouse_click(struct ft2_instance_t *inst, int x, int y, int button);
 void ft2_instr_ed_mouse_drag(struct ft2_instance_t *inst, int x, int y);
 void ft2_instr_ed_mouse_up(struct ft2_instance_t *inst);
@@ -76,19 +73,19 @@ void hideInstEditor(struct ft2_instance_t *inst);
 void toggleInstEditor(struct ft2_instance_t *inst);
 void exitInstEditor(struct ft2_instance_t *inst);
 
-/* Extended instrument editor */
+/* I.E.Ext (MIDI settings) */
 void showInstEditorExt(struct ft2_instance_t *inst);
 void hideInstEditorExt(struct ft2_instance_t *inst);
 void toggleInstEditorExt(struct ft2_instance_t *inst);
 void drawInstEditorExt(struct ft2_instance_t *inst);
 
-/* Envelope preset helpers */
+/* Envelope presets (left=recall, right=store) */
 void setStdVolEnvelope(struct ft2_instance_t *inst, uint8_t num);
 void setStdPanEnvelope(struct ft2_instance_t *inst, uint8_t num);
 void setOrStoreVolEnvPreset(struct ft2_instance_t *inst, uint8_t num);
 void setOrStorePanEnvPreset(struct ft2_instance_t *inst, uint8_t num);
 
-/* Envelope preset button callbacks */
+/* Preset buttons */
 void pbVolPreDef1(struct ft2_instance_t *inst);
 void pbVolPreDef2(struct ft2_instance_t *inst);
 void pbVolPreDef3(struct ft2_instance_t *inst);
@@ -102,7 +99,7 @@ void pbPanPreDef4(struct ft2_instance_t *inst);
 void pbPanPreDef5(struct ft2_instance_t *inst);
 void pbPanPreDef6(struct ft2_instance_t *inst);
 
-/* Envelope control callbacks */
+/* Envelope point/loop controls */
 void pbVolEnvAdd(struct ft2_instance_t *inst);
 void pbVolEnvDel(struct ft2_instance_t *inst);
 void pbVolEnvSusUp(struct ft2_instance_t *inst);
@@ -120,7 +117,7 @@ void pbPanEnvRepSDown(struct ft2_instance_t *inst);
 void pbPanEnvRepEUp(struct ft2_instance_t *inst);
 void pbPanEnvRepEDown(struct ft2_instance_t *inst);
 
-/* Sample parameter button callbacks */
+/* Sample/instrument value buttons */
 void pbInstVolDown(struct ft2_instance_t *inst);
 void pbInstVolUp(struct ft2_instance_t *inst);
 void pbInstPanDown(struct ft2_instance_t *inst);
@@ -136,16 +133,14 @@ void pbInstVibDepthUp(struct ft2_instance_t *inst);
 void pbInstVibSweepDown(struct ft2_instance_t *inst);
 void pbInstVibSweepUp(struct ft2_instance_t *inst);
 
-/* Relative note button callbacks */
+/* Relative note */
 void pbInstOctUp(struct ft2_instance_t *inst);
 void pbInstOctDown(struct ft2_instance_t *inst);
 void pbInstHalftoneUp(struct ft2_instance_t *inst);
 void pbInstHalftoneDown(struct ft2_instance_t *inst);
-
-/* Instrument editor exit */
 void pbInstExit(struct ft2_instance_t *inst);
 
-/* Instrument editor extension button callbacks */
+/* I.E.Ext MIDI buttons */
 void pbInstExtMidiChDown(struct ft2_instance_t *inst);
 void pbInstExtMidiChUp(struct ft2_instance_t *inst);
 void pbInstExtMidiPrgDown(struct ft2_instance_t *inst);
@@ -153,7 +148,7 @@ void pbInstExtMidiPrgUp(struct ft2_instance_t *inst);
 void pbInstExtMidiBendDown(struct ft2_instance_t *inst);
 void pbInstExtMidiBendUp(struct ft2_instance_t *inst);
 
-/* Instrument scrollbar callbacks */
+/* Scrollbar callbacks */
 void sbInstVol(struct ft2_instance_t *inst, uint32_t pos);
 void sbInstPan(struct ft2_instance_t *inst, uint32_t pos);
 void sbInstFtune(struct ft2_instance_t *inst, uint32_t pos);
@@ -165,7 +160,7 @@ void sbInstExtMidiCh(struct ft2_instance_t *inst, uint32_t pos);
 void sbInstExtMidiPrg(struct ft2_instance_t *inst, uint32_t pos);
 void sbInstExtMidiBend(struct ft2_instance_t *inst, uint32_t pos);
 
-/* Instrument checkbox callbacks */
+/* Checkbox callbacks */
 void cbInstVEnv(struct ft2_instance_t *inst);
 void cbInstVEnvSus(struct ft2_instance_t *inst);
 void cbInstVEnvLoop(struct ft2_instance_t *inst);
@@ -175,7 +170,7 @@ void cbInstPEnvLoop(struct ft2_instance_t *inst);
 void cbInstExtMidi(struct ft2_instance_t *inst);
 void cbInstExtMute(struct ft2_instance_t *inst);
 
-/* Instrument radio button callbacks */
+/* Vibrato waveform radio buttons */
 void rbInstWaveSine(struct ft2_instance_t *inst);
 void rbInstWaveSquare(struct ft2_instance_t *inst);
 void rbInstWaveRampDown(struct ft2_instance_t *inst);

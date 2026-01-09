@@ -1,10 +1,8 @@
-/**
- * @file ft2_plugin_radiobuttons.c
- * @brief Radio button implementation for the FT2 plugin UI.
- * 
- * Ported from ft2_radiobuttons.c - exact coordinates preserved.
- * Modified for multi-instance support: visibility/state stored per-instance.
- */
+/*
+** FT2 Plugin - Radio Button Widget
+** Ported from ft2_radiobuttons.c with exact coordinates preserved.
+** Per-instance visibility/state stored in ft2_widgets_t.
+*/
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -17,10 +15,13 @@
 #include "ft2_plugin_callbacks.h"
 #include "ft2_plugin_palette.h"
 
+/* ------------------------------------------------------------------------- */
+/*                       RADIO BUTTON DEFINITION TABLE                       */
+/* ------------------------------------------------------------------------- */
+
 radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 {
-	/* Help screen */
-	/*x, y,   w,  group,         callback */
+	/* Help screen - x, y, clickAreaWidth, group, callback */
 	{ 5, 18,  69, RB_GROUP_HELP, NULL },  /* Features */
 	{ 5, 34,  60, RB_GROUP_HELP, NULL },  /* Effects */
 	{ 5, 50,  86, RB_GROUP_HELP, NULL },  /* Keybindings */
@@ -206,24 +207,26 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 	{ 218, 18, 48, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL },  /* RB_CONFIG_MIDI_NOTES */
 	{ 281, 18, 65, RB_GROUP_CONFIG_MIDI_TRIGGER, NULL },  /* RB_CONFIG_MIDI_PATTERNS */
 
-	/* Config MIDI recording priority */
-	/*x,   y,   w,  group,                          callback */
-	{ 226, 146, 48, RB_GROUP_CONFIG_MIDI_PRIORITY, NULL },  /* RB_CONFIG_MIDI_PITCH_PRIO */
-	{ 274, 146, 90, RB_GROUP_CONFIG_MIDI_PRIORITY, NULL }   /* RB_CONFIG_MIDI_MOD_PRIO */
+	/* MIDI recording priority */
+	{ 226, 146, 48, RB_GROUP_CONFIG_MIDI_PRIORITY, NULL },
+	{ 274, 146, 90, RB_GROUP_CONFIG_MIDI_PRIORITY, NULL }
 };
 
+/* ------------------------------------------------------------------------- */
+/*                            INITIALIZATION                                 */
+/* ------------------------------------------------------------------------- */
+
+/* Wires callbacks to radio buttons. Called once at startup. */
 void initRadioButtons(void)
 {
-	/* Initialize callbacks only (visibility/state now per-instance in ft2_widgets_t) */
-
-	/* Wire up config screen tab callbacks */
+	/* Config tab selection */
 	radioButtons[RB_CONFIG_AUDIO].callbackFunc = rbConfigAudio;
 	radioButtons[RB_CONFIG_LAYOUT].callbackFunc = rbConfigLayout;
 	radioButtons[RB_CONFIG_MISC].callbackFunc = rbConfigMiscellaneous;
 	radioButtons[RB_CONFIG_IO_ROUTING].callbackFunc = rbConfigIORouting;
 	radioButtons[RB_CONFIG_MIDI].callbackFunc = rbConfigMidiInput;
 
-	/* Wire up interpolation callbacks */
+	/* Interpolation modes */
 	radioButtons[RB_CONFIG_AUDIO_INTRP_NONE].callbackFunc = rbConfigIntrpNone;
 	radioButtons[RB_CONFIG_AUDIO_INTRP_LINEAR].callbackFunc = rbConfigIntrpLinear;
 	radioButtons[RB_CONFIG_AUDIO_INTRP_QUADRATIC].callbackFunc = rbConfigIntrpQuadratic;
@@ -231,30 +234,30 @@ void initRadioButtons(void)
 	radioButtons[RB_CONFIG_AUDIO_INTRP_SINC8].callbackFunc = rbConfigIntrpSinc8;
 	radioButtons[RB_CONFIG_AUDIO_INTRP_SINC16].callbackFunc = rbConfigIntrpSinc16;
 
-	/* Wire up scope style callbacks */
+	/* Scope style */
 	radioButtons[RB_CONFIG_SCOPE_STANDARD].callbackFunc = rbConfigScopeFT2;
 	radioButtons[RB_CONFIG_SCOPE_LINED].callbackFunc = rbConfigScopeLined;
 
-	/* Wire up pattern channel callbacks */
+	/* Pattern channel count */
 	radioButtons[RB_CONFIG_PATT_4CHANS].callbackFunc = rbConfigPatt4Chans;
 	radioButtons[RB_CONFIG_PATT_6CHANS].callbackFunc = rbConfigPatt6Chans;
 	radioButtons[RB_CONFIG_PATT_8CHANS].callbackFunc = rbConfigPatt8Chans;
 	radioButtons[RB_CONFIG_PATT_12CHANS].callbackFunc = rbConfigPatt12Chans;
 
-	/* Wire up font callbacks */
+	/* Font selection */
 	radioButtons[RB_CONFIG_FONT_CAPITALS].callbackFunc = rbConfigFontCapitals;
 	radioButtons[RB_CONFIG_FONT_LOWERCASE].callbackFunc = rbConfigFontLowerCase;
 	radioButtons[RB_CONFIG_FONT_FUTURE].callbackFunc = rbConfigFontFuture;
 	radioButtons[RB_CONFIG_FONT_BOLD].callbackFunc = rbConfigFontBold;
 
-	/* Wire up help screen subject callbacks */
+	/* Help screen topics */
 	radioButtons[RB_HELP_FEATURES].callbackFunc = cbHelpFeatures;
 	radioButtons[RB_HELP_EFFECTS].callbackFunc = cbHelpEffects;
 	radioButtons[RB_HELP_KEYBINDINGS].callbackFunc = cbHelpKeybindings;
 	radioButtons[RB_HELP_HOWTO].callbackFunc = cbHelpHowToUseFT2;
 	radioButtons[RB_HELP_PLUGIN].callbackFunc = cbHelpPlugin;
 
-	/* Wire up palette entry callbacks */
+	/* Palette color entries */
 	radioButtons[RB_CONFIG_PAL_PATTEXT].callbackFunc = rbConfigPalPatternText;
 	radioButtons[RB_CONFIG_PAL_BLOCKMARK].callbackFunc = rbConfigPalBlockMark;
 	radioButtons[RB_CONFIG_PAL_TEXTONBLOCK].callbackFunc = rbConfigPalTextOnBlock;
@@ -262,7 +265,7 @@ void initRadioButtons(void)
 	radioButtons[RB_CONFIG_PAL_DESKTOP].callbackFunc = rbConfigPalDesktop;
 	radioButtons[RB_CONFIG_PAL_BUTTONS].callbackFunc = rbConfigPalButtons;
 
-	/* Wire up palette preset callbacks */
+	/* Palette presets */
 	radioButtons[RB_CONFIG_PAL_ARCTIC].callbackFunc = rbConfigPalArctic;
 	radioButtons[RB_CONFIG_PAL_LITHE_DARK].callbackFunc = rbConfigPalLitheDark;
 	radioButtons[RB_CONFIG_PAL_AURORA_BOREALIS].callbackFunc = rbConfigPalAuroraBorealis;
@@ -276,84 +279,84 @@ void initRadioButtons(void)
 	radioButtons[RB_CONFIG_PAL_JUNGLE].callbackFunc = rbConfigPalJungle;
 	radioButtons[RB_CONFIG_PAL_USER].callbackFunc = rbConfigPalUserDefined;
 
-	/* Wire up file sorting callbacks */
+	/* File sorting */
 	radioButtons[RB_CONFIG_FILESORT_EXT].callbackFunc = rbFileSortExt;
 	radioButtons[RB_CONFIG_FILESORT_NAME].callbackFunc = rbFileSortName;
 
-	/* Wire up frequency slides callbacks */
+	/* Frequency slide mode */
 	radioButtons[RB_CONFIG_FREQ_AMIGA].callbackFunc = rbConfigFreqSlidesAmiga;
 	radioButtons[RB_CONFIG_FREQ_LINEAR].callbackFunc = rbConfigFreqSlidesLinear;
 
-	/* Wire up MIDI trigger mode callbacks */
+	/* MIDI options */
 	radioButtons[RB_CONFIG_MIDI_NOTES].callbackFunc = rbConfigMidiTriggerNotes;
 	radioButtons[RB_CONFIG_MIDI_PATTERNS].callbackFunc = rbConfigMidiTriggerPatterns;
-
-	/* Wire up MIDI recording priority callbacks */
 	radioButtons[RB_CONFIG_MIDI_PITCH_PRIO].callbackFunc = rbConfigMidiPitchPrio;
 	radioButtons[RB_CONFIG_MIDI_MOD_PRIO].callbackFunc = rbConfigMidiModPrio;
 }
 
+/* ------------------------------------------------------------------------- */
+/*                               DRAWING                                     */
+/* ------------------------------------------------------------------------- */
+
 void drawRadioButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t radioButtonID)
 {
-	if (widgets == NULL || radioButtonID >= NUM_RADIOBUTTONS)
+	if (!widgets || radioButtonID >= NUM_RADIOBUTTONS)
 		return;
-
 	if (!widgets->radioButtonVisible[radioButtonID])
 		return;
 
 	radioButton_t *rb = &radioButtons[radioButtonID];
 	uint8_t state = widgets->radioButtonState[radioButtonID];
 
-	if (bmp == NULL || bmp->radiobuttonGfx == NULL)
+	if (!bmp || !bmp->radiobuttonGfx)
 	{
-		/* Fallback: draw simple radio button */
+		/* Fallback: procedural circle-ish button */
 		fillRect(video, rb->x, rb->y, RADIOBUTTON_W, RADIOBUTTON_H, PAL_BUTTONS);
-
-		/* Draw circle-ish border */
 		hLine(video, rb->x + 2, rb->y, RADIOBUTTON_W - 4, PAL_BUTTON2);
 		hLine(video, rb->x + 2, rb->y + RADIOBUTTON_H - 1, RADIOBUTTON_W - 4, PAL_BUTTON1);
 		vLine(video, rb->x, rb->y + 2, RADIOBUTTON_H - 4, PAL_BUTTON2);
 		vLine(video, rb->x + RADIOBUTTON_W - 1, rb->y + 2, RADIOBUTTON_H - 4, PAL_BUTTON1);
-
 		if (state == RADIOBUTTON_CHECKED)
-		{
-			/* Draw dot in center */
 			fillRect(video, rb->x + 3, rb->y + 3, 5, 5, PAL_FORGRND);
-		}
 		return;
 	}
 
-	/* Use bitmap graphics */
+	/* Bitmap: 3 frames (unchecked, checked, pressed) */
 	const uint8_t *gfxPtr = &bmp->radiobuttonGfx[state * (RADIOBUTTON_W * RADIOBUTTON_H)];
 	blitFast(video, rb->x, rb->y, gfxPtr, RADIOBUTTON_W, RADIOBUTTON_H);
 }
 
+/* ------------------------------------------------------------------------- */
+/*                            SHOW / HIDE                                    */
+/* ------------------------------------------------------------------------- */
+
 void showRadioButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t radioButtonID)
 {
-	if (widgets == NULL || radioButtonID >= NUM_RADIOBUTTONS)
+	if (!widgets || radioButtonID >= NUM_RADIOBUTTONS)
 		return;
-
 	widgets->radioButtonVisible[radioButtonID] = true;
 	drawRadioButton(widgets, video, bmp, radioButtonID);
 }
 
 void hideRadioButton(struct ft2_widgets_t *widgets, uint16_t radioButtonID)
 {
-	if (widgets == NULL || radioButtonID >= NUM_RADIOBUTTONS)
+	if (!widgets || radioButtonID >= NUM_RADIOBUTTONS)
 		return;
-
 	widgets->radioButtonState[radioButtonID] = RADIOBUTTON_UNCHECKED;
 	widgets->radioButtonVisible[radioButtonID] = false;
 }
 
+/* ------------------------------------------------------------------------- */
+/*                         GROUP STATE MANAGEMENT                            */
+/* ------------------------------------------------------------------------- */
+
+/* Checks one button and unchecks others in the same group */
 void checkRadioButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t radioButtonID)
 {
-	if (widgets == NULL || radioButtonID >= NUM_RADIOBUTTONS)
+	if (!widgets || radioButtonID >= NUM_RADIOBUTTONS)
 		return;
 
 	uint16_t group = radioButtons[radioButtonID].group;
-
-	/* Uncheck all in same group */
 	for (int i = 0; i < NUM_RADIOBUTTONS; i++)
 	{
 		if (radioButtons[i].group == group && widgets->radioButtonState[i] == RADIOBUTTON_CHECKED)
@@ -363,19 +366,17 @@ void checkRadioButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, 
 			break;
 		}
 	}
-
 	widgets->radioButtonState[radioButtonID] = RADIOBUTTON_CHECKED;
 	drawRadioButton(widgets, video, bmp, radioButtonID);
 }
 
+/* Same as checkRadioButton but defers redraw to next frame */
 void checkRadioButtonNoRedraw(struct ft2_widgets_t *widgets, uint16_t radioButtonID)
 {
-	if (widgets == NULL || radioButtonID >= NUM_RADIOBUTTONS)
+	if (!widgets || radioButtonID >= NUM_RADIOBUTTONS)
 		return;
 
 	uint16_t group = radioButtons[radioButtonID].group;
-
-	/* Uncheck all in same group */
 	for (int i = 0; i < NUM_RADIOBUTTONS; i++)
 	{
 		if (radioButtons[i].group == group && widgets->radioButtonState[i] == RADIOBUTTON_CHECKED)
@@ -384,109 +385,93 @@ void checkRadioButtonNoRedraw(struct ft2_widgets_t *widgets, uint16_t radioButto
 			break;
 		}
 	}
-
 	widgets->radioButtonState[radioButtonID] = RADIOBUTTON_CHECKED;
 }
 
 void uncheckRadioButtonGroup(struct ft2_widgets_t *widgets, uint16_t group)
 {
-	if (widgets == NULL)
+	if (!widgets)
 		return;
-
 	for (int i = 0; i < NUM_RADIOBUTTONS; i++)
-	{
 		if (radioButtons[i].group == group)
 			widgets->radioButtonState[i] = RADIOBUTTON_UNCHECKED;
-	}
 }
 
 void showRadioButtonGroup(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t group)
 {
-	if (widgets == NULL)
+	if (!widgets)
 		return;
-
 	for (int i = 0; i < NUM_RADIOBUTTONS; i++)
-	{
 		if (radioButtons[i].group == group)
 			showRadioButton(widgets, video, bmp, i);
-	}
 }
 
 void hideRadioButtonGroup(struct ft2_widgets_t *widgets, uint16_t group)
 {
-	if (widgets == NULL)
+	if (!widgets)
 		return;
-
 	for (int i = 0; i < NUM_RADIOBUTTONS; i++)
-	{
 		if (radioButtons[i].group == group)
 			hideRadioButton(widgets, i);
-	}
 }
 
+/* ------------------------------------------------------------------------- */
+/*                           MOUSE HANDLING                                  */
+/* ------------------------------------------------------------------------- */
+
+/* Updates PRESSED visual state while mouse is held over button */
 void handleRadioButtonsWhileMouseDown(struct ft2_widgets_t *widgets, ft2_video_t *video, const ft2_bmp_t *bmp,
 	int32_t mouseX, int32_t mouseY, int32_t lastMouseX, int32_t lastMouseY, int16_t lastRadioButtonID)
 {
-	if (widgets == NULL || lastRadioButtonID < 0 || lastRadioButtonID >= NUM_RADIOBUTTONS)
+	if (!widgets || lastRadioButtonID < 0 || lastRadioButtonID >= NUM_RADIOBUTTONS)
 		return;
-
 	if (!widgets->radioButtonVisible[lastRadioButtonID] || widgets->radioButtonState[lastRadioButtonID] == RADIOBUTTON_CHECKED)
 		return;
 
 	radioButton_t *rb = &radioButtons[lastRadioButtonID];
-
-	widgets->radioButtonState[lastRadioButtonID] = RADIOBUTTON_UNCHECKED;
-	if (mouseX >= rb->x && mouseX < rb->x + rb->clickAreaWidth &&
-	    mouseY >= rb->y && mouseY < rb->y + RADIOBUTTON_H + 1)
-	{
-		widgets->radioButtonState[lastRadioButtonID] = RADIOBUTTON_PRESSED;
-	}
+	bool over = (mouseX >= rb->x && mouseX < rb->x + rb->clickAreaWidth &&
+	             mouseY >= rb->y && mouseY < rb->y + RADIOBUTTON_H + 1);
+	widgets->radioButtonState[lastRadioButtonID] = over ? RADIOBUTTON_PRESSED : RADIOBUTTON_UNCHECKED;
 
 	if (lastMouseX != mouseX || lastMouseY != mouseY)
-	{
 		drawRadioButton(widgets, video, bmp, lastRadioButtonID);
-	}
 }
 
+/* Returns radio button ID if clicked, -1 otherwise. Ignores already-checked buttons. */
 int16_t testRadioButtonMouseDown(struct ft2_widgets_t *widgets, int32_t mouseX, int32_t mouseY, bool sysReqShown)
 {
-	if (widgets == NULL || sysReqShown)
+	if (!widgets || sysReqShown)
 		return -1;
 
 	for (int i = 0; i < NUM_RADIOBUTTONS; i++)
 	{
 		if (!widgets->radioButtonVisible[i] || widgets->radioButtonState[i] == RADIOBUTTON_CHECKED)
 			continue;
-
 		if (widgets->radioButtonDisabled[i])
 			continue;
 
 		radioButton_t *rb = &radioButtons[i];
 		if (mouseX >= rb->x && mouseX < rb->x + rb->clickAreaWidth &&
 		    mouseY >= rb->y && mouseY < rb->y + RADIOBUTTON_H + 1)
-		{
 			return (int16_t)i;
-		}
 	}
-
 	return -1;
 }
 
+/* Fires callback on release if mouse still over button */
 void testRadioButtonMouseRelease(struct ft2_widgets_t *widgets, struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp,
 	int32_t mouseX, int32_t mouseY, int16_t lastRadioButtonID)
 {
-	if (widgets == NULL || lastRadioButtonID < 0 || lastRadioButtonID >= NUM_RADIOBUTTONS)
+	if (!widgets || lastRadioButtonID < 0 || lastRadioButtonID >= NUM_RADIOBUTTONS)
 		return;
-
 	if (!widgets->radioButtonVisible[lastRadioButtonID] || widgets->radioButtonState[lastRadioButtonID] == RADIOBUTTON_CHECKED)
 		return;
 
 	radioButton_t *rb = &radioButtons[lastRadioButtonID];
-
 	if (mouseX >= rb->x && mouseX < rb->x + rb->clickAreaWidth &&
 	    mouseY >= rb->y && mouseY < rb->y + RADIOBUTTON_H + 1)
 	{
-		if (rb->callbackFunc != NULL)
+		if (rb->callbackFunc)
 			rb->callbackFunc(inst);
 		else
 			checkRadioButton(widgets, video, bmp, lastRadioButtonID);

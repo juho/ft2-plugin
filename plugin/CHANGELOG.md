@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.47 (Jan 9, 2026)
+
+- Feat: code cleanup pass.
+
 ## 1.0.46 (Jan 9, 2026)
 
 - Fix: Drive buttons in Diskop on Windows.

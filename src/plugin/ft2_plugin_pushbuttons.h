@@ -1,9 +1,7 @@
-/**
- * @file ft2_plugin_pushbuttons.h
- * @brief Push button definitions for the FT2 plugin UI.
- * 
- * Ported from ft2_pushbuttons.h - all coordinates preserved exactly.
- */
+/*
+** FT2 Plugin - Push Button Widget Definitions
+** Ported from ft2_pushbuttons.h with exact coordinates preserved.
+*/
 
 #pragma once
 
@@ -14,9 +12,10 @@ struct ft2_video_t;
 struct ft2_bmp_t;
 struct ft2_instance_t;
 
+/* Button IDs */
 enum
 {
-	/* Reserved pushbuttons for system dialogs */
+	/* Reserved for system dialogs (0-7) */
 	PB_RES_1,
 	PB_RES_2,
 	PB_RES_3,
@@ -430,16 +429,12 @@ enum
 	NUM_PUSHBUTTONS
 };
 
-enum
-{
-	PUSHBUTTON_UNPRESSED = 0,
-	PUSHBUTTON_PRESSED = 1
-};
+/* Button states */
+enum { PUSHBUTTON_UNPRESSED = 0, PUSHBUTTON_PRESSED = 1 };
 
-/* Button delay after first trigger */
-#define BUTTON_DOWN_DELAY 25
+#define BUTTON_DOWN_DELAY 25  /* Frames before auto-repeat starts */
 
-/* Special characters for button graphics */
+/* Special glyph characters for button captions (blitted from buttonGfx bitmap) */
 #define ARROW_UP_STRING    "\x01"
 #define ARROW_DOWN_STRING  "\x02"
 #define ARROW_LEFT_STRING  "\x03"
@@ -453,109 +448,42 @@ enum
 
 typedef void (*pbCallback_t)(struct ft2_instance_t *inst);
 
-/* Forward declaration */
 struct ft2_widgets_t;
 
-/**
- * Push button definition (constant data).
- * Runtime state (visible, pressed) is stored in ft2_widgets_t.
- */
+/* Button definition (constant). Runtime state in ft2_widgets_t. */
 typedef struct pushButton_t
 {
-	uint16_t x, y, w, h;
-	uint8_t preDelay, delayFrames;
-	const char *caption;
-	const char *caption2;
+	uint16_t x, y, w, h;       /* Position and size */
+	uint8_t preDelay;          /* If set, delay before repeat starts */
+	uint8_t delayFrames;       /* Frames between repeats */
+	const char *caption;       /* Primary label */
+	const char *caption2;      /* Secondary label (for two-line buttons) */
 	pbCallback_t callbackFuncOnDown;
 	pbCallback_t callbackFuncOnUp;
-	bool bitmapFlag;
+	bool bitmapFlag;           /* True for logo/badge bitmap buttons */
 	const uint8_t *bitmapUnpressed;
 	const uint8_t *bitmapPressed;
 } pushButton_t;
 
 extern const pushButton_t pushButtonsTemplate[NUM_PUSHBUTTONS];
 
-/**
- * Initialize push buttons array (constant data only).
- */
+/* Init/draw */
 void initPushButtons(struct ft2_widgets_t *widgets);
-
-/**
- * Draw a push button using per-instance state.
- * @param widgets Per-instance widget state
- * @param video Video context
- * @param bmp Bitmap assets
- * @param pushButtonID Button ID
- */
 void drawPushButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t pushButtonID);
 
-/**
- * Show a push button (make visible and draw).
- * @param widgets Per-instance widget state
- * @param video Video context
- * @param bmp Bitmap assets
- * @param pushButtonID Button ID
- */
+/* Visibility */
 void showPushButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t pushButtonID);
-
-/**
- * Hide a push button.
- * @param widgets Per-instance widget state
- * @param pushButtonID Button ID
- */
 void hidePushButton(struct ft2_widgets_t *widgets, uint16_t pushButtonID);
 
-/**
- * Test if mouse click is on a push button.
- * @param widgets Per-instance widget state
- * @param inst FT2 instance for callbacks
- * @param mouseX Mouse X coordinate
- * @param mouseY Mouse Y coordinate
- * @param sysReqShown Whether system request dialog is shown
- * @return Button ID if clicked, -1 otherwise
- */
+/* Mouse handling */
 int16_t testPushButtonMouseDown(struct ft2_widgets_t *widgets, struct ft2_instance_t *inst, int32_t mouseX, int32_t mouseY, bool sysReqShown);
-
-/**
- * Handle push button mouse release.
- * @param widgets Per-instance widget state
- * @param inst FT2 instance
- * @param video Video context
- * @param bmp Bitmap assets
- * @param mouseX Mouse X coordinate
- * @param mouseY Mouse Y coordinate
- * @param lastButtonID Last button that was pressed
- * @param runCallback Whether to run callback
- * @return Button ID if released on button, -1 otherwise
- */
 int16_t testPushButtonMouseRelease(struct ft2_widgets_t *widgets, struct ft2_instance_t *inst, struct ft2_video_t *video,
 	const struct ft2_bmp_t *bmp, int32_t mouseX, int32_t mouseY, int16_t lastButtonID, bool runCallback);
-
-/**
- * Handle continuous push button interaction while mouse is held down.
- * @param widgets Per-instance widget state
- * @param inst FT2 instance
- * @param video Video context
- * @param bmp Bitmap assets
- * @param mouseX Mouse X coordinate
- * @param mouseY Mouse Y coordinate
- * @param buttonID Button ID being held
- */
 void handlePushButtonWhileMouseDown(struct ft2_widgets_t *widgets, struct ft2_instance_t *inst, struct ft2_video_t *video,
 	const struct ft2_bmp_t *bmp, int32_t mouseX, int32_t mouseY, int16_t buttonID,
 	bool *firstTimePressingButton, uint8_t *buttonCounter);
 
-/**
- * Set logo type (which FT2 logo to display).
- * @param bmp Bitmap assets
- * @param logoType 0 or 1 for different logo styles
- */
+/* Logo/badge bitmap selection */
 void changeLogoType(struct ft2_widgets_t *widgets, const struct ft2_bmp_t *bmp, uint8_t logoType);
-
-/**
- * Set badge type (which badge to display).
- * @param bmp Bitmap assets
- * @param badgeType Badge style (0-3)
- */
 void changeBadgeType(struct ft2_widgets_t *widgets, const struct ft2_bmp_t *bmp, uint8_t badgeType);
 

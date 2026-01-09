@@ -24,12 +24,12 @@
 #include "gfxdata/ft2_bmp_mouse.c"
 #include "gfxdata/ft2_bmp_nibbles.c"
 
-/* BMP compression types */
+/* BMP biCompression field values */
 enum
 {
-	COMP_RGB = 0,
-	COMP_RLE8 = 1,
-	COMP_RLE4 = 2
+	COMP_RGB = 0,   /* Uncompressed (not supported by these loaders) */
+	COMP_RLE8 = 1,  /* 8-bit run-length encoding */
+	COMP_RLE4 = 2   /* 4-bit run-length encoding */
 };
 
 /* BMP header structure */
@@ -52,7 +52,11 @@ typedef struct bmpHeader_t
 	int32_t biClrImportant;
 } bmpHeader_t;
 
-/* Custom palette for mapping BMP colors to FT2 palette indices */
+/*
+ * BMP colors mapped to FT2 palette indices. The original FT2 bitmaps use
+ * specific RGB values that we translate to logical palette entries
+ * (PAL_BCKGRND, PAL_FORGRND, etc.) for theme support.
+ */
 #define NUM_CUSTOM_PALS 17
 static const uint32_t bmpCustomPalette[NUM_CUSTOM_PALS] =
 {
@@ -62,9 +66,7 @@ static const uint32_t bmpCustomPalette[NUM_CUSTOM_PALS] =
 	0xC0FFEE, 0xFF0000
 };
 
-/**
- * Get FT2 palette index from a 32-bit pixel color.
- */
+/* Map a 32-bit RGB color to an FT2 palette index (0-16), or PAL_TRANSPR if unknown. */
 static int8_t getFT2PalNrFromPixel(uint32_t pixel32)
 {
 	for (int32_t i = 0; i < NUM_CUSTOM_PALS; i++)
@@ -75,8 +77,9 @@ static int8_t getFT2PalNrFromPixel(uint32_t pixel32)
 	return PAL_TRANSPR;
 }
 
-/**
- * Load a BMP and convert to 32-bit ARGB.
+/*
+ * Decode RLE-compressed BMP to 32-bit ARGB. Used for full-color assets
+ * like the about screen logo. Handles RLE4 and RLE8 compression.
  */
 static uint32_t *loadBMPTo32Bit(const uint8_t *src)
 {
@@ -97,7 +100,6 @@ static uint32_t *loadBMPTo32Bit(const uint8_t *src)
 	const int32_t palEntries = (hdr->biClrUsed == 0) ? colorsInBitmap : hdr->biClrUsed;
 	memcpy(pal, &src[0x36], palEntries * sizeof(uint32_t));
 
-	/* Pre-fill with first palette color */
 	for (int32_t i = 0; i < hdr->biWidth * hdr->biHeight; i++)
 		outData[i] = pal[0];
 
@@ -105,12 +107,16 @@ static uint32_t *loadBMPTo32Bit(const uint8_t *src)
 	const uint8_t *src8 = pData;
 	uint32_t *dst32 = outData;
 	int32_t x = 0;
-	int32_t y = hdr->biHeight - 1;
+	int32_t y = hdr->biHeight - 1; /* BMP stores bottom-up */
 
+	/*
+	 * RLE decode loop. Format: [count][data] pairs.
+	 * count=0 is escape: 0=EOL, 1=EOF, 2=delta, else=absolute run.
+	 */
 	while (true)
 	{
 		byte = *src8++;
-		if (byte == 0) /* Escape control */
+		if (byte == 0)
 		{
 			byte = *src8++;
 			if (byte == 0) /* End of line */
@@ -122,12 +128,12 @@ static uint32_t *loadBMPTo32Bit(const uint8_t *src)
 			{
 				break;
 			}
-			else if (byte == 2) /* Delta */
+			else if (byte == 2) /* Delta: skip pixels */
 			{
 				x += *src8++;
 				y -= *src8++;
 			}
-			else /* Absolute bytes */
+			else /* Absolute run: literal bytes follow */
 			{
 				if (hdr->biCompression == COMP_RLE8)
 				{
@@ -190,8 +196,9 @@ static uint32_t *loadBMPTo32Bit(const uint8_t *src)
 	return outData;
 }
 
-/**
- * Load a BMP and convert to 1-bit (0 = transparent, 1 = foreground).
+/*
+ * Decode RLE4-compressed BMP to 1-bit mask (0 = background, 1 = foreground).
+ * Used for fonts and button graphics where only shape matters.
  */
 static uint8_t *loadBMPTo1Bit(const uint8_t *src)
 {
@@ -213,8 +220,7 @@ static uint8_t *loadBMPTo1Bit(const uint8_t *src)
 	const int32_t palEntries = (hdr->biClrUsed == 0) ? colorsInBitmap : hdr->biClrUsed;
 	memcpy(pal, &src[0x36], palEntries * sizeof(uint32_t));
 
-	/* Pre-fill with first palette color (converted to 0/1) */
-	color = !!pal[0];
+	color = !!pal[0]; /* Non-zero palette color = foreground (1) */
 	for (i = 0; i < hdr->biWidth * hdr->biHeight; i++)
 		outData[i] = color;
 
@@ -222,7 +228,7 @@ static uint8_t *loadBMPTo1Bit(const uint8_t *src)
 	const uint8_t *src8 = pData;
 	uint8_t *dst8 = outData;
 	int32_t x = 0;
-	int32_t y = hdr->biHeight - 1;
+	int32_t y = hdr->biHeight - 1; /* BMP stores bottom-up */
 
 	while (true)
 	{
@@ -280,8 +286,9 @@ static uint8_t *loadBMPTo1Bit(const uint8_t *src)
 	return outData;
 }
 
-/**
- * Load a BMP and convert to 4-bit FT2 palette indices.
+/*
+ * Decode RLE4-compressed BMP to FT2 palette indices.
+ * Used for UI graphics that need to respond to theme colors.
  */
 static uint8_t *loadBMPTo4BitPal(const uint8_t *src)
 {
@@ -303,7 +310,6 @@ static uint8_t *loadBMPTo4BitPal(const uint8_t *src)
 	const int32_t palEntries = (hdr->biClrUsed == 0) ? colorsInBitmap : hdr->biClrUsed;
 	memcpy(pal, &src[0x36], palEntries * sizeof(uint32_t));
 
-	/* Pre-fill with first palette color */
 	palIdx = getFT2PalNrFromPixel(pal[0]);
 	for (i = 0; i < hdr->biWidth * hdr->biHeight; i++)
 		outData[i] = palIdx;
@@ -312,7 +318,7 @@ static uint8_t *loadBMPTo4BitPal(const uint8_t *src)
 	const uint8_t *src8 = pData;
 	uint8_t *dst8 = outData;
 	int32_t x = 0;
-	int32_t y = hdr->biHeight - 1;
+	int32_t y = hdr->biHeight - 1; /* BMP stores bottom-up */
 
 	while (true)
 	{
@@ -370,6 +376,7 @@ static uint8_t *loadBMPTo4BitPal(const uint8_t *src)
 	return outData;
 }
 
+/* Load all embedded BMP assets. Returns false on allocation failure. */
 bool ft2_bmp_load(ft2_bmp_t *bmp)
 {
 	if (bmp == NULL)
@@ -377,7 +384,7 @@ bool ft2_bmp_load(ft2_bmp_t *bmp)
 
 	memset(bmp, 0, sizeof(ft2_bmp_t));
 
-	/* Load 4-bit palette indexed graphics */
+	/* 4-bit palette indexed: UI elements that use theme colors */
 	bmp->ft2OldAboutLogo = loadBMPTo4BitPal(ft2OldAboutLogoBMP);
 	bmp->ft2LogoBadges = loadBMPTo4BitPal(ft2LogoBadgesBMP);
 	bmp->ft2ByBadges = loadBMPTo4BitPal(ft2ByBadgesBMP);
@@ -396,10 +403,10 @@ bool ft2_bmp_load(ft2_bmp_t *bmp)
 	bmp->radiobuttonGfx = loadBMPTo4BitPal(radiobuttonGfxBMP);
 	bmp->checkboxGfx = loadBMPTo4BitPal(checkboxGfxBMP);
 
-	/* Load 32-bit ARGB graphics */
+	/* 32-bit ARGB: full-color images */
 	bmp->ft2AboutLogo = loadBMPTo32Bit(ft2AboutLogoBMP);
 
-	/* Load 1-bit fonts */
+	/* 1-bit masks: fonts and buttons (rendered with current FG color) */
 	bmp->buttonGfx = loadBMPTo1Bit(buttonGfxBMP);
 	bmp->font1 = loadBMPTo1Bit(font1BMP);
 	bmp->font2 = loadBMPTo1Bit(font2BMP);
@@ -409,7 +416,6 @@ bool ft2_bmp_load(ft2_bmp_t *bmp)
 	bmp->font7 = loadBMPTo1Bit(font7BMP);
 	bmp->font8 = loadBMPTo1Bit(font8BMP);
 
-	/* Check all allocations */
 	if (bmp->ft2OldAboutLogo == NULL || bmp->ft2AboutLogo == NULL ||
 		bmp->buttonGfx == NULL || bmp->font1 == NULL || bmp->font2 == NULL ||
 		bmp->font3 == NULL || bmp->font4 == NULL || bmp->font6 == NULL ||

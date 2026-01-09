@@ -1,9 +1,7 @@
-/**
- * @file ft2_plugin_radiobuttons.h
- * @brief Radio button definitions for the FT2 plugin UI.
- * 
- * Ported from ft2_radiobuttons.h - all coordinates preserved exactly.
- */
+/*
+** FT2 Plugin - Radio Button Widget Definitions
+** Ported from ft2_radiobuttons.h with exact coordinates preserved.
+*/
 
 #pragma once
 
@@ -14,7 +12,7 @@ struct ft2_video_t;
 struct ft2_bmp_t;
 struct ft2_instance_t;
 
-/* Radio button groups */
+/* Radio button groups (mutually exclusive selection within each group) */
 enum
 {
 	RB_GROUP_HELP,
@@ -220,140 +218,48 @@ enum
 	NUM_RADIOBUTTONS
 };
 
-enum
-{
-	RADIOBUTTON_UNCHECKED = 0,
-	RADIOBUTTON_CHECKED = 1,
-	RADIOBUTTON_PRESSED = 2
-};
+/* Button states */
+enum { RADIOBUTTON_UNCHECKED = 0, RADIOBUTTON_CHECKED = 1, RADIOBUTTON_PRESSED = 2 };
 
 #define RADIOBUTTON_W 11
 #define RADIOBUTTON_H 11
 
 typedef void (*rbCallback_t)(struct ft2_instance_t *inst);
 
-/* Forward declaration */
 struct ft2_widgets_t;
 
-/**
- * Radio button definition (constant data).
- * Runtime state (visible, checked/pressed) is stored in ft2_widgets_t.
- */
+/* Button definition (constant). Runtime state in ft2_widgets_t. */
 typedef struct radioButton_t
 {
-	uint16_t x, y;
-	uint16_t clickAreaWidth;
-	uint16_t group;
+	uint16_t x, y;            /* Position (graphic is always RADIOBUTTON_W x RADIOBUTTON_H) */
+	uint16_t clickAreaWidth;  /* Click area extends beyond the button graphic for label */
+	uint16_t group;           /* Group ID for mutual exclusion */
 	rbCallback_t callbackFunc;
 } radioButton_t;
 
 extern radioButton_t radioButtons[NUM_RADIOBUTTONS];
 
-/**
- * Initialize radio buttons array (constant data only).
- */
+/* Init/draw */
 void initRadioButtons(void);
-
-/**
- * Draw a radio button using per-instance state.
- * @param widgets Per-instance widget state
- * @param video Video context
- * @param bmp Bitmap assets
- * @param radioButtonID Radio button ID
- */
 void drawRadioButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t radioButtonID);
 
-/**
- * Show a radio button.
- * @param widgets Per-instance widget state
- * @param video Video context
- * @param bmp Bitmap assets
- * @param radioButtonID Radio button ID
- */
+/* Visibility */
 void showRadioButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t radioButtonID);
-
-/**
- * Hide a radio button.
- * @param widgets Per-instance widget state
- * @param radioButtonID Radio button ID
- */
 void hideRadioButton(struct ft2_widgets_t *widgets, uint16_t radioButtonID);
 
-/**
- * Check a radio button (uncheck others in same group).
- * @param widgets Per-instance widget state
- * @param video Video context
- * @param bmp Bitmap assets
- * @param radioButtonID Radio button ID
- */
+/* State management */
 void checkRadioButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t radioButtonID);
-
-/**
- * Set a radio button as checked and uncheck others in its group without redrawing.
- * Use this in callbacks where video/bmp aren't available; next frame will draw the state.
- * @param widgets Per-instance widget state
- * @param radioButtonID Radio button ID to check
- */
-void checkRadioButtonNoRedraw(struct ft2_widgets_t *widgets, uint16_t radioButtonID);
-
-/**
- * Uncheck all radio buttons in a group.
- * @param widgets Per-instance widget state
- * @param group Radio button group
- */
+void checkRadioButtonNoRedraw(struct ft2_widgets_t *widgets, uint16_t radioButtonID);  /* Defers redraw to next frame */
 void uncheckRadioButtonGroup(struct ft2_widgets_t *widgets, uint16_t group);
 
-/**
- * Show all radio buttons in a group.
- * @param widgets Per-instance widget state
- * @param video Video context
- * @param bmp Bitmap assets
- * @param group Radio button group
- */
+/* Group operations */
 void showRadioButtonGroup(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t group);
-
-/**
- * Hide all radio buttons in a group.
- * @param widgets Per-instance widget state
- * @param group Radio button group
- */
 void hideRadioButtonGroup(struct ft2_widgets_t *widgets, uint16_t group);
 
-/**
- * Test if mouse click is on a radio button.
- * @param widgets Per-instance widget state
- * @param mouseX Mouse X coordinate
- * @param mouseY Mouse Y coordinate
- * @param sysReqShown Whether system request is shown
- * @return Radio button ID if clicked, -1 otherwise
- */
+/* Mouse handling */
 int16_t testRadioButtonMouseDown(struct ft2_widgets_t *widgets, int32_t mouseX, int32_t mouseY, bool sysReqShown);
-
-/**
- * Handle radio button while mouse is held down.
- * Shows PRESSED state when mouse is over the button, UNCHECKED when moved away.
- * @param widgets Per-instance widget state
- * @param video Video context
- * @param bmp Bitmap assets
- * @param mouseX Mouse X coordinate
- * @param mouseY Mouse Y coordinate
- * @param lastMouseX Last mouse X coordinate (for change detection)
- * @param lastMouseY Last mouse Y coordinate (for change detection)
- * @param lastRadioButtonID Radio button that was pressed
- */
 void handleRadioButtonsWhileMouseDown(struct ft2_widgets_t *widgets, struct ft2_video_t *video, const struct ft2_bmp_t *bmp,
 	int32_t mouseX, int32_t mouseY, int32_t lastMouseX, int32_t lastMouseY, int16_t lastRadioButtonID);
-
-/**
- * Handle radio button mouse release.
- * @param widgets Per-instance widget state
- * @param inst FT2 instance
- * @param video Video context
- * @param bmp Bitmap assets
- * @param mouseX Mouse X coordinate
- * @param mouseY Mouse Y coordinate
- * @param lastRadioButtonID Last radio button that was pressed
- */
 void testRadioButtonMouseRelease(struct ft2_widgets_t *widgets, struct ft2_instance_t *inst, struct ft2_video_t *video,
 	const struct ft2_bmp_t *bmp, int32_t mouseX, int32_t mouseY, int16_t lastRadioButtonID);
 

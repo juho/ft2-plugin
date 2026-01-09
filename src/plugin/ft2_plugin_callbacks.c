@@ -46,16 +46,15 @@ void pbPosEdPosUp(ft2_instance_t *inst)
 	{
 		inst->replayer.song.songPos--;
 		
-		/* Update pattern number from order list (like original setPos) */
+		/* Sync pattern number and row count from order list */
 		inst->replayer.song.pattNum = inst->replayer.song.orders[inst->replayer.song.songPos];
 		inst->replayer.song.currNumRows = inst->replayer.patternNumRows[inst->replayer.song.pattNum];
 		
-		/* Reset row to 0 (matches standalone setNewSongPos -> setPos(pos, 0, true)) */
+		/* Reset to row 0 when changing position (see setPos in standalone) */
 		inst->replayer.song.row = 0;
-			if (!inst->replayer.songPlaying)
+		if (!inst->replayer.songPlaying)
 			inst->editor.row = 0;
 		
-		/* Update editor pattern if not playing */
 		if (!inst->replayer.songPlaying)
 			inst->editor.editPattern = (uint8_t)inst->replayer.song.pattNum;
 		
@@ -73,16 +72,15 @@ void pbPosEdPosDown(ft2_instance_t *inst)
 	{
 		inst->replayer.song.songPos++;
 		
-		/* Update pattern number from order list (like original setPos) */
+		/* Sync pattern number and row count from order list */
 		inst->replayer.song.pattNum = inst->replayer.song.orders[inst->replayer.song.songPos];
 		inst->replayer.song.currNumRows = inst->replayer.patternNumRows[inst->replayer.song.pattNum];
 		
-		/* Reset row to 0 (matches standalone setNewSongPos -> setPos(pos, 0, true)) */
+		/* Reset to row 0 when changing position (see setPos in standalone) */
 		inst->replayer.song.row = 0;
-			if (!inst->replayer.songPlaying)
+		if (!inst->replayer.songPlaying)
 			inst->editor.row = 0;
 		
-		/* Update editor pattern if not playing */
 		if (!inst->replayer.songPlaying)
 			inst->editor.editPattern = (uint8_t)inst->replayer.song.pattNum;
 		
@@ -242,9 +240,7 @@ void pbPosEdRepDown(ft2_instance_t *inst)
 void pbBPMUp(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
-
-	/* Ignore if BPM is synced from DAW */
-	if (inst->config.syncBpmFromDAW) return;
+	if (inst->config.syncBpmFromDAW) return; /* Locked to DAW tempo */
 
 	if (inst->replayer.song.BPM < 255)
 	{
@@ -256,9 +252,7 @@ void pbBPMUp(ft2_instance_t *inst)
 void pbBPMDown(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
-
-	/* Ignore if BPM is synced from DAW */
-	if (inst->config.syncBpmFromDAW) return;
+	if (inst->config.syncBpmFromDAW) return; /* Locked to DAW tempo */
 
 	if (inst->replayer.song.BPM > 32)
 	{
@@ -273,7 +267,7 @@ void pbSpeedUp(ft2_instance_t *inst)
 
 	if (!inst->config.allowFxxSpeedChanges)
 	{
-		/* Toggle tab mode: select speed 6 */
+		/* Speed locked: buttons toggle between 3 and 6 (common tracker speeds) */
 		inst->config.lockedSpeed = 6;
 		inst->replayer.song.speed = 6;
 		ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
@@ -287,7 +281,6 @@ void pbSpeedUp(ft2_instance_t *inst)
 		return;
 	}
 
-	/* Normal increment behavior */
 	if (inst->replayer.song.speed < 31)
 	{
 		inst->replayer.song.speed++;
@@ -301,7 +294,7 @@ void pbSpeedDown(ft2_instance_t *inst)
 
 	if (!inst->config.allowFxxSpeedChanges)
 	{
-		/* Toggle tab mode: select speed 3 */
+		/* Speed locked: buttons toggle between 3 and 6 */
 		inst->config.lockedSpeed = 3;
 		inst->replayer.song.speed = 3;
 		ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
@@ -315,7 +308,6 @@ void pbSpeedDown(ft2_instance_t *inst)
 		return;
 	}
 
-	/* Normal decrement behavior */
 	if (inst->replayer.song.speed > 1)
 	{
 		inst->replayer.song.speed--;
@@ -426,7 +418,6 @@ void pbPattLenDown(ft2_instance_t *inst)
 	if (inst->replayer.song.pattNum == inst->editor.editPattern)
 		inst->replayer.song.currNumRows = len - 1;
 	
-	/* Clamp row position if needed */
 	if (inst->replayer.song.row >= len - 1)
 	{
 		inst->replayer.song.row = len - 2;
@@ -558,14 +549,12 @@ void pbDiskOp(ft2_instance_t *inst)
 
 	if (inst->uiState.diskOpShown)
 	{
-		/* Closing disk op */
 		hideDiskOpScreen(inst);
 		inst->uiState.scopesShown = true;
 	}
 	else
 	{
-		/* Opening disk op - hide other screens first */
-		hideTopScreen(inst);
+		hideTopScreen(inst); /* Disk op replaces top screen area */
 		inst->diskop.requestReadDir = true;
 		inst->uiState.diskOpShown = true;
 		inst->uiState.scopesShown = false;
@@ -584,20 +573,13 @@ void pbSmpEd(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
 	
-	/* Hide instrument editor first if shown */
 	if (inst->uiState.instEditorShown)
-	{
 		hideInstEditor(inst);
-	}
 	
-	/* Toggle sample editor - use proper show/hide to set widget visibility */
 	if (inst->uiState.sampleEditorShown)
 	{
-		/* Also hide S.E.Ext if open */
 		if (inst->uiState.sampleEditorExtShown)
-		{
 			hideSampleEditorExt(inst);
-		}
 		hideSampleEditor(inst);
 		inst->uiState.patternEditorShown = true;
 	}
@@ -611,21 +593,15 @@ void pbConfig(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
 	
-	/* Toggle config screen visibility */
 	if (inst->uiState.configScreenShown)
 	{
-		/* Exit config - hide config and restore main screen */
 		hideConfigScreen(inst);
 		inst->uiState.configScreenShown = false;
 		inst->uiState.needsFullRedraw = true;
-		/* Main screen widgets will be shown on next redraw via showTopScreen */
 	}
 	else
 	{
-		/* Show config - hide ALL main screen widgets first */
-		hideTopScreen(inst);
-		
-		/* Set config screen flag */
+		hideTopScreen(inst); /* Config replaces top screen area */
 		inst->uiState.configScreenShown = true;
 		showConfigScreen(inst);
 		inst->uiState.needsFullRedraw = true;
@@ -636,11 +612,8 @@ void pbConfigExit(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
 	
-	/* Hide all config screen widgets */
 	hideConfigScreen(inst);
 	inst->uiState.configScreenShown = false;
-	
-	/* Force full redraw - main screen widgets will be shown on next frame */
 	inst->uiState.needsFullRedraw = true;
 	inst->uiState.updatePosSections = true;
 	inst->uiState.updateInstrSwitcher = true;
@@ -649,12 +622,8 @@ void pbConfigExit(ft2_instance_t *inst)
 void pbHelp(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
+	if (inst->uiState.helpScreenShown) return;
 	
-	/* Don't show again if already showing */
-	if (inst->uiState.helpScreenShown)
-		return;
-	
-	/* Get video/bmp from current UI */
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (ui != NULL)
 	{
@@ -663,8 +632,8 @@ void pbHelp(ft2_instance_t *inst)
 		showHelpScreen(inst, video, bmp);
 	}
 	
-		inst->uiState.needsFullRedraw = true;
-	}
+	inst->uiState.needsFullRedraw = true;
+}
 
 void pbHelpExit(ft2_instance_t *inst)
 {
@@ -672,7 +641,7 @@ void pbHelpExit(ft2_instance_t *inst)
 	exitHelpScreen(inst);
 }
 
-/* Help radio button callbacks - wrappers that get video/bmp context */
+/* Help radio buttons: wrappers providing video/bmp context to underlying functions */
 void cbHelpFeatures(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
@@ -774,15 +743,10 @@ void sbHelpScroll(ft2_instance_t *inst, uint32_t pos)
 void pbAbout(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
+	if (inst->uiState.aboutScreenShown) return;
 	
-	/* Don't show again if already showing */
-	if (inst->uiState.aboutScreenShown)
-		return;
+	hideTopScreen(inst); /* About replaces top screen area */
 	
-	/* Hide ALL main screen widgets first */
-	hideTopScreen(inst);
-	
-	/* Get video/bmp from current UI to draw framework and initialize starfield */
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (ui != NULL)
 	{
@@ -791,12 +755,9 @@ void pbAbout(ft2_instance_t *inst)
 		ft2_about_show(&ui->widgets, video, bmp);
 	}
 	
-	/* Show about screen */
 	inst->uiState.aboutScreenShown = true;
 	inst->uiState.needsFullRedraw = true;
 	inst->uiState.scopesShown = false;
-	
-	/* Request update dialog if update is available */
 	inst->uiState.requestShowUpdateDialog = true;
 }
 
@@ -804,7 +765,6 @@ void pbExitAbout(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
 	
-	/* Hide the about buttons */
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
 	if (widgets != NULL)
 	{
@@ -815,8 +775,6 @@ void pbExitAbout(ft2_instance_t *inst)
 	inst->uiState.aboutScreenShown = false;
 	inst->uiState.scopesShown = true;
 	inst->uiState.instrSwitcherShown = true;
-	
-	/* Force full redraw to restore top screen (like original showTopScreen(true)) */
 	inst->uiState.needsFullRedraw = true;
 	inst->uiState.updatePosSections = true;
 	inst->uiState.updateInstrSwitcher = true;
@@ -831,12 +789,11 @@ void pbGitHubAbout(ft2_instance_t *inst)
 void pbNibbles(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
-	/* Nibbles show is deferred to UI loop where video/bmp are available */
 	inst->uiState.nibblesShown = !inst->uiState.nibblesShown;
 	inst->uiState.needsFullRedraw = true;
 }
 
-/* Zap song data - clear patterns, orders, song settings */
+/* Clear patterns, orders, and song settings. Preserves instruments. */
 static void zapSong(ft2_instance_t *inst)
 {
 	if (inst == NULL)
@@ -879,7 +836,7 @@ static void zapSong(ft2_instance_t *inst)
 	inst->uiState.updatePosSections = true;
 }
 
-/* Zap instruments - clear all instruments and samples */
+/* Clear all instruments and samples. Preserves song data. */
 static void zapInstrs(ft2_instance_t *inst)
 {
 	if (inst == NULL)
@@ -904,7 +861,6 @@ static void zapInstrs(ft2_instance_t *inst)
 	inst->uiState.updateSampleEditor = true;
 }
 
-/* Callback for Zap dialog completion */
 static void zapDialogCallback(ft2_instance_t *inst, ft2_dialog_result_t result,
                               const char *inputText, void *userData)
 {
@@ -935,10 +891,7 @@ static void zapDialogCallback(ft2_instance_t *inst, ft2_dialog_result_t result,
 	
 	if (didZap)
 	{
-		/* Mark song as modified */
 		ft2_song_mark_modified(inst);
-		
-		/* Trigger full UI redraw */
 		inst->uiState.needsFullRedraw = true;
 	}
 }
@@ -1245,8 +1198,6 @@ void pbAddChannels(ft2_instance_t *inst)
 		return;
 	
 	inst->replayer.song.numChannels += 2;
-	
-	/* Update channel numbers and scrollbar state */
 	updateChanNums(inst);
 	
 	/* Trigger full UI redraw */
@@ -1262,14 +1213,10 @@ void pbSubChannels(ft2_instance_t *inst)
 	
 	inst->replayer.song.numChannels -= 2;
 	
-	/* Clamp cursor channel if needed */
 	if (inst->cursor.ch >= inst->replayer.song.numChannels)
 		inst->cursor.ch = inst->replayer.song.numChannels - 1;
 	
-	/* Update channel numbers and scrollbar state */
 	updateChanNums(inst);
-	
-	/* Trigger full UI redraw */
 	inst->uiState.updatePatternEditor = true;
 	inst->uiState.updatePosSections = true;
 }
@@ -1308,13 +1255,12 @@ void pbSwapInstrBank(ft2_instance_t *inst)
 	
 	inst->editor.instrBankSwapped ^= 1;
 	
-	/* Adjust instrument bank offset by +/- 64 (8 banks of 8 instruments) */
+	/* Toggle between instruments 1-64 and 65-128 (8 banks of 8 each) */
 	if (inst->editor.instrBankSwapped)
 		inst->editor.instrBankOffset += 8 * 8;
 	else
 		inst->editor.instrBankOffset -= 8 * 8;
 	
-	/* Trigger instrument switcher update and button visibility update */
 	inst->uiState.updateInstrSwitcher = true;
 	inst->uiState.instrBankSwapPending = true;
 }
@@ -1347,7 +1293,7 @@ void pbChanScrollRight(ft2_instance_t *inst)
 	inst->uiState.updateChanScrollPos = true;
 }
 
-/* Instrument bank buttons - set instrument bank offset (which bank of 8 instruments to display) */
+/* Instrument bank 1-16: each sets instrBankOffset to display that group of 8 instruments */
 void pbRange1(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
@@ -1460,7 +1406,6 @@ void pbRange16(ft2_instance_t *inst)
 	inst->uiState.updateInstrSwitcher = true;
 }
 
-/* Helper to get current instrument */
 static ft2_instr_t *getCurInstr(ft2_instance_t *inst)
 {
 	if (inst == NULL || inst->editor.curInstr == 0 || inst->editor.curInstr >= 128)
@@ -1468,7 +1413,6 @@ static ft2_instr_t *getCurInstr(ft2_instance_t *inst)
 	return inst->replayer.instr[inst->editor.curInstr];
 }
 
-/* Helper to get current sample */
 static ft2_sample_t *getCurSample(ft2_instance_t *inst)
 {
 	ft2_instr_t *instr = getCurInstr(inst);
@@ -1489,12 +1433,10 @@ void pbSampScrollLeft(ft2_instance_t *inst)
 	if (s == NULL)
 		return;
 
-	/* Early exit if view covers entire sample (matches standalone) */
 	if (ed->viewSize == 0 || ed->viewSize == s->length)
 		return;
 	
-	/* Scroll left by 1/32 of view size (matches standalone) */
-	int32_t scrollAmount = ed->viewSize / 32;
+	int32_t scrollAmount = ed->viewSize / 32; /* 1/32 of view size per step */
 	if (scrollAmount < 1)
 		scrollAmount = 1;
 	
@@ -1515,12 +1457,10 @@ void pbSampScrollRight(ft2_instance_t *inst)
 	if (s == NULL)
 		return;
 	
-	/* Early exit if view covers entire sample (matches standalone) */
 	if (ed->viewSize == 0 || ed->viewSize == s->length)
 		return;
 	
-	/* Scroll right by 1/32 of view size (matches standalone) */
-	int32_t scrollAmount = ed->viewSize / 32;
+	int32_t scrollAmount = ed->viewSize / 32; /* 1/32 of view size per step */
 	if (scrollAmount < 1)
 		scrollAmount = 1;
 	
@@ -1562,8 +1502,6 @@ void pbSampStop(ft2_instance_t *inst)
 {
 	if (inst == NULL)
 		return;
-	
-	/* Stop all voices - matches standalone smpEdStop() which calls lockMixerCallback()/stopVoices() */
 	ft2_stop_all_voices(inst);
 }
 
@@ -1586,7 +1524,6 @@ void pbSampPlayRange(ft2_instance_t *inst)
 	if (inst == NULL)
 		return;
 	
-	/* Only play if there's a valid range selected - matches standalone behavior */
 	if (inst->ui == NULL)
 		return;
 	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
@@ -1889,7 +1826,7 @@ void rbSamplePingpongLoop(ft2_instance_t *inst)
 	}
 }
 
-/* Callback for 8-bit conversion dialog result */
+/* 16-bit to 8-bit conversion. "Yes" scales values, "No" reinterprets bytes. */
 static void onConvert8BitResult(ft2_instance_t *inst, ft2_dialog_result_t result,
                                 const char *inputText, void *userData)
 {
@@ -1903,18 +1840,15 @@ static void onConvert8BitResult(ft2_instance_t *inst, ft2_dialog_result_t result
 	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
 		return;
 
-	/* Must still be 16-bit */
 	if (!(s->flags & SAMPLE_16BIT))
 		return;
 
-	/* Stop voices playing this sample before modifying */
 	ft2_stop_sample_voices(inst, s);
-
-		ft2_unfix_sample(s);
+	ft2_unfix_sample(s);
 
 	if (result == DIALOG_RESULT_OK)
 	{
-		/* Yes - convert sample data (scale values from 16-bit to 8-bit) */
+		/* Convert: scale 16-bit values to 8-bit */
 		int16_t *src = (int16_t *)s->dataPtr;
 		int8_t *dst = s->dataPtr;
 		
@@ -1925,11 +1859,9 @@ static void onConvert8BitResult(ft2_instance_t *inst, ft2_dialog_result_t result
 	}
 	else
 	{
-		/* No - just reinterpret bytes (change flag, double length) */
+		/* Reinterpret: treat 16-bit data as 8-bit (doubles sample count) */
 		s->flags &= ~SAMPLE_16BIT;
-		s->length <<= 1;  /* Double the length since each 16-bit sample becomes 2 8-bit samples */
-		
-		/* Adjust loop points */
+		s->length <<= 1;
 		s->loopStart <<= 1;
 		s->loopLength <<= 1;
 	}
@@ -1941,7 +1873,7 @@ static void onConvert8BitResult(ft2_instance_t *inst, ft2_dialog_result_t result
 	inst->uiState.updateSampleEditor = true;
 }
 
-/* Callback for 16-bit conversion dialog result */
+/* 8-bit to 16-bit conversion. "Yes" scales values, "No" reinterprets bytes. */
 static void onConvert16BitResult(ft2_instance_t *inst, ft2_dialog_result_t result,
                                  const char *inputText, void *userData)
 {
@@ -1955,20 +1887,16 @@ static void onConvert16BitResult(ft2_instance_t *inst, ft2_dialog_result_t resul
 	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
 		return;
 
-	/* Must still be 8-bit */
 	if (s->flags & SAMPLE_16BIT)
 		return;
 
-	/* Stop voices playing this sample before modifying */
 	ft2_stop_sample_voices(inst, s);
-
-		ft2_unfix_sample(s);
+	ft2_unfix_sample(s);
 
 	if (result == DIALOG_RESULT_OK)
 	{
-		/* Yes - convert sample data (scale values from 8-bit to 16-bit) */
-		/* Need to reallocate - double the byte size, with proper padding */
-		int32_t leftPadding = FT2_MAX_TAPS * 2;  /* 16-bit = 2 bytes per sample */
+		/* Convert: scale 8-bit values to 16-bit (requires reallocation) */
+		int32_t leftPadding = FT2_MAX_TAPS * 2;
 		int32_t rightPadding = FT2_MAX_TAPS * 2;
 		int32_t dataLen = s->length * 2;
 		size_t allocSize = (size_t)(leftPadding + dataLen + rightPadding);
@@ -1982,28 +1910,24 @@ static void onConvert16BitResult(ft2_instance_t *inst, ft2_dialog_result_t resul
 		
 		int8_t *newDataPtr = newOrigPtr + leftPadding;
 		
-		/* Convert 8-bit to 16-bit (process in reverse to handle in-place properly) */
 		int16_t *dst = (int16_t *)newDataPtr;
 		int8_t *src = s->dataPtr;
-			for (int32_t i = s->length - 1; i >= 0; i--)
+		for (int32_t i = s->length - 1; i >= 0; i--)
 			dst[i] = (int16_t)(src[i] << 8);
 
-			free(s->origDataPtr);
+		free(s->origDataPtr);
 		s->origDataPtr = newOrigPtr;
 		s->dataPtr = newDataPtr;
-			s->flags |= SAMPLE_16BIT;
+		s->flags |= SAMPLE_16BIT;
 	}
 	else
 	{
-		/* No - just reinterpret bytes (change flag, halve length) */
+		/* Reinterpret: treat 8-bit data as 16-bit (halves sample count) */
 		s->flags |= SAMPLE_16BIT;
-		s->length >>= 1;  /* Halve the length since each pair of bytes becomes one 16-bit sample */
-		
-		/* Adjust loop points */
+		s->length >>= 1;
 		s->loopStart >>= 1;
 		s->loopLength >>= 1;
 		
-		/* Clamp loop to valid range */
 		if (s->loopStart < 0)
 			s->loopStart = 0;
 		if (s->loopStart + s->loopLength > s->length)
@@ -2033,11 +1957,9 @@ void rbSample8bit(ft2_instance_t *inst)
 	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
 		return;
 
-	/* Already 8-bit? */
 	if (!(s->flags & SAMPLE_16BIT))
 		return;
 
-	/* Show confirmation dialog */
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (ui != NULL)
 	{
@@ -2056,11 +1978,9 @@ void rbSample16bit(ft2_instance_t *inst)
 	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
 		return;
 
-	/* Already 16-bit? */
 	if (s->flags & SAMPLE_16BIT)
 		return;
 
-	/* Show confirmation dialog */
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (ui != NULL)
 	{
@@ -2069,8 +1989,6 @@ void rbSample16bit(ft2_instance_t *inst)
 			inst, onConvert16BitResult, NULL);
 	}
 }
-
-/* Disk op callbacks are implemented in ft2_plugin_diskop.c */
 
 /* ========== SCROLLBAR CALLBACKS ========== */
 
@@ -2081,12 +1999,10 @@ void sbPosEd(ft2_instance_t *inst, uint32_t pos)
 	if (pos < inst->replayer.song.songLength)
 	{
 		inst->replayer.song.songPos = (int16_t)pos;
-		
-		/* Update pattern number from order list */
 		inst->replayer.song.pattNum = inst->replayer.song.orders[inst->replayer.song.songPos];
 		inst->replayer.song.currNumRows = inst->replayer.patternNumRows[inst->replayer.song.pattNum];
 		
-		/* Reset row to 0 (matches standalone setNewSongPos -> setPos(pos, 0, true)) */
+		/* Reset to row 0 when changing position (see setPos in standalone) */
 		inst->replayer.song.row = 0;
 		if (!inst->replayer.songPlaying)
 		{
@@ -2123,12 +2039,16 @@ void sbSampScroll(ft2_instance_t *inst, uint32_t pos)
 
 /* ========== CALLBACK INITIALIZATION ========== */
 
+/**
+ * Wire all widget callbacks. Arrow buttons use callbackFuncOnDown for auto-repeat;
+ * action buttons use callbackFuncOnUp for single-fire on release.
+ */
 void initCallbacks(ft2_widgets_t *widgets)
 {
 	if (widgets == NULL)
 		return;
 
-	/* Position editor buttons - arrow buttons use callbackFuncOnDown for repeat */
+	/* Position editor buttons */
 	widgets->pushButtons[PB_POSED_POS_UP].callbackFuncOnDown = pbPosEdPosUp;
 	widgets->pushButtons[PB_POSED_POS_UP].preDelay = 1;
 	widgets->pushButtons[PB_POSED_POS_UP].delayFrames = 4;
@@ -2156,7 +2076,7 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_POSED_REP_DOWN].preDelay = 1;
 	widgets->pushButtons[PB_POSED_REP_DOWN].delayFrames = 4;
 
-	/* Song/pattern buttons - arrow buttons use callbackFuncOnDown for repeat */
+	/* Song/pattern buttons */
 	widgets->pushButtons[PB_BPM_UP].callbackFuncOnDown = pbBPMUp;
 	widgets->pushButtons[PB_BPM_UP].preDelay = 1;
 	widgets->pushButtons[PB_BPM_UP].delayFrames = 4;
@@ -2187,7 +2107,6 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_PATTLEN_DOWN].callbackFuncOnDown = pbPattLenDown;
 	widgets->pushButtons[PB_PATTLEN_DOWN].preDelay = 1;
 	widgets->pushButtons[PB_PATTLEN_DOWN].delayFrames = 4;
-	/* Expand/Shrink only fire on release */
 	widgets->pushButtons[PB_PATT_EXPAND].callbackFuncOnUp = pbPattExpand;
 	widgets->pushButtons[PB_PATT_SHRINK].callbackFuncOnUp = pbPattShrink;
 
@@ -2346,8 +2265,7 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_SAMPLE_LIST_UP].callbackFuncOnUp = pbSampleListUp;
 	widgets->pushButtons[PB_SAMPLE_LIST_DOWN].callbackFuncOnUp = pbSampleListDown;
 
-	/* Channel scroll buttons - use funcOnDown for continuous scrolling */
-	widgets->pushButtons[PB_CHAN_SCROLL_LEFT].callbackFuncOnDown = pbChanScrollLeft;
+		widgets->pushButtons[PB_CHAN_SCROLL_LEFT].callbackFuncOnDown = pbChanScrollLeft;
 	widgets->pushButtons[PB_CHAN_SCROLL_RIGHT].callbackFuncOnDown = pbChanScrollRight;
 
 	/* Instrument range buttons */
@@ -2666,7 +2584,6 @@ void initCallbacks(ft2_widgets_t *widgets)
 
 	radioButtons[RB_DISKOP_MOD_MOD].callbackFunc = rbDiskOpModSaveMod;
 	radioButtons[RB_DISKOP_MOD_XM].callbackFunc = rbDiskOpModSaveXm;
-	/* RB_DISKOP_MOD_WAV disabled in plugin - no WAV export */
 	radioButtons[RB_DISKOP_SMP_RAW].callbackFunc = rbDiskOpSmpSaveRaw;
 	radioButtons[RB_DISKOP_SMP_IFF].callbackFunc = rbDiskOpSmpSaveIff;
 	radioButtons[RB_DISKOP_SMP_WAV].callbackFunc = rbDiskOpSmpSaveWav;

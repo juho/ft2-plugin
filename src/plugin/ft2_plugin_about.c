@@ -30,7 +30,10 @@
 #define PI 3.14159265358979323846
 #endif
 
-/* Scale 70Hz timing to 60Hz (fewer frames = bigger increment per frame) */
+/* 
+ * FT2 original ran at 70Hz vblank. Plugin runs at 60Hz.
+ * Scale rotation deltas to maintain visual speed: delta * (70/60).
+ */
 #define SCALE_VBLANK_DELTA(x) ((int32_t)round((x) * (70.0 / 60.0)))
 
 /* Old starfield types (classic FT2) */
@@ -60,7 +63,7 @@ typedef struct
 	vector_t x, y, z;
 } matrix_t;
 
-/* Star color conversion table */
+/* Maps depth (0-23) to palette index for old starfield. Index selects PAL_FORGRND variants. */
 static const uint8_t starColConv[24] = { 2,2,2,2,2,2,2,2, 2,2,2,1,1,1,3,3, 3,3,3,3,3,3,3,3 };
 
 /* Text strings - must use Latin-1 escapes for FT2 bitmap font compatibility */
@@ -91,7 +94,7 @@ static matrix_t starMatrix;
 static bool initialized = false;
 static bool useNewAboutScreen = true;
 
-/* Random number generator - matches standalone ft2_random.c */
+/* Linear congruential PRNG. Matches standalone ft2_random.c for reproducible star positions. */
 static uint32_t aboutRandSeed = 12345;
 static int32_t randoml(int32_t limit)
 {
@@ -146,7 +149,7 @@ static void blendPixelsXY(ft2_video_t *video, int32_t x, int32_t y,
 	*p = 0xFF000000 | (r << 16) | (g << 8) | b;
 }
 
-/* Old starfield matrix rotation (classic FT2) */
+/* Build 3x3 rotation matrix from Euler angles for old (classic FT2) starfield. */
 static void oldRotateStarfieldMatrix(void)
 {
 	const int16_t sa = (int16_t)round(32767.0 * sin(oldStarRotation.x * (2.0 * PI / 65536.0)));
@@ -169,7 +172,7 @@ static void oldRotateStarfieldMatrix(void)
 	oldStarMatrix.z.z = (cb * cc) >> 16;
 }
 
-/* Render old starfield (classic FT2) */
+/* Render old (classic FT2) starfield: 1000 stars with integer math, pixel-erase. */
 static void oldStarfield(ft2_video_t *video)
 {
 	if (video == NULL || video->frameBuffer == NULL)
@@ -186,7 +189,7 @@ static void oldStarfield(ft2_video_t *video)
 			lastStarScreenPos[i] = -1;
 		}
 
-		star->z += zSpeed; /* This intentionally overflows int16_t */
+		star->z += zSpeed; /* int16_t overflow wraps stars to back of field */
 
 		int16_t z = (((oldStarMatrix.x.z * star->x) >> 16) + ((oldStarMatrix.y.z * star->y) >> 16) + ((oldStarMatrix.z.z * star->z) >> 16)) + 9000;
 		if (z <= 100) continue;
@@ -217,7 +220,7 @@ static void oldStarfield(ft2_video_t *video)
 	}
 }
 
-/* Rotate the new starfield matrix */
+/* Build 3x3 rotation matrix from Euler angles for new starfield (float precision). */
 static void rotateStarfieldMatrix(void)
 {
 	const float F_2PI = (float)(2.0 * PI);
@@ -247,7 +250,7 @@ static void rotateStarfieldMatrix(void)
 	starMatrix.z.z = ycos * zcos;
 }
 
-/* Render the new 3D starfield */
+/* Render new starfield: 1500 stars with float math, anti-aliased glow effect. */
 static void starfield(ft2_video_t *video)
 {
 	if (video == NULL || video->frameBuffer == NULL)
@@ -532,11 +535,6 @@ void ft2_about_render_frame(ft2_video_t *video, const ft2_bmp_t *bmp)
 void ft2_about_draw(ft2_video_t *video, const ft2_bmp_t *bmp)
 {
 	ft2_about_render_frame(video, bmp);
-}
-
-void ft2_about_update(void)
-{
-	/* Updates are now handled in ft2_about_render_frame */
 }
 
 void ft2_about_set_mode(bool newMode)

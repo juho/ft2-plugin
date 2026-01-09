@@ -1,10 +1,8 @@
-/**
- * @file ft2_plugin_trim.h
- * @brief Trim screen functionality for the FT2 plugin.
- *
- * Ported from ft2_trim.h - allows trimming unused patterns, instruments,
- * samples, channels, and converting samples to 8-bit.
- */
+/*
+** FT2 Plugin - Trim Screen API
+** Removes unused patterns/instruments/samples/channels, truncates sample
+** data after loop, converts samples to 8-bit.
+*/
 
 #pragma once
 
@@ -19,7 +17,7 @@ extern "C" {
 
 struct ft2_instance_t;
 
-/* UI functions */
+/* Screen visibility */
 void drawTrimScreen(struct ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp);
 void showTrimScreen(struct ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp);
 void hideTrimScreen(struct ft2_instance_t *inst);

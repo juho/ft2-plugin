@@ -1,8 +1,10 @@
 /**
  * @file ft2_plugin_input.h
- * @brief Input handling for the FT2 plugin.
- * 
- * Handles keyboard input for note entry, pattern navigation, and shortcuts.
+ * @brief Input handling: keyboard, mouse, MIDI note recording.
+ *
+ * Keyboard layout matches FT2: Z-M=C-B, Q-P=C-E (+1 octave).
+ * Numpad for instrument banks, F1-F8 for playback/octave.
+ * Supports multi-channel edit/record and MIDI controller recording.
  */
 
 #pragma once
@@ -16,9 +18,8 @@ extern "C" {
 
 struct ft2_instance_t;
 
-/* Key codes (matching JUCE KeyPress codes) */
-enum
-{
+/* Key codes matching JUCE KeyPress */
+enum {
 	FT2_KEY_SPACE = ' ',
 	FT2_KEY_RETURN = '\r',
 	FT2_KEY_ESCAPE = 27,
@@ -68,153 +69,83 @@ enum
 };
 
 /* Modifier flags */
-enum
-{
+enum {
 	FT2_MOD_SHIFT = 1,
-	FT2_MOD_CTRL = 2,
-	FT2_MOD_ALT = 4,
-	FT2_MOD_CMD = 8
+	FT2_MOD_CTRL  = 2,
+	FT2_MOD_ALT   = 4,
+	FT2_MOD_CMD   = 8
 };
 
-/* Mouse button constants */
-enum
-{
-	MOUSE_BUTTON_LEFT = 1,
-	MOUSE_BUTTON_RIGHT = 2,
+/* Mouse buttons */
+enum {
+	MOUSE_BUTTON_LEFT   = 1,
+	MOUSE_BUTTON_RIGHT  = 2,
 	MOUSE_BUTTON_MIDDLE = 3
 };
 
-/* Cursor object positions within a channel */
-enum
-{
-	CURSOR_NOTE = 0,
-	CURSOR_INST1 = 1,
-	CURSOR_INST2 = 2,
-	CURSOR_VOL1 = 3,
-	CURSOR_VOL2 = 4,
-	CURSOR_EFX0 = 5,
-	CURSOR_EFX1 = 6,
-	CURSOR_EFX2 = 7
+/* Cursor position within a channel (8 columns per channel) */
+enum {
+	CURSOR_NOTE  = 0,  /* Note column */
+	CURSOR_INST1 = 1,  /* Instrument high nibble */
+	CURSOR_INST2 = 2,  /* Instrument low nibble */
+	CURSOR_VOL1  = 3,  /* Volume column effect type */
+	CURSOR_VOL2  = 4,  /* Volume column param */
+	CURSOR_EFX0  = 5,  /* Effect type */
+	CURSOR_EFX1  = 6,  /* Effect param high nibble */
+	CURSOR_EFX2  = 7   /* Effect param low nibble */
 };
 
-/* Note values */
-#define FT2_KEY_NOTE_OFF 97
+#define FT2_KEY_NOTE_OFF  97
 #define FT2_KEY_NOTE_NONE 0
 
-typedef struct ft2_input_state_t
-{
-	bool keyDown[512];
-	int32_t lastKeyPressed;
-	uint8_t modifiers;
-	int32_t mouseX, mouseY;
-	uint8_t mouseButtons;
-	bool mouseDragging;
-	bool pattMarkDragging;
-	int8_t octave;
-	bool editMode;
-	bool keyRepeat;
-	bool numPadPlusPressed;
-	bool ignoreCurrKeyUp;
-	uint32_t keyOffNr;
-	int32_t keyOffTime[32];
-	uint8_t keyOnTab[32];
+typedef struct ft2_input_state_t {
+	bool keyDown[512];          /* Key state array */
+	int32_t lastKeyPressed;     /* Last key code */
+	uint8_t modifiers;          /* Current modifier flags */
+	int32_t mouseX, mouseY;     /* Mouse position */
+	uint8_t mouseButtons;       /* Mouse button state bitmask */
+	bool mouseDragging;         /* Mouse drag in progress */
+	bool pattMarkDragging;      /* Pattern marking drag */
+	int8_t octave;              /* Current keyboard octave (0-7) */
+	bool editMode;              /* Edit mode active */
+	bool keyRepeat;             /* Key repeat in progress */
+	bool numPadPlusPressed;     /* Numpad + held for bank selection */
+	bool ignoreCurrKeyUp;       /* Skip next key-up event */
+	uint32_t keyOffNr;          /* Note-off sequence counter */
+	int32_t keyOffTime[32];     /* Per-channel note-off timestamps */
+	uint8_t keyOnTab[32];       /* Per-channel held note numbers */
 } ft2_input_state_t;
 
-/**
- * Initialize input state.
- * @param input Input state
- */
+/* Initialization */
 void ft2_input_init(ft2_input_state_t *input);
 
-/**
- * Handle key down event.
- * @param inst FT2 instance
- * @param input Input state
- * @param keyCode Key code
- * @param modifiers Modifier flags
- */
+/* Keyboard */
 void ft2_input_key_down(struct ft2_instance_t *inst, ft2_input_state_t *input, int keyCode, int modifiers);
-
-/**
- * Handle key up event.
- * @param inst FT2 instance
- * @param input Input state
- * @param keyCode Key code
- * @param modifiers Modifier flags
- */
 void ft2_input_key_up(struct ft2_instance_t *inst, ft2_input_state_t *input, int keyCode, int modifiers);
 
-/**
- * Handle mouse down event.
- * @param input Input state
- * @param x Mouse X coordinate
- * @param y Mouse Y coordinate
- * @param button Button number
- */
+/* Mouse */
 void ft2_input_mouse_down(ft2_input_state_t *input, int x, int y, int button);
-
-/**
- * Handle mouse up event.
- * @param input Input state
- * @param x Mouse X coordinate
- * @param y Mouse Y coordinate
- * @param button Button number
- */
 void ft2_input_mouse_up(ft2_input_state_t *input, int x, int y, int button);
-
-/**
- * Handle mouse move event.
- * @param input Input state
- * @param x Mouse X coordinate
- * @param y Mouse Y coordinate
- */
 void ft2_input_mouse_move(ft2_input_state_t *input, int x, int y);
-
-/**
- * Handle mouse wheel event.
- * @param input Input state
- * @param delta Wheel delta
- */
 void ft2_input_mouse_wheel(ft2_input_state_t *input, int delta);
-
-/**
- * Update input state.
- * @param input Input state
- */
 void ft2_input_update(ft2_input_state_t *input);
 
-/**
- * Convert a keyboard character to an FT2 note number.
- * @param key Character code (ASCII)
- * @param octave Current octave
- * @return Note number (1-96), NOTE_OFF (97), or 0 if not a note key
- */
+/* Note conversion: key + octave -> note 1-96, or 0 if not a note key */
 int8_t ft2_key_to_note(int key, int8_t octave);
 
-/**
- * Record/play a note (unified path for keyboard and MIDI input).
- * Handles channel allocation, playback triggering, and pattern recording.
- * 
- * @param inst Instance
- * @param input Input state (for keyOnTab/keyOffTime tracking)
- * @param noteNum Note number (1-96) or NOTE_OFF (97)
- * @param vol Volume (-1 = use sample default and don't record vol, 0-64 = record to pattern)
- * @param midiVibDepth MIDI vibrato depth from mod wheel (0 if not MIDI)
- * @param midiPitch MIDI pitch bend value (-128 to 127, 0 if not MIDI)
- * @return Channel used (0-31), or -1 if failed/note-off
+/*
+ * Record/play a note from keyboard or MIDI.
+ * Handles channel allocation, playback, and pattern recording.
+ * vol: -1 = default, 0-64 = record to pattern
+ * midiVibDepth: mod wheel depth (0 if keyboard)
+ * midiPitch: pitch bend -128..127 (0 if keyboard)
+ * Returns channel used (0-31), or -1 on failure.
  */
 int8_t ft2_plugin_record_note(struct ft2_instance_t *inst, ft2_input_state_t *input,
                               uint8_t noteNum, int8_t vol,
                               uint16_t midiVibDepth, int16_t midiPitch);
 
-/**
- * Record a note-off on a specific channel.
- * Used when releasing a MIDI note that was tracked to a specific channel.
- * 
- * @param inst Instance
- * @param input Input state
- * @param channel Channel to release (0-31)
- */
+/* Release a note on a specific channel (for MIDI note-off tracking) */
 void ft2_plugin_record_note_off(struct ft2_instance_t *inst, ft2_input_state_t *input, int8_t channel);
 
 #ifdef __cplusplus

@@ -1,10 +1,10 @@
-/**
- * @file ft2_plugin_sample_ed.c
- * @brief Exact port of sample editor from ft2_sample_ed.c
- *
- * This is a full port of the FT2 sample editor drawing code, adapted for
- * the plugin architecture with instance-aware state.
- */
+/*
+** FT2 Plugin - Sample Editor
+** Port of ft2_sample_ed.c with instance-aware state.
+**
+** Implements waveform display, range selection, loop pin editing, clipboard
+** operations, and sample processing (normalize, fade, reverse, etc).
+*/
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -27,29 +27,22 @@
 #include "ft2_plugin_instr_ed.h"
 #include "ft2_instance.h"
 
-/* Use macros from ft2_plugin_video.h: SGN, ABS, CLAMP */
-
-/* Forward declaration */
 static ft2_sample_t *getCurrentSampleWithInst(ft2_sample_editor_t *editor, ft2_instance_t *inst);
 
-/* ============ STATIC DRAWING FUNCTIONS ============ */
+/* ------------------------------------------------------------------------- */
+/*                         WAVEFORM DRAWING                                  */
+/* ------------------------------------------------------------------------- */
 
-/* Sample line drawing - exact port from ft2_sample_ed.c */
+/* Bresenham line drawing for waveform display */
 static void sampleLine(ft2_video_t *video, int32_t x1, int32_t x2, int32_t y1, int32_t y2)
 {
-	if (video == NULL || video->frameBuffer == NULL)
+	if (!video || !video->frameBuffer)
 		return;
 
-	int32_t d;
-	const int32_t dx = x2 - x1;
-	const int32_t ax = ABS(dx) * 2;
-	const int32_t sx = SGN(dx);
-	const int32_t dy = y2 - y1;
-	const int32_t ay = ABS(dy) * 2;
-	const int32_t sy = SGN(dy);
-	int32_t x = x1;
-	int32_t y = y1;
-
+	const int32_t dx = x2 - x1, dy = y2 - y1;
+	const int32_t ax = ABS(dx) * 2, ay = ABS(dy) * 2;
+	const int32_t sx = SGN(dx), sy = SGN(dy);
+	int32_t x = x1, y = y1, d;
 	const uint32_t pixVal = video->palette[PAL_PATTEXT];
 
 	if (ax > ay)
@@ -102,85 +95,67 @@ static void sampleLine(ft2_video_t *video, int32_t x1, int32_t x2, int32_t y1, i
 	}
 }
 
-/* Get scaled sample value for display */
+/* Scales sample value to display Y coordinate */
 static int32_t getScaledSample(ft2_sample_editor_t *ed, ft2_sample_t *s, int32_t pos)
 {
-	if (s == NULL || s->dataPtr == NULL || pos < 0 || pos >= s->length)
+	(void)ed;
+	if (!s || !s->dataPtr || pos < 0 || pos >= s->length)
 		return SAMPLE_AREA_Y_CENTER;
 
 	int32_t sample;
-	
 	if (s->flags & SAMPLE_16BIT)
 	{
-		int16_t *ptr16 = (int16_t *)s->dataPtr;
-		sample = ptr16[pos];
-		/* Scale from -32768..32767 to display range */
+		sample = ((int16_t *)s->dataPtr)[pos];
 		sample = SAMPLE_AREA_Y_CENTER - ((sample * (SAMPLE_AREA_HEIGHT / 2)) / 32768);
 	}
 	else
 	{
-		int8_t *ptr8 = (int8_t *)s->dataPtr;
-		sample = ptr8[pos];
-		/* Scale from -128..127 to display range */
+		sample = ((int8_t *)s->dataPtr)[pos];
 		sample = SAMPLE_AREA_Y_CENTER - ((sample * (SAMPLE_AREA_HEIGHT / 2)) / 128);
 	}
-
 	return CLAMP(sample, SAMPLE_AREA_Y_START, SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT - 1);
 }
 
-/* Convert mouse Y position to sample value (0-255 range) for draw mode */
+/* Converts mouse Y to sample value (0-255) for draw mode */
 static int32_t mouseYToSampleY(int32_t my)
 {
 	my -= SAMPLE_AREA_Y_START;
-	const double dTmp = my * (256.0 / SAMPLE_AREA_HEIGHT);
-	const int32_t tmp32 = (int32_t)(dTmp + 0.5);
+	int32_t tmp32 = (int32_t)(my * (256.0 / SAMPLE_AREA_HEIGHT) + 0.5);
 	return 255 - CLAMP(tmp32, 0, 255);
 }
 
-/* Get sample data peak (min/max) for a range */
+/* Gets min/max sample values for a range (zoomed-out display) */
 static void getSampleDataPeak(ft2_sample_t *s, int32_t start, int32_t count, int16_t *outMin, int16_t *outMax)
 {
-	if (s == NULL || s->dataPtr == NULL || count <= 0)
+	if (!s || !s->dataPtr || count <= 0)
 	{
-		*outMin = SAMPLE_AREA_Y_CENTER;
-		*outMax = SAMPLE_AREA_Y_CENTER;
+		*outMin = *outMax = SAMPLE_AREA_Y_CENTER;
 		return;
 	}
 
-	int32_t min = 0x7FFFFFFF;
-	int32_t max = -0x7FFFFFFF;
+	int32_t min = 0x7FFFFFFF, max = -0x7FFFFFFF;
 
 	if (s->flags & SAMPLE_16BIT)
 	{
 		int16_t *ptr16 = (int16_t *)s->dataPtr;
-		for (int32_t i = 0; i < count; i++)
+		for (int32_t i = 0; i < count && start + i < s->length; i++)
 		{
-			int32_t pos = start + i;
-			if (pos >= s->length)
-				break;
-
-			int32_t sample = ptr16[pos];
+			int32_t sample = ptr16[start + i];
 			if (sample < min) min = sample;
 			if (sample > max) max = sample;
 		}
-		/* Scale to display coordinates */
 		min = SAMPLE_AREA_Y_CENTER - ((min * (SAMPLE_AREA_HEIGHT / 2)) / 32768);
 		max = SAMPLE_AREA_Y_CENTER - ((max * (SAMPLE_AREA_HEIGHT / 2)) / 32768);
 	}
 	else
 	{
 		int8_t *ptr8 = (int8_t *)s->dataPtr;
-		for (int32_t i = 0; i < count; i++)
+		for (int32_t i = 0; i < count && start + i < s->length; i++)
 		{
-			int32_t pos = start + i;
-			if (pos >= s->length)
-				break;
-
-			int32_t sample = ptr8[pos];
+			int32_t sample = ptr8[start + i];
 			if (sample < min) min = sample;
 			if (sample > max) max = sample;
 		}
-		/* Scale to display coordinates */
 		min = SAMPLE_AREA_Y_CENTER - ((min * (SAMPLE_AREA_HEIGHT / 2)) / 128);
 		max = SAMPLE_AREA_Y_CENTER - ((max * (SAMPLE_AREA_HEIGHT / 2)) / 128);
 	}
@@ -189,11 +164,14 @@ static void getSampleDataPeak(ft2_sample_t *s, int32_t start, int32_t count, int
 	*outMax = (int16_t)CLAMP(max, SAMPLE_AREA_Y_START, SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT - 1);
 }
 
-/* Update scaling factors - matches original ft2_sample_ed.c updateViewSize()/updateScrPos() */
+/* ------------------------------------------------------------------------- */
+/*                       COORDINATE CONVERSION                               */
+/* ------------------------------------------------------------------------- */
+
+/* Updates scaling factors for view<->sample coordinate conversion */
 static void updateScalingFactors(ft2_sample_editor_t *ed)
 {
-	if (ed == NULL)
-		return;
+	if (!ed) return;
 
 	if (ed->viewSize > 0)
 	{
@@ -205,147 +183,107 @@ static void updateScalingFactors(ft2_sample_editor_t *ed)
 		ed->dPos2ScrMul = 1.0;
 		ed->dScr2SmpPosMul = 1.0;
 	}
-
-	/* Must use floor() here - matches original FT2 updateScrPos() */
+	/* floor() required here to match original FT2 behavior */
 	ed->dScrPosScaled = floor(ed->scrPos * ed->dPos2ScrMul);
 }
 
-/* Screen position to sample position - matches original scr2SmpPos() */
+/* Screen X -> sample position */
 int32_t ft2_sample_scr2SmpPos(ft2_instance_t *inst, int32_t x)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || editor->viewSize <= 0)
-		return 0;
+	if (!editor || editor->viewSize <= 0) return 0;
+	if (x < 0) x = 0;
 
-	if (x < 0)
-		x = 0;
+	int32_t smpPos = (int32_t)((editor->dScrPosScaled + x) * editor->dScr2SmpPosMul);
 
-	double dPos = (editor->dScrPosScaled + x) * editor->dScr2SmpPosMul;
-	int32_t smpPos = (int32_t)dPos;
-
-	/* Clamp to sample length if we have a sample */
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s != NULL && smpPos > s->length)
-		smpPos = s->length;
-
+	if (s && smpPos > s->length) smpPos = s->length;
 	return smpPos;
 }
 
-/* Sample position to screen position - matches original smpPos2Scr() */
+/* Sample position -> screen X */
 int32_t ft2_sample_smpPos2Scr(ft2_instance_t *inst, int32_t pos)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || editor->viewSize <= 0)
-		return -1;
+	if (!editor || editor->viewSize <= 0) return -1;
 
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL)
-		return -1;
+	if (!s) return -1;
+	if (pos > s->length) pos = s->length;
 
-	if (pos > s->length)
-		pos = s->length;
-
-	double dPos = (pos * editor->dPos2ScrMul) + 0.5; /* Pre-rounding bias needed */
-	dPos -= editor->dScrPosScaled;
-
-	/* Clamp to valid range */
-	dPos = CLAMP(dPos, INT32_MIN, INT32_MAX);
-
-	return (int32_t)dPos;
+	double dPos = (pos * editor->dPos2ScrMul) + 0.5 - editor->dScrPosScaled;
+	return (int32_t)CLAMP(dPos, INT32_MIN, INT32_MAX);
 }
 
-/* ============ PUBLIC FUNCTIONS ============ */
+/* ------------------------------------------------------------------------- */
+/*                           INITIALIZATION                                  */
+/* ------------------------------------------------------------------------- */
 
 void ft2_sample_ed_init(ft2_sample_editor_t *editor, ft2_video_t *video)
 {
-	if (editor == NULL)
-		return;
-
+	if (!editor) return;
 	memset(editor, 0, sizeof(ft2_sample_editor_t));
 	editor->video = video;
 	editor->currInstr = 1;
-	editor->currSample = 0;
-	editor->scrPos = 0;
-	editor->viewSize = 0;
-	editor->rangeStart = 0;
-	editor->rangeEnd = 0;
-	editor->hasRange = false;
 	editor->oldSmpPosLine = -1;
 	editor->dPos2ScrMul = 1.0;
 	editor->dScr2SmpPosMul = 1.0;
-	editor->dScrPosScaled = 0.0;
 }
 
+/*
+** Sets active sample and updates view state.
+** Only resets view when slot changes or current view is invalid.
+** Preserves user zoom when just refreshing the same sample.
+*/
 void ft2_sample_ed_set_sample(ft2_instance_t *inst, int instr, int sample)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL)
-		return;
+	if (!editor) return;
 
-	/* Check if instrument or sample slot changed */
 	bool slotChanged = (editor->currInstr != instr || editor->currSample != sample);
-
 	editor->currInstr = (int16_t)instr;
 	editor->currSample = (int16_t)sample;
 
-	/* Get sample length */
 	int32_t smpLen = 0;
-	if (inst != NULL && instr > 0 && instr < 128)
+	if (inst && instr > 0 && instr < 128)
 	{
 		ft2_instr_t *ins = inst->replayer.instr[instr];
-		if (ins != NULL && sample >= 0 && sample < 16)
-		{
+		if (ins && sample >= 0 && sample < 16)
 			smpLen = ins->smp[sample].length;
-		}
 	}
-	
-	/* Reset view only when:
-	 * 1. Sample slot changed (different instr/sample selected), OR
-	 * 2. Current view is invalid (viewSize > sample length or viewSize <= 0)
-	 * 
-	 * Note: Do NOT reset just because viewSize != smpLen - that just means
-	 * the user has zoomed in, which is valid and should be preserved.
-	 */
+
 	bool needsViewReset = slotChanged ||
 	                      (smpLen > 0 && editor->viewSize > smpLen) ||
 	                      (smpLen > 0 && editor->viewSize <= 0);
 
 	if (slotChanged)
 	{
-		editor->rangeStart = 0;
-		editor->rangeEnd = 0;
+		editor->rangeStart = editor->rangeEnd = 0;
 		editor->hasRange = false;
 	}
 
 	if (needsViewReset)
 	{
-		editor->viewSize = smpLen;
-		editor->scrPos = 0;
-		editor->oldViewSize = smpLen;
-		editor->oldScrPos = 0;
-		editor->rangeStart = 0;
-		editor->rangeEnd = 0;
+		editor->viewSize = editor->oldViewSize = smpLen;
+		editor->scrPos = editor->oldScrPos = 0;
+		editor->rangeStart = editor->rangeEnd = 0;
 		editor->hasRange = false;
 	}
 
 	/* Sanitize scroll position */
-	if (smpLen > 0)
+	if (smpLen > 0 && editor->scrPos + editor->viewSize > smpLen)
 	{
-		if (editor->scrPos + editor->viewSize > smpLen)
+		editor->scrPos = smpLen - editor->viewSize;
+		if (editor->scrPos < 0)
 		{
-			editor->scrPos = smpLen - editor->viewSize;
-			if (editor->scrPos < 0)
-			{
-				editor->scrPos = 0;
-				editor->viewSize = smpLen;
-			}
+			editor->scrPos = 0;
+			editor->viewSize = smpLen;
 		}
 	}
 
-	/* Configure the sample scrollbar - always sync to current editor state */
-	ft2_widgets_t *widgets = (inst != NULL && inst->ui != NULL) ?
-		&((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
+	/* Sync scrollbar */
+	ft2_widgets_t *widgets = (inst && inst->ui) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets)
 	{
 		if (smpLen > 0)
 		{
@@ -364,40 +302,30 @@ void ft2_sample_ed_set_sample(ft2_instance_t *inst, int instr, int sample)
 	updateScalingFactors(editor);
 }
 
+/* ------------------------------------------------------------------------- */
+/*                        WAVEFORM RENDERING                                 */
+/* ------------------------------------------------------------------------- */
+
 void ft2_sample_ed_draw_waveform(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
-	if (ed == NULL || ed->video == NULL || inst == NULL)
-		return;
+	if (!ed || !ed->video || !inst) return;
 
 	ft2_video_t *video = ed->video;
 
-	/* Clear sample data area */
+	/* Clear sample area */
 	for (int32_t y = SAMPLE_AREA_Y_START; y < SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT; y++)
-	{
 		memset(&video->frameBuffer[y * SCREEN_W], 0, SAMPLE_AREA_WIDTH * sizeof(uint32_t));
-	}
 
-	/* Draw center line */
 	hLine(video, 0, SAMPLE_AREA_Y_CENTER, SAMPLE_AREA_WIDTH, PAL_DESKTOP);
 
-	/* Get current sample */
-	if (ed->currInstr <= 0 || ed->currInstr >= 128)
-		return;
-
+	if (ed->currInstr <= 0 || ed->currInstr >= 128) return;
 	ft2_instr_t *instr = inst->replayer.instr[ed->currInstr];
-	if (instr == NULL)
-		return;
-
-	if (ed->currSample < 0 || ed->currSample >= 16)
-		return;
+	if (!instr) return;
+	if (ed->currSample < 0 || ed->currSample >= 16) return;
 
 	ft2_sample_t *s = &instr->smp[ed->currSample];
-	if (s->dataPtr == NULL || s->length <= 0)
-		return;
-
-	if (ed->viewSize <= 0)
-		return;
+	if (!s->dataPtr || s->length <= 0 || ed->viewSize <= 0) return;
 
 	updateScalingFactors(ed);
 
@@ -464,215 +392,134 @@ void ft2_sample_ed_draw_waveform(ft2_instance_t *inst)
 	}
 }
 
+/* Draws selection range by XORing with palette index 2 */
 void ft2_sample_ed_draw_range(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
-	if (ed == NULL || ed->video == NULL || !ed->hasRange)
-		return;
+	if (!ed || !ed->video || !ed->hasRange) return;
 
-	(void)inst; /* Used for coordinate conversion */
 	ft2_video_t *video = ed->video;
+	int32_t start = ed->rangeStart, end = ed->rangeEnd;
+	if (start > end) { int32_t tmp = start; start = end; end = tmp; }
 
-	int32_t start = ed->rangeStart;
-	int32_t end = ed->rangeEnd;
+	int32_t x1 = CLAMP(ft2_sample_smpPos2Scr(inst, start), 0, SAMPLE_AREA_WIDTH - 1);
+	int32_t x2 = CLAMP(ft2_sample_smpPos2Scr(inst, end), 0, SAMPLE_AREA_WIDTH - 1);
+	if (x1 > x2) return;
 
-	/* Ensure start <= end */
-	if (start > end)
-	{
-		int32_t tmp = start;
-		start = end;
-		end = tmp;
-	}
-
-	/* Convert to screen coordinates */
-	int32_t x1 = ft2_sample_smpPos2Scr(inst, start);
-	int32_t x2 = ft2_sample_smpPos2Scr(inst, end);
-
-	x1 = CLAMP(x1, 0, SAMPLE_AREA_WIDTH - 1);
-	x2 = CLAMP(x2, 0, SAMPLE_AREA_WIDTH - 1);
-
-	if (x1 > x2)
-		return;
-
-	/* Calculate range length - even point selection (x1 == x2) draws 1 pixel */
 	int32_t rangeLen = (x2 + 1) - x1;
-
-	/* Draw range by XORing with palette index 2 (range color) */
 	for (int32_t y = SAMPLE_AREA_Y_START; y < SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT; y++)
 	{
 		uint32_t *ptr = &video->frameBuffer[(y * SCREEN_W) + x1];
 		for (int32_t x = 0; x < rangeLen; x++, ptr++)
-		{
 			*ptr = video->palette[(*ptr >> 24) ^ 2];
-		}
 	}
 }
 
-/* Draw loop pin bitmap with transparency */
+/* ------------------------------------------------------------------------- */
+/*                          LOOP PIN DRAWING                                 */
+/* ------------------------------------------------------------------------- */
+
+/* Draws loop pin sprite with clipping and transparency */
 static void drawLoopPinSprite(ft2_video_t *video, const uint8_t *src8, int32_t xPos)
 {
-	if (video == NULL || src8 == NULL)
-		return;
+	if (!video || !src8) return;
 
-	const int32_t spriteW = 16;
-	const int32_t spriteH = SAMPLE_AREA_HEIGHT;
-	const int32_t yPos = SAMPLE_AREA_Y_START;
-
-	int32_t sw = spriteW;
-	int32_t sx = xPos;
+	const int32_t spriteW = 16, spriteH = SAMPLE_AREA_HEIGHT;
+	int32_t sw = spriteW, sx = xPos;
 	const uint8_t *srcPtr = src8;
 
-	/* If x is negative, adjust variables */
-	if (sx < 0)
-	{
-		sw += sx;
-		srcPtr -= sx;
-		sx = 0;
-	}
+	/* Left clip */
+	if (sx < 0) { sw += sx; srcPtr -= sx; sx = 0; }
+	if (sw <= 0) return;
 
-	if (sw <= 0)
-		return;
+	/* Right clip */
+	if (sx + sw > SCREEN_W) sw = SCREEN_W - sx;
+	if (sw <= 0) return;
 
-	/* Handle x clipping on right side */
-	if (sx + sw > SCREEN_W)
-		sw = SCREEN_W - sx;
-
-	if (sw <= 0)
-		return;
-
-	int32_t srcPitch = spriteW - sw;
-	int32_t dstPitch = SCREEN_W - sw;
-
-	uint32_t *dst32 = &video->frameBuffer[(yPos * SCREEN_W) + sx];
+	int32_t srcPitch = spriteW - sw, dstPitch = SCREEN_W - sw;
+	uint32_t *dst32 = &video->frameBuffer[(SAMPLE_AREA_Y_START * SCREEN_W) + sx];
 
 	for (int32_t y = 0; y < spriteH; y++)
 	{
-		for (int32_t x = 0; x < sw; x++)
-		{
+		for (int32_t x = 0; x < sw; x++, dst32++, srcPtr++)
 			if (*srcPtr != PAL_TRANSPR)
 				*dst32 = video->palette[*srcPtr];
-			
-			dst32++;
-			srcPtr++;
-		}
-
 		srcPtr += srcPitch;
 		dst32 += dstPitch;
 	}
 }
 
+/* Draws loop start/end pin sprites. Bitmap has 4 states: left normal/clicked, right normal/clicked */
 void ft2_sample_ed_draw_loop_points(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
-	if (ed == NULL || ed->video == NULL || inst == NULL || ed->bmp == NULL)
-		return;
+	if (!ed || !ed->video || !inst || !ed->bmp || !ed->bmp->loopPins) return;
 
-	ft2_video_t *video = ed->video;
-	const ft2_bmp_t *bmp = ed->bmp;
-
-	/* Check for loop pin bitmap */
-	if (bmp->loopPins == NULL)
-		return;
-
-	/* Get current sample */
-	if (ed->currInstr <= 0 || ed->currInstr >= 128)
-		return;
-
+	if (ed->currInstr <= 0 || ed->currInstr >= 128) return;
 	ft2_instr_t *instr = inst->replayer.instr[ed->currInstr];
-	if (instr == NULL)
-		return;
-
-	if (ed->currSample < 0 || ed->currSample >= 16)
-		return;
+	if (!instr || ed->currSample < 0 || ed->currSample >= 16) return;
 
 	ft2_sample_t *s = &instr->smp[ed->currSample];
-	uint8_t loopType = GET_LOOPTYPE(s->flags);
+	if (GET_LOOPTYPE(s->flags) == LOOP_OFF || s->loopLength <= 0) return;
 
-	if (loopType == LOOP_OFF || s->loopLength <= 0)
-		return;
-
-	int32_t loopStart = s->loopStart;
-	int32_t loopEnd = loopStart + s->loopLength;
-
-	/* Convert to screen coordinates */
-	int32_t x1 = ft2_sample_smpPos2Scr(inst, loopStart);
-	int32_t x2 = ft2_sample_smpPos2Scr(inst, loopEnd);
-
-	/* Bitmap layout: 4 states, each 16 * 154 bytes
-	 * State 0: left loop pin (normal)
-	 * State 1: left loop pin (clicked)
-	 * State 2: right loop pin (normal)
-	 * State 3: right loop pin (clicked)
-	 */
+	int32_t x1 = ft2_sample_smpPos2Scr(inst, s->loopStart);
+	int32_t x2 = ft2_sample_smpPos2Scr(inst, s->loopStart + s->loopLength);
 	const int32_t pinDataSize = 16 * SAMPLE_AREA_HEIGHT;
 
-	/* Draw left loop pin if visible (position sprite at x - 8 so triangle is centered) */
 	if (x1 >= -8 && x1 <= SAMPLE_AREA_WIDTH + 8)
 	{
 		int32_t state = inst->uiState.leftLoopPinMoving ? 1 : 0;
-		const uint8_t *leftPinData = &bmp->loopPins[state * pinDataSize];
-		drawLoopPinSprite(video, leftPinData, x1 - 8);
+		drawLoopPinSprite(ed->video, &ed->bmp->loopPins[state * pinDataSize], x1 - 8);
 	}
 
-	/* Draw right loop pin if visible */
 	if (x2 >= -8 && x2 <= SAMPLE_AREA_WIDTH + 8)
 	{
 		int32_t state = inst->uiState.rightLoopPinMoving ? 3 : 2;
-		const uint8_t *rightPinData = &bmp->loopPins[state * pinDataSize];
-		drawLoopPinSprite(video, rightPinData, x2 - 8);
+		drawLoopPinSprite(ed->video, &ed->bmp->loopPins[state * pinDataSize], x2 - 8);
 	}
 }
 
-/* Note name lookup tables */
+/* ------------------------------------------------------------------------- */
+/*                         UI STATE HELPERS                                  */
+/* ------------------------------------------------------------------------- */
+
 static const char sharpNote1Char[12] = { 'C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B' };
 static const char sharpNote2Char[12] = { '-', '#', '-', '#', '-', '-', '#', '-', '#', '-', '#', '-' };
 
+/* Syncs radio button state with current sample's loop type and bit depth */
 static void updateSampleEditorRadioButtons(ft2_sample_editor_t *editor, ft2_instance_t *inst)
 {
-	if (editor == NULL || inst == NULL)
-		return;
-	
-	/* Get current sample */
+	if (!editor || !inst) return;
+
 	ft2_sample_t *s = NULL;
 	if (editor->currInstr > 0 && editor->currInstr < 128)
 	{
 		ft2_instr_t *instr = inst->replayer.instr[editor->currInstr];
-		if (instr != NULL && editor->currSample >= 0 && editor->currSample < 16)
+		if (instr && editor->currSample >= 0 && editor->currSample < 16)
 			s = &instr->smp[editor->currSample];
 	}
 
-	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	
-	if (s == NULL)
+	ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (!widgets) return;
+
+	if (!s)
 	{
-		/* No sample - set defaults */
-		if (widgets != NULL)
-		{
-			widgets->radioButtonState[RB_SAMPLE_NO_LOOP] = RADIOBUTTON_CHECKED;
-			widgets->radioButtonState[RB_SAMPLE_FWD_LOOP] = RADIOBUTTON_UNCHECKED;
-			widgets->radioButtonState[RB_SAMPLE_BIDI_LOOP] = RADIOBUTTON_UNCHECKED;
-			widgets->radioButtonState[RB_SAMPLE_8BIT] = RADIOBUTTON_CHECKED;
-			widgets->radioButtonState[RB_SAMPLE_16BIT] = RADIOBUTTON_UNCHECKED;
-		}
+		widgets->radioButtonState[RB_SAMPLE_NO_LOOP] = RADIOBUTTON_CHECKED;
+		widgets->radioButtonState[RB_SAMPLE_FWD_LOOP] = RADIOBUTTON_UNCHECKED;
+		widgets->radioButtonState[RB_SAMPLE_BIDI_LOOP] = RADIOBUTTON_UNCHECKED;
+		widgets->radioButtonState[RB_SAMPLE_8BIT] = RADIOBUTTON_CHECKED;
+		widgets->radioButtonState[RB_SAMPLE_16BIT] = RADIOBUTTON_UNCHECKED;
 		return;
 	}
 
-	/* Update loop type radio buttons */
 	uint8_t loopType = GET_LOOPTYPE(s->flags);
-	if (widgets != NULL)
-	{
-		widgets->radioButtonState[RB_SAMPLE_NO_LOOP] = (loopType == LOOP_OFF) ? RADIOBUTTON_CHECKED : RADIOBUTTON_UNCHECKED;
-		widgets->radioButtonState[RB_SAMPLE_FWD_LOOP] = (loopType == LOOP_FWD) ? RADIOBUTTON_CHECKED : RADIOBUTTON_UNCHECKED;
-		widgets->radioButtonState[RB_SAMPLE_BIDI_LOOP] = (loopType == LOOP_BIDI) ? RADIOBUTTON_CHECKED : RADIOBUTTON_UNCHECKED;
-	}
+	widgets->radioButtonState[RB_SAMPLE_NO_LOOP] = (loopType == LOOP_OFF) ? RADIOBUTTON_CHECKED : RADIOBUTTON_UNCHECKED;
+	widgets->radioButtonState[RB_SAMPLE_FWD_LOOP] = (loopType == LOOP_FWD) ? RADIOBUTTON_CHECKED : RADIOBUTTON_UNCHECKED;
+	widgets->radioButtonState[RB_SAMPLE_BIDI_LOOP] = (loopType == LOOP_BIDI) ? RADIOBUTTON_CHECKED : RADIOBUTTON_UNCHECKED;
 
-	/* Update bit depth radio buttons */
 	bool is16Bit = (s->flags & SAMPLE_16BIT) != 0;
-	if (widgets != NULL)
-	{
-		widgets->radioButtonState[RB_SAMPLE_8BIT] = is16Bit ? RADIOBUTTON_UNCHECKED : RADIOBUTTON_CHECKED;
-		widgets->radioButtonState[RB_SAMPLE_16BIT] = is16Bit ? RADIOBUTTON_CHECKED : RADIOBUTTON_UNCHECKED;
-	}
+	widgets->radioButtonState[RB_SAMPLE_8BIT] = is16Bit ? RADIOBUTTON_UNCHECKED : RADIOBUTTON_CHECKED;
+	widgets->radioButtonState[RB_SAMPLE_16BIT] = is16Bit ? RADIOBUTTON_CHECKED : RADIOBUTTON_UNCHECKED;
 }
 
 static void drawPlayNote(ft2_video_t *video, const ft2_bmp_t *bmp, uint8_t noteNr)
@@ -697,66 +544,40 @@ static void drawSmpEdHexValue(ft2_video_t *video, const ft2_bmp_t *bmp, int16_t 
 	textOut(video, bmp, x, y, PAL_FORGRND, str);
 }
 
-/* Draw sample playback position line */
+/* Draws vertical playback position line for first voice playing this sample */
 void ft2_sample_ed_draw_pos_line(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || editor->video == NULL || inst == NULL)
-		return;
+	if (!editor || !editor->video || !inst) return;
+	if (editor->currInstr <= 0 || editor->currInstr >= 128) return;
+
+	ft2_instr_t *instr = inst->replayer.instr[editor->currInstr];
+	if (!instr || editor->currSample < 0 || editor->currSample >= 16) return;
+
+	ft2_sample_t *s = &instr->smp[editor->currSample];
+	if (!s->dataPtr || s->length <= 0) return;
 
 	ft2_video_t *video = editor->video;
 
-	/* Check if we're playing a sample in sample editor mode */
-	if (editor->currInstr <= 0 || editor->currInstr >= 128)
-		return;
-
-	ft2_instr_t *instr = inst->replayer.instr[editor->currInstr];
-	if (instr == NULL)
-		return;
-
-	if (editor->currSample < 0 || editor->currSample >= 16)
-		return;
-
-	ft2_sample_t *s = &instr->smp[editor->currSample];
-	if (s->dataPtr == NULL || s->length <= 0)
-		return;
-
-	/* Check each voice to see if it's playing this sample */
 	for (int ch = 0; ch < FT2_MAX_CHANNELS; ch++)
 	{
 		ft2_voice_t *v = &inst->voice[ch];
-		if (!v->active)
-			continue;
+		if (!v->active) continue;
 
-		/* Check if this voice is playing the current instrument's sample */
-		bool isSameSample = false;
-		if (v->base8 != NULL && (const int8_t *)s->dataPtr == v->base8)
-			isSameSample = true;
-		else if (v->base16 != NULL && (const int16_t *)s->dataPtr == v->base16)
-			isSameSample = true;
+		bool isSameSample = (v->base8 && (const int8_t *)s->dataPtr == v->base8) ||
+		                    (v->base16 && (const int16_t *)s->dataPtr == v->base16);
+		if (!isSameSample) continue;
 
-		if (!isSameSample)
-			continue;
-
-		/* Get the current position */
 		int32_t smpPos = (int32_t)v->position;
-		if (smpPos < 0 || smpPos >= s->length)
-			continue;
+		if (smpPos < 0 || smpPos >= s->length) continue;
 
-		/* Convert to screen position */
 		int32_t screenX = ft2_sample_smpPos2Scr(inst, smpPos);
-		if (screenX < 0 || screenX >= SAMPLE_AREA_WIDTH)
-			continue;
+		if (screenX < 0 || screenX >= SAMPLE_AREA_WIDTH) continue;
 
-		/* Draw vertical line at position */
 		for (int32_t y = SAMPLE_AREA_Y_START; y < SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT; y++)
-		{
-			uint32_t *ptr = &video->frameBuffer[(y * SCREEN_W) + screenX];
-			*ptr = video->palette[PAL_PATTEXT]; /* Use pattern text color for contrast */
-		}
+			video->frameBuffer[(y * SCREEN_W) + screenX] = video->palette[PAL_PATTEXT];
 
-		/* Only show one position line - first active voice playing this sample */
-		break;
+		break;  /* Only show first voice */
 	}
 }
 
@@ -879,34 +700,25 @@ void ft2_sample_ed_draw(ft2_instance_t *inst)
 	}
 }
 
-/**
- * Zoom in sample data towards mouse X position.
- * Matches original ft2_sample_ed.c: mouseZoomSampleDataIn() / zoomSampleDataIn()
- */
+/* ------------------------------------------------------------------------- */
+/*                            ZOOM CONTROL                                   */
+/* ------------------------------------------------------------------------- */
+
+/* Zooms in ~10% towards mouse position */
 void ft2_sample_ed_zoom_in(ft2_instance_t *inst, int32_t mouseX)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || inst == NULL)
-		return;
-
-	if (editor->currInstr <= 0 || editor->currInstr >= 128)
-		return;
+	if (!editor || !inst) return;
+	if (editor->currInstr <= 0 || editor->currInstr >= 128) return;
 
 	ft2_instr_t *instr = inst->replayer.instr[editor->currInstr];
-	if (instr == NULL)
-		return;
+	if (!instr) return;
 
 	ft2_sample_t *s = &instr->smp[editor->currSample];
-	if (s->dataPtr == NULL)
-		return;
+	if (!s->dataPtr || editor->oldViewSize <= 2) return;
 
-	if (editor->oldViewSize <= 2)
-		return;
-
-	/* Step is ~10% of view, like original */
 	int32_t step = (editor->oldViewSize + 5) / 10;
-	if (step < 1)
-		step = 1;
+	if (step < 1) step = 1;
 
 	editor->viewSize = editor->oldViewSize - (step * 2);
 	if (editor->viewSize < 2)
@@ -914,59 +726,39 @@ void ft2_sample_ed_zoom_in(ft2_instance_t *inst, int32_t mouseX)
 
 	updateScalingFactors(editor);
 
-	/* Calculate offset based on mouse position to zoom towards cursor */
+	/* Offset based on mouse position */
 	int32_t tmp32 = (mouseX - (SAMPLE_AREA_WIDTH / 2)) * step;
-	tmp32 += SAMPLE_AREA_WIDTH / 4; /* rounding bias */
-	tmp32 /= SAMPLE_AREA_WIDTH / 2;
-
+	tmp32 = (tmp32 + SAMPLE_AREA_WIDTH / 4) / (SAMPLE_AREA_WIDTH / 2);
 	step += tmp32;
 
 	int64_t newScrPos64 = editor->oldScrPos + step;
-	if (newScrPos64 + editor->viewSize > s->length)
-		newScrPos64 = s->length - editor->viewSize;
-	if (newScrPos64 < 0)
-		newScrPos64 = 0;
-
+	if (newScrPos64 + editor->viewSize > s->length) newScrPos64 = s->length - editor->viewSize;
+	if (newScrPos64 < 0) newScrPos64 = 0;
 	editor->scrPos = (int32_t)newScrPos64;
 
-	/* Update scrollbar */
-	ft2_widgets_t *widgets = (inst->ui != NULL) ?
-		&((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
+	ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets)
 	{
 		widgets->scrollBarState[SB_SAMP_SCROLL].page = (uint32_t)editor->viewSize;
 		widgets->scrollBarState[SB_SAMP_SCROLL].pos = (uint32_t)editor->scrPos;
 	}
 }
 
-/**
- * Zoom out sample data from mouse X position.
- * Matches original ft2_sample_ed.c: mouseZoomSampleDataOut() / zoomSampleDataOut()
- */
+/* Zooms out ~10% from mouse position */
 void ft2_sample_ed_zoom_out(ft2_instance_t *inst, int32_t mouseX)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || inst == NULL)
-		return;
-
-	if (editor->currInstr <= 0 || editor->currInstr >= 128)
-		return;
+	if (!editor || !inst) return;
+	if (editor->currInstr <= 0 || editor->currInstr >= 128) return;
 
 	ft2_instr_t *instr = inst->replayer.instr[editor->currInstr];
-	if (instr == NULL)
-		return;
+	if (!instr) return;
 
 	ft2_sample_t *s = &instr->smp[editor->currSample];
-	if (s->dataPtr == NULL)
-		return;
+	if (!s->dataPtr || editor->oldViewSize == s->length) return;
 
-	if (editor->oldViewSize == s->length)
-		return;
-
-	/* Step is ~10% of view, like original */
 	int32_t step = (editor->oldViewSize + 5) / 10;
-	if (step < 1)
-		step = 1;
+	if (step < 1) step = 1;
 
 	int64_t newViewSize64 = (int64_t)editor->oldViewSize + (step * 2);
 	if (newViewSize64 > s->length)
@@ -976,202 +768,143 @@ void ft2_sample_ed_zoom_out(ft2_instance_t *inst, int32_t mouseX)
 	}
 	else
 	{
-		/* Calculate offset based on mouse position */
 		int32_t tmp32 = (mouseX - (SAMPLE_AREA_WIDTH / 2)) * step;
-		tmp32 += SAMPLE_AREA_WIDTH / 4; /* rounding bias */
-		tmp32 /= SAMPLE_AREA_WIDTH / 2;
-
+		tmp32 = (tmp32 + SAMPLE_AREA_WIDTH / 4) / (SAMPLE_AREA_WIDTH / 2);
 		step += tmp32;
 
 		editor->viewSize = (int32_t)(newViewSize64 & 0xFFFFFFFF);
-
 		editor->scrPos = editor->oldScrPos - step;
-		if (editor->scrPos < 0)
-			editor->scrPos = 0;
-
+		if (editor->scrPos < 0) editor->scrPos = 0;
 		if (editor->scrPos + editor->viewSize > s->length)
 			editor->scrPos = s->length - editor->viewSize;
 	}
 
 	updateScalingFactors(editor);
 
-	/* Update scrollbar */
-	ft2_widgets_t *widgets = (inst->ui != NULL) ?
-		&((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
+	ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets)
 	{
 		widgets->scrollBarState[SB_SAMP_SCROLL].page = (uint32_t)editor->viewSize;
 		widgets->scrollBarState[SB_SAMP_SCROLL].pos = (uint32_t)editor->scrPos;
 	}
 }
 
+/* ------------------------------------------------------------------------- */
+/*                           VIEW PRESETS                                    */
+/* ------------------------------------------------------------------------- */
+
 void ft2_sample_ed_show_all(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || inst == NULL)
-		return;
+	if (!editor || !inst) return;
 
 	editor->scrPos = 0;
-
-	/* Get sample length */
 	int32_t smpLen = 0;
 	if (editor->currInstr > 0 && editor->currInstr < 128)
 	{
 		ft2_instr_t *instr = inst->replayer.instr[editor->currInstr];
-		if (instr != NULL && editor->currSample >= 0 && editor->currSample < 16)
-		{
+		if (instr && editor->currSample >= 0 && editor->currSample < 16)
 			smpLen = instr->smp[editor->currSample].length;
-		}
 	}
-	
 	editor->viewSize = smpLen;
 
-	/* Update scrollbar - must set end, page, and pos to sync properly */
-	ft2_widgets_t *widgets = (inst->ui != NULL) ?
-		&((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
+	ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets)
 	{
 		widgets->scrollBarState[SB_SAMP_SCROLL].end = (uint32_t)smpLen;
 		widgets->scrollBarState[SB_SAMP_SCROLL].page = (uint32_t)editor->viewSize;
 		widgets->scrollBarState[SB_SAMP_SCROLL].pos = 0;
 	}
-
 	updateScalingFactors(editor);
 }
 
 void ft2_sample_ed_show_loop(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || inst == NULL)
-		return;
-
-	/* Get current sample */
-	if (editor->currInstr <= 0 || editor->currInstr >= 128)
-		return;
+	if (!editor || !inst) return;
+	if (editor->currInstr <= 0 || editor->currInstr >= 128) return;
 
 	ft2_instr_t *instr = inst->replayer.instr[editor->currInstr];
-	if (instr == NULL)
-		return;
-
-	if (editor->currSample < 0 || editor->currSample >= 16)
-		return;
+	if (!instr || editor->currSample < 0 || editor->currSample >= 16) return;
 
 	ft2_sample_t *s = &instr->smp[editor->currSample];
-	uint8_t loopType = GET_LOOPTYPE(s->flags);
+	if (GET_LOOPTYPE(s->flags) == LOOP_OFF || s->loopLength <= 0) return;
 
-	if (loopType != LOOP_OFF && s->loopLength > 0)
+	editor->scrPos = s->loopStart;
+	editor->viewSize = s->loopLength;
+
+	ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets)
 	{
-		editor->scrPos = s->loopStart;
-		editor->viewSize = s->loopLength;
-
-		/* Update scrollbar */
-		ft2_widgets_t *widgets = (inst->ui != NULL) ?
-			&((ft2_ui_t *)inst->ui)->widgets : NULL;
-		if (widgets != NULL)
-		{
-			widgets->scrollBarState[SB_SAMP_SCROLL].page = (uint32_t)editor->viewSize;
-			widgets->scrollBarState[SB_SAMP_SCROLL].pos = (uint32_t)editor->scrPos;
-		}
-
-		updateScalingFactors(editor);
+		widgets->scrollBarState[SB_SAMP_SCROLL].page = (uint32_t)editor->viewSize;
+		widgets->scrollBarState[SB_SAMP_SCROLL].pos = (uint32_t)editor->scrPos;
 	}
+	updateScalingFactors(editor);
 }
 
 void ft2_sample_ed_show_range(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || inst == NULL)
-		return;
-
-	/* Get current sample */
-	if (editor->currInstr <= 0 || editor->currInstr >= 128)
-		return;
+	if (!editor || !inst) return;
+	if (editor->currInstr <= 0 || editor->currInstr >= 128) return;
 
 	ft2_instr_t *instr = inst->replayer.instr[editor->currInstr];
-	if (instr == NULL)
-		return;
-
-	if (editor->currSample < 0 || editor->currSample >= 16)
-		return;
+	if (!instr || editor->currSample < 0 || editor->currSample >= 16) return;
 
 	ft2_sample_t *s = &instr->smp[editor->currSample];
-	if (s->dataPtr == NULL)
-		return;
+	if (!s->dataPtr) return;
 
-	/* Check if we have a valid range (rangeStart < rangeEnd) */
 	if (editor->rangeStart < editor->rangeEnd)
 	{
 		editor->viewSize = editor->rangeEnd - editor->rangeStart;
-		if (editor->viewSize < 2)
-			editor->viewSize = 2;
-
+		if (editor->viewSize < 2) editor->viewSize = 2;
 		editor->scrPos = editor->rangeStart;
 
-		/* Update scrollbar */
-		ft2_widgets_t *widgets = (inst->ui != NULL) ?
-			&((ft2_ui_t *)inst->ui)->widgets : NULL;
-		if (widgets != NULL)
+		ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+		if (widgets)
 		{
 			widgets->scrollBarState[SB_SAMP_SCROLL].page = (uint32_t)editor->viewSize;
 			widgets->scrollBarState[SB_SAMP_SCROLL].pos = (uint32_t)editor->scrPos;
 		}
-
 		updateScalingFactors(editor);
-		
 		inst->uiState.updateSampleEditor = true;
 	}
 	else
 	{
-		/* Show error message - no valid range */
 		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-		if (ui != NULL)
-		{
-			ft2_dialog_show_message(&ui->dialog, "System message", "Cannot show empty range!");
-		}
+		if (ui) ft2_dialog_show_message(&ui->dialog, "System message", "Cannot show empty range!");
 	}
 }
+
+/* ------------------------------------------------------------------------- */
+/*                          SELECTION CONTROL                                */
+/* ------------------------------------------------------------------------- */
 
 void ft2_sample_ed_set_selection(ft2_instance_t *inst, int32_t start, int32_t end)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL)
-		return;
-
-	(void)inst; /* Unused, but kept for API consistency */
+	if (!editor) return;
 	editor->rangeStart = start;
 	editor->rangeEnd = end;
-	/* Mark as valid selection if end > 0 (matches standalone's smpEd_Rx2 behavior) */
 	editor->hasRange = (end > 0);
 }
 
 void ft2_sample_ed_clear_selection(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL)
-		return;
-
-	(void)inst; /* Unused, but kept for API consistency */
-	editor->rangeStart = 0;
-	editor->rangeEnd = 0;
+	if (!editor) return;
+	editor->rangeStart = editor->rangeEnd = 0;
 	editor->hasRange = false;
 }
 
 void ft2_sample_ed_range_all(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || inst == NULL)
-		return;
-
-	/* Get current sample */
-	if (editor->currInstr <= 0 || editor->currInstr >= 128)
-		return;
+	if (!editor || !inst) return;
+	if (editor->currInstr <= 0 || editor->currInstr >= 128) return;
 
 	ft2_instr_t *instr = inst->replayer.instr[editor->currInstr];
-	if (instr == NULL)
-		return;
-
-	if (editor->currSample < 0 || editor->currSample >= 16)
-		return;
+	if (!instr || editor->currSample < 0 || editor->currSample >= 16) return;
 
 	ft2_sample_t *s = &instr->smp[editor->currSample];
 	if (s->length > 0)
@@ -1182,90 +915,67 @@ void ft2_sample_ed_range_all(ft2_instance_t *inst)
 	}
 }
 
-/* Get current loop pin screen X position based on loop points */
+/* ------------------------------------------------------------------------- */
+/*                          LOOP PIN DRAGGING                                */
+/* ------------------------------------------------------------------------- */
+
 static int32_t getLeftLoopPinScreenX(ft2_sample_editor_t *editor, ft2_instance_t *inst)
 {
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->loopLength <= 0)
-		return -100;
-	
+	if (!s || s->loopLength <= 0) return -100;
 	return ft2_sample_smpPos2Scr(inst, s->loopStart) - 8;
 }
 
 static int32_t getRightLoopPinScreenX(ft2_sample_editor_t *editor, ft2_instance_t *inst)
 {
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->loopLength <= 0)
-		return -100;
-	
+	if (!s || s->loopLength <= 0) return -100;
 	return ft2_sample_smpPos2Scr(inst, s->loopStart + s->loopLength) - 8;
 }
 
-/* Set loop start position from screen X */
 static void setLeftLoopPinPos(ft2_sample_editor_t *editor, int32_t x, ft2_instance_t *inst)
 {
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
-		return;
+	if (!s || !s->dataPtr || s->length <= 0) return;
 
-	int32_t newLoopStart = ft2_sample_scr2SmpPos(inst, x);
 	int32_t loopEnd = s->loopStart + s->loopLength;
+	int32_t newLoopStart = ft2_sample_scr2SmpPos(inst, x);
+	if (newLoopStart < 0) newLoopStart = 0;
+	if (newLoopStart >= loopEnd) newLoopStart = loopEnd - 1;
+	if (newLoopStart < 0) newLoopStart = 0;
 
-	if (newLoopStart < 0)
-		newLoopStart = 0;
-
-	if (newLoopStart >= loopEnd)
-		newLoopStart = loopEnd - 1;
-
-	if (newLoopStart < 0)
-		newLoopStart = 0;
-
-	/* Stop voices playing this sample before changing loop points (matches standalone) */
 	ft2_stop_sample_voices(inst, s);
-
 	s->loopStart = newLoopStart;
 	s->loopLength = loopEnd - newLoopStart;
-
-	if (s->loopLength < 0)
-		s->loopLength = 0;
-
+	if (s->loopLength < 0) s->loopLength = 0;
 	inst->uiState.updateSampleEditor = true;
 }
 
-/* Set loop end position from screen X */
 static void setRightLoopPinPos(ft2_sample_editor_t *editor, int32_t x, ft2_instance_t *inst)
 {
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
-		return;
+	if (!s || !s->dataPtr || s->length <= 0) return;
 
 	int32_t loopEnd = ft2_sample_scr2SmpPos(inst, x);
+	if (loopEnd < s->loopStart) loopEnd = s->loopStart;
+	if (loopEnd > s->length) loopEnd = s->length;
 
-	if (loopEnd < s->loopStart)
-		loopEnd = s->loopStart;
-
-	if (loopEnd > s->length)
-		loopEnd = s->length;
-
-	/* Stop voices playing this sample before changing loop points (matches standalone) */
 	ft2_stop_sample_voices(inst, s);
-
 	s->loopLength = loopEnd - s->loopStart;
-
-	if (s->loopLength < 0)
-		s->loopLength = 0;
-
+	if (s->loopLength < 0) s->loopLength = 0;
 	inst->uiState.updateSampleEditor = true;
 }
 
-/* Edit sample data by drawing with right mouse button (ported from standalone) */
+/* ------------------------------------------------------------------------- */
+/*                       SAMPLE DRAW MODE                                    */
+/* ------------------------------------------------------------------------- */
+
+/* Right-click drawing: interpolated line drawing into sample data */
 static void editSampleData(ft2_sample_editor_t *editor, int32_t mx, int32_t my, bool mouseButtonHeld, bool shiftPressed, ft2_instance_t *inst)
 {
-	if (editor == NULL || inst == NULL)
-		return;
+	if (!editor || !inst) return;
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
-		return;
+	if (!s || !s->dataPtr || s->length <= 0) return;
 
 	int8_t *ptr8;
 	int16_t *ptr16;
@@ -1407,21 +1117,21 @@ static void editSampleData(ft2_sample_editor_t *editor, int32_t mx, int32_t my, 
 	inst->uiState.updateSampleEditor = true;
 }
 
+/* ------------------------------------------------------------------------- */
+/*                          MOUSE HANDLING                                   */
+/* ------------------------------------------------------------------------- */
+
 void ft2_sample_ed_mouse_click(ft2_instance_t *inst, int x, int y, int button)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || inst == NULL)
-		return;
-	
-	/* Clamp coordinates */
+	if (!editor || !inst) return;
+
 	int32_t mx = CLAMP(x, 0, SCREEN_W + 8);
 	int32_t my = CLAMP(y, 0, SCREEN_H - 1);
 
-	/* Reset drag state */
 	inst->uiState.leftLoopPinMoving = false;
 	inst->uiState.rightLoopPinMoving = false;
 	inst->uiState.sampleDataOrLoopDrag = -1;
-
 	editor->mouseXOffs = 0;
 	editor->lastMouseX = mx;
 	editor->lastMouseY = my;
@@ -1484,21 +1194,18 @@ void ft2_sample_ed_mouse_click(ft2_instance_t *inst, int x, int y, int button)
 void ft2_sample_ed_mouse_drag(ft2_instance_t *inst, int x, int y, bool shiftPressed)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || inst == NULL)
-		return;
+	if (!editor || !inst) return;
 
 	int32_t mx = CLAMP(x, 0, SCREEN_W + 8);
 	int32_t my = CLAMP(y, 0, SCREEN_H - 1);
 
-	/* Check if we're in draw mode (right-button drag) */
 	if (inst->editor.editSampleFlag)
 	{
 		editSampleData(editor, mx, my, true, shiftPressed, inst);
 		return;
 	}
 
-	if (mx == editor->lastMouseX)
-		return;
+	if (mx == editor->lastMouseX) return;
 
 	if (inst->uiState.leftLoopPinMoving)
 	{
@@ -1533,7 +1240,6 @@ void ft2_sample_ed_mouse_drag(ft2_instance_t *inst, int x, int y, bool shiftPres
 			editor->rangeEnd = editor->rangeStart;
 		}
 
-		/* Always mark as valid selection - even point selection is valid for paste insert */
 		editor->hasRange = true;
 		inst->uiState.updateSampleEditor = true;
 	}
@@ -1542,32 +1248,29 @@ void ft2_sample_ed_mouse_drag(ft2_instance_t *inst, int x, int y, bool shiftPres
 void ft2_sample_ed_mouse_up(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || inst == NULL)
-		return;
+	if (!editor || !inst) return;
 
-	/* If we were drawing with right button, finalize */
 	if (inst->editor.editSampleFlag)
 	{
 		ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-		if (s != NULL)
-			ft2_fix_sample(s);
-
+		if (s) ft2_fix_sample(s);
 		inst->editor.editSampleFlag = false;
 		inst->uiState.updateSampleEditor = true;
 	}
 
-	/* Clear loop pin moving states */
 	if (inst->uiState.leftLoopPinMoving || inst->uiState.rightLoopPinMoving)
 	{
 		inst->uiState.leftLoopPinMoving = false;
 		inst->uiState.rightLoopPinMoving = false;
 		inst->uiState.updateSampleEditor = true;
 	}
-
 	inst->uiState.sampleDataOrLoopDrag = -1;
 }
 
-/* Clipboard for sample data (non-static for access from drawSampleEditorExt) */
+/* ------------------------------------------------------------------------- */
+/*                       CLIPBOARD OPERATIONS                                */
+/* ------------------------------------------------------------------------- */
+
 static int8_t *sampleClipboard = NULL;
 int32_t clipboardLength = 0;
 static bool clipboardIs16Bit = false;
@@ -1576,32 +1279,21 @@ static ft2_sample_t clipboardSampleInfo;
 
 static ft2_sample_t *getCurrentSampleWithInst(ft2_sample_editor_t *editor, ft2_instance_t *inst)
 {
-	if (editor == NULL || inst == NULL)
-		return NULL;
-	
-	if (editor->currInstr <= 0 || editor->currInstr >= 128)
-		return NULL;
-	
+	if (!editor || !inst) return NULL;
+	if (editor->currInstr <= 0 || editor->currInstr >= 128) return NULL;
 	ft2_instr_t *instr = inst->replayer.instr[editor->currInstr];
-	if (instr == NULL)
-		return NULL;
-	
-	if (editor->currSample < 0 || editor->currSample >= 16)
-		return NULL;
-	
+	if (!instr || editor->currSample < 0 || editor->currSample >= 16) return NULL;
 	return &instr->smp[editor->currSample];
 }
 
 void ft2_sample_ed_cut(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	/* Cut requires a range (not just a point) */
-	if (editor == NULL || editor->rangeEnd == 0 || editor->rangeStart == editor->rangeEnd)
+	if (!editor || editor->rangeEnd == 0 || editor->rangeStart == editor->rangeEnd)
 		return;
-	
-	if (inst != NULL && inst->config.smpCutToBuffer)
+
+	if (inst && inst->config.smpCutToBuffer)
 		ft2_sample_ed_copy(inst);
-	
 	ft2_sample_ed_delete(inst);
 }
 
@@ -1609,54 +1301,34 @@ void ft2_sample_ed_copy(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
-		return;
-	
-	/* If no selection or rangeEnd is 0, copy whole sample */
+	if (!s || !s->dataPtr || s->length <= 0) return;
+
 	int32_t start, end;
 	if (!editor->hasRange || editor->rangeEnd == 0)
 	{
-		start = 0;
-		end = s->length;
+		start = 0; end = s->length;
 	}
 	else
 	{
-		start = editor->rangeStart;
-		end = editor->rangeEnd;
-		if (start > end)
-		{
-			int32_t tmp = start;
-			start = end;
-			end = tmp;
-		}
+		start = editor->rangeStart; end = editor->rangeEnd;
+		if (start > end) { int32_t tmp = start; start = end; end = tmp; }
 	}
-	
 	if (start < 0) start = 0;
 	if (end > s->length) end = s->length;
-	
+
 	int32_t len = end - start;
-	if (len <= 0)
-		return;
-	
-	/* Free old clipboard */
-	if (sampleClipboard != NULL)
-	{
-		free(sampleClipboard);
-		sampleClipboard = NULL;
-	}
-	
-	/* Copy to clipboard */
+	if (len <= 0) return;
+
+	if (sampleClipboard) { free(sampleClipboard); sampleClipboard = NULL; }
+
 	int32_t bytesPerSample = (s->flags & SAMPLE_16BIT) ? 2 : 1;
 	clipboardLength = len;
 	clipboardIs16Bit = (s->flags & SAMPLE_16BIT) != 0;
-	
+
 	sampleClipboard = (int8_t *)malloc((size_t)(len * bytesPerSample));
-	if (sampleClipboard != NULL)
-	{
+	if (sampleClipboard)
 		memcpy(sampleClipboard, s->dataPtr + (start * bytesPerSample), (size_t)(len * bytesPerSample));
-	}
-	
-	/* Store sample info if copying whole sample (for paste-overwrite) */
+
 	if (start == 0 && end == s->length)
 	{
 		clipboardSampleInfo = *s;
@@ -1668,7 +1340,7 @@ void ft2_sample_ed_copy(ft2_instance_t *inst)
 	}
 }
 
-/* Helper to paste copied data with bit-depth conversion */
+/* Pastes clipboard data with automatic bit-depth conversion */
 static void pasteCopiedData(int8_t *dataPtr, int32_t offset, int32_t length, bool destIs16Bit)
 {
 	if (destIs16Bit)
@@ -1704,7 +1376,7 @@ static void pasteCopiedData(int8_t *dataPtr, int32_t offset, int32_t length, boo
 	}
 }
 
-/* Helper to overwrite sample with clipboard content */
+/* Replaces entire sample with clipboard content */
 static void pasteOverwrite(ft2_sample_editor_t *editor, ft2_sample_t *s, ft2_instance_t *inst)
 {
 	int32_t bytesPerSample = clipboardIs16Bit ? 2 : 1;
@@ -1764,23 +1436,18 @@ static void pasteOverwrite(ft2_sample_editor_t *editor, ft2_sample_t *s, ft2_ins
 		inst->replayer.song.isModified = true;
 }
 
+/* Inserts clipboard at selection, or overwrites if no sample/selection */
 void ft2_sample_ed_paste(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || sampleClipboard == NULL || clipboardLength <= 0)
-		return;
-	
+	if (!editor || !sampleClipboard || clipboardLength <= 0) return;
+
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	
-	/* If no sample data or no selection, do overwrite paste */
-	if (s == NULL || s->dataPtr == NULL || s->length <= 0 || editor->rangeEnd == 0)
+	if (!s || !s->dataPtr || s->length <= 0 || editor->rangeEnd == 0)
 	{
-		if (s != NULL)
-			pasteOverwrite(editor, s, inst);
+		if (s) pasteOverwrite(editor, s, inst);
 		return;
 	}
-	
-	/* Insert paste: paste clipboard data at selection, replacing the selected range */
 	int32_t rx1 = editor->rangeStart;
 	int32_t rx2 = editor->rangeEnd;
 	
@@ -1892,12 +1559,8 @@ void ft2_sample_ed_delete(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->dataPtr == NULL)
-		return;
-	
-	/* Need a valid range (not just a point) to delete */
-	if (editor->rangeEnd == 0 || editor->rangeStart == editor->rangeEnd)
-		return;
+	if (!s || !s->dataPtr) return;
+	if (editor->rangeEnd == 0 || editor->rangeStart == editor->rangeEnd) return;
 	
 	int32_t start = editor->rangeStart;
 	int32_t end = editor->rangeEnd;
@@ -1954,22 +1617,19 @@ void ft2_sample_ed_delete(ft2_instance_t *inst)
 		inst->replayer.song.isModified = true;
 }
 
+/* ------------------------------------------------------------------------- */
+/*                       SAMPLE PROCESSING                                   */
+/* ------------------------------------------------------------------------- */
+
 void ft2_sample_ed_reverse(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->dataPtr == NULL)
-		return;
-	
+	if (!s || !s->dataPtr) return;
+
 	int32_t start = editor->hasRange ? editor->rangeStart : 0;
 	int32_t end = editor->hasRange ? editor->rangeEnd : s->length;
-	
-	if (start > end)
-	{
-		int32_t tmp = start;
-		start = end;
-		end = tmp;
-	}
+	if (start > end) { int32_t tmp = start; start = end; end = tmp; }
 	
 	if (s->flags & SAMPLE_16BIT)
 	{
@@ -1996,24 +1656,17 @@ void ft2_sample_ed_reverse(ft2_instance_t *inst)
 		inst->replayer.song.isModified = true;
 }
 
+/* Scales sample to full volume range */
 void ft2_sample_ed_normalize(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
-		return;
-	
+	if (!s || !s->dataPtr || s->length <= 0) return;
+
 	int32_t start = editor->hasRange ? editor->rangeStart : 0;
 	int32_t end = editor->hasRange ? editor->rangeEnd : s->length;
-	
-	if (start > end)
-	{
-		int32_t tmp = start;
-		start = end;
-		end = tmp;
-	}
-	
-	/* Find peak */
+	if (start > end) { int32_t tmp = start; start = end; end = tmp; }
+
 	int32_t peak = 0;
 	
 	if (s->flags & SAMPLE_16BIT)
@@ -2069,21 +1722,12 @@ void ft2_sample_ed_fade_in(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->dataPtr == NULL || !editor->hasRange)
-		return;
-	
-	int32_t start = editor->rangeStart;
-	int32_t end = editor->rangeEnd;
-	if (start > end)
-	{
-		int32_t tmp = start;
-		start = end;
-		end = tmp;
-	}
-	
+	if (!s || !s->dataPtr || !editor->hasRange) return;
+
+	int32_t start = editor->rangeStart, end = editor->rangeEnd;
+	if (start > end) { int32_t tmp = start; start = end; end = tmp; }
 	int32_t len = end - start;
-	if (len <= 0)
-		return;
+	if (len <= 0) return;
 	
 	if (s->flags & SAMPLE_16BIT)
 	{
@@ -2112,21 +1756,12 @@ void ft2_sample_ed_fade_out(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->dataPtr == NULL || !editor->hasRange)
-		return;
-	
-	int32_t start = editor->rangeStart;
-	int32_t end = editor->rangeEnd;
-	if (start > end)
-	{
-		int32_t tmp = start;
-		start = end;
-		end = tmp;
-	}
-	
+	if (!s || !s->dataPtr || !editor->hasRange) return;
+
+	int32_t start = editor->rangeStart, end = editor->rangeEnd;
+	if (start > end) { int32_t tmp = start; start = end; end = tmp; }
 	int32_t len = end - start;
-	if (len <= 0)
-		return;
+	if (len <= 0) return;
 	
 	if (s->flags & SAMPLE_16BIT)
 	{
@@ -2151,7 +1786,7 @@ void ft2_sample_ed_fade_out(ft2_instance_t *inst)
 		inst->replayer.song.isModified = true;
 }
 
-/* Helper functions for sample value access */
+/* Sample value accessors for crossfade algorithm */
 static double getSampleValuePlugin(int8_t *dataPtr, int32_t position, bool is16Bit)
 {
 	if (is16Bit)
@@ -2178,23 +1813,18 @@ static void putSampleValuePlugin(int8_t *dataPtr, int32_t position, double sampl
 	}
 }
 
+/* Crossfades loop boundary to eliminate click. Uses selection as fade zone. */
 void ft2_sample_ed_crossfade_loop(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (editor == NULL || inst == NULL)
-		return;
+	if (!editor || !inst) return;
 
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
-	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
-		return;
+	if (!s || !s->dataPtr || s->length <= 0) return;
 
 	uint8_t loopType = GET_LOOPTYPE(s->flags);
-	if (loopType == LOOP_OFF)
-		return; /* X-Fade only works on looped samples */
-
-	/* Need a valid range selected */
-	if (!editor->hasRange || editor->rangeEnd <= editor->rangeStart)
-		return;
+	if (loopType == LOOP_OFF) return;
+	if (!editor->hasRange || editor->rangeEnd <= editor->rangeStart) return;
 
 	int32_t x1 = editor->rangeStart;
 	int32_t x2 = editor->rangeEnd;
@@ -2275,28 +1905,23 @@ void ft2_sample_ed_crossfade_loop(ft2_instance_t *inst)
 	inst->uiState.updateSampleEditor = true;
 }
 
-/* ============ VISIBILITY FUNCTIONS ============ */
+/* ------------------------------------------------------------------------- */
+/*                           VISIBILITY                                      */
+/* ------------------------------------------------------------------------- */
 
 void showSampleEditor(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
 
-	/* Hide other bottom screens */
-	if (inst->uiState.instEditorShown)
-		hideInstEditor(inst);
-	hidePatternEditor(inst);  /* Hides scrollbar and buttons too */
-	
-	/* Hide I.E.Ext since we're switching to sample editor */
-	if (inst->uiState.instEditorExtShown)
-		hideInstEditorExt(inst);
-	
+	if (inst->uiState.instEditorShown) hideInstEditor(inst);
+	hidePatternEditor(inst);
+	if (inst->uiState.instEditorExtShown) hideInstEditorExt(inst);
+
 	inst->uiState.sampleEditorShown = true;
 	inst->uiState.updateSampleEditor = true;
 
-	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
-		return;
+	ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (!widgets) return;
 
 	/* Show all sample editor pushbuttons - exact match of standalone showSampleEditor() */
 	widgets->pushButtonVisible[PB_SAMP_SCROLL_LEFT] = true;
@@ -2340,16 +1965,14 @@ void showSampleEditor(ft2_instance_t *inst)
 
 void hideSampleEditor(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
 
 	inst->uiState.sampleEditorShown = false;
 	inst->uiState.leftLoopPinMoving = false;
 	inst->uiState.rightLoopPinMoving = false;
 
-	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
-		return;
+	ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (!widgets) return;
 
 	/* Hide all sample editor pushbuttons */
 	widgets->pushButtonVisible[PB_SAMP_SCROLL_LEFT] = false;
@@ -2401,13 +2024,10 @@ void hideSampleEditor(ft2_instance_t *inst)
 
 void toggleSampleEditor(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (!inst) return;
 	if (inst->uiState.sampleEditorShown)
 	{
 		hideSampleEditor(inst);
-		/* Return to pattern editor */
 		inst->uiState.patternEditorShown = true;
 	}
 	else
@@ -2418,21 +2038,18 @@ void toggleSampleEditor(ft2_instance_t *inst)
 
 void exitSampleEditor(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (!inst) return;
 	hideSampleEditor(inst);
 	inst->uiState.patternEditorShown = true;
 }
 
-/* ============ EXTENDED SAMPLE EDITOR ============ */
+/* ------------------------------------------------------------------------- */
+/*                     EXTENDED SAMPLE EDITOR                                */
+/* ------------------------------------------------------------------------- */
 
 void drawSampleEditorExt(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL || video == NULL)
-		return;
-
-	/* Draw extended sample editor framework - matches standalone ft2_sample_ed.c lines 3465-3477 */
+	if (!inst || !video) return;
 	drawFramework(video, 0,   92, 158, 44, FRAMEWORK_TYPE1);
 	drawFramework(video, 0,  136, 158, 37, FRAMEWORK_TYPE1);
 	drawFramework(video, 158, 92, 133, 81, FRAMEWORK_TYPE1);
@@ -2493,9 +2110,9 @@ void drawSampleEditorExt(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp
 
 void hideSampleEditorExtButtons(ft2_instance_t *inst)
 {
-	if (inst == NULL) return;
+	if (!inst) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui == NULL) return;
+	if (!ui) return;
 	ft2_widgets_t *widgets = &ui->widgets;
 	
 	widgets->pushButtonVisible[PB_SAMP_EXT_CLEAR_COPYBUF] = false;
@@ -2514,21 +2131,13 @@ void hideSampleEditorExtButtons(ft2_instance_t *inst)
 
 void showSampleEditorExt(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
 
-	/* Exit extended pattern editor if active */
 	if (inst->uiState.extendedPatternEditor)
 		exitPatternEditorExtended(inst);
-
-	/* Hide other top-left panel overlays (I.E.Ext, Transpose, Adv.Edit, Trim) */
 	hideAllTopLeftPanelOverlays(inst);
-
-	/* Show sample editor if not already shown */
 	if (!inst->uiState.sampleEditorShown)
 		showSampleEditor(inst);
-
-	/* Hide inst editor if shown (S.E.Ext requires sample editor to be active) */
 	if (inst->uiState.instEditorShown)
 		hideInstEditor(inst);
 
@@ -2538,111 +2147,79 @@ void showSampleEditorExt(ft2_instance_t *inst)
 
 void hideSampleEditorExt(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
 
 	inst->uiState.sampleEditorExtShown = false;
-
-	/* Hide extended sample editor buttons */
 	hideSampleEditorExtButtons(inst);
-
-	/* Show scopes again and trigger framework redraw */
 	inst->uiState.scopesShown = true;
 
-	/* Trigger scope framework redraw to clear the extended panel area */
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui != NULL)
-		ui->scopes.needsFrameworkRedraw = true;
+	if (ui) ui->scopes.needsFrameworkRedraw = true;
 }
 
 void toggleSampleEditorExt(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (!inst) return;
 	if (inst->uiState.sampleEditorExtShown)
 		hideSampleEditorExt(inst);
 	else
 		showSampleEditorExt(inst);
 }
 
-/* ============ SAMPLE MEMORY ============ */
+/* ------------------------------------------------------------------------- */
+/*                          SAMPLE MEMORY                                    */
+/* ------------------------------------------------------------------------- */
 
+/* Allocates sample data with interpolation padding on both sides */
 bool allocateSmpData(ft2_instance_t *inst, int instrNum, int smpNum, int32_t length, bool sample16Bit)
 {
-	if (inst == NULL || instrNum < 1 || instrNum > 128 || smpNum < 0 || smpNum >= 16)
+	if (!inst || instrNum < 1 || instrNum > 128 || smpNum < 0 || smpNum >= 16)
 		return false;
 
 	ft2_instr_t *instr = inst->replayer.instr[instrNum];
-	if (instr == NULL)
-		return false;
+	if (!instr) return false;
 
 	ft2_sample_t *s = &instr->smp[smpNum];
 
-	/* Free existing data */
-	if (s->origDataPtr != NULL)
+	if (s->origDataPtr)
 	{
 		free(s->origDataPtr);
-		s->origDataPtr = NULL;
-		s->dataPtr = NULL;
+		s->origDataPtr = s->dataPtr = NULL;
 	}
 
-	if (length <= 0)
-	{
-		s->length = 0;
-		return true;
-	}
+	if (length <= 0) { s->length = 0; return true; }
 
-	/* Calculate allocation size with padding for interpolation on both sides */
 	int32_t bytesPerSample = sample16Bit ? 2 : 1;
-	int32_t leftPadding = FT2_MAX_TAPS * bytesPerSample;
-	int32_t rightPadding = FT2_MAX_TAPS * bytesPerSample;
-	int32_t dataLen = length * bytesPerSample;
-	int32_t allocLen = leftPadding + dataLen + rightPadding;
+	int32_t padding = FT2_MAX_TAPS * bytesPerSample;
+	int32_t allocLen = padding + (length * bytesPerSample) + padding;
 
 	s->origDataPtr = (int8_t *)calloc(allocLen, 1);
-	if (s->origDataPtr == NULL)
-		return false;
+	if (!s->origDataPtr) return false;
 
-	/* dataPtr points past the left padding area */
-	s->dataPtr = s->origDataPtr + leftPadding;
-
+	s->dataPtr = s->origDataPtr + padding;
 	return true;
 }
 
 void freeSmpData(ft2_instance_t *inst, int instrNum, int smpNum)
 {
-	if (inst == NULL || instrNum < 1 || instrNum > 128 || smpNum < 0 || smpNum >= 16)
+	if (!inst || instrNum < 1 || instrNum > 128 || smpNum < 0 || smpNum >= 16)
 		return;
 
 	ft2_instr_t *instr = inst->replayer.instr[instrNum];
-	if (instr == NULL)
-		return;
+	if (!instr) return;
 
 	ft2_sample_t *s = &instr->smp[smpNum];
-
-	if (s->origDataPtr != NULL)
-	{
-		free(s->origDataPtr);
-		s->origDataPtr = NULL;
-	}
-
+	if (s->origDataPtr) { free(s->origDataPtr); s->origDataPtr = NULL; }
 	s->dataPtr = NULL;
-	s->length = 0;
+	s->length = s->loopStart = s->loopLength = 0;
 	s->isFixed = false;
-	s->loopStart = 0;
-	s->loopLength = 0;
 }
 
-/* Callback for clear sample confirmation dialog */
 static void onClearSampleResult(ft2_instance_t *inst, ft2_dialog_result_t result,
                                 const char *inputText, void *userData)
 {
-	(void)inputText;
-	(void)userData;
-
-	if (inst == NULL || result != DIALOG_RESULT_YES)
-		return;
+	(void)inputText; (void)userData;
+	if (!inst || result != DIALOG_RESULT_YES) return;
 
 	uint8_t curInstr = inst->editor.curInstr;
 	uint8_t curSmp = inst->editor.curSmp;
@@ -2673,40 +2250,24 @@ static void onClearSampleResult(ft2_instance_t *inst, ft2_dialog_result_t result
 
 void clearSample(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
 
-	/* Check if there's actually a sample to clear */
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
 
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
+	if (!s->dataPtr || s->length <= 0) return;
 
-	ft2_sample_t *s = &instr->smp[curSmp];
-	if (s->dataPtr == NULL || s->length <= 0)
-		return;
-
-	/* Show confirmation dialog */
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui != NULL)
-	{
-		ft2_dialog_show_yesno_cb(&ui->dialog,
-			"System request", "Clear sample?",
-			inst, onClearSampleResult, NULL);
-	}
+	if (ui) ft2_dialog_show_yesno_cb(&ui->dialog, "System request", "Clear sample?",
+	                                  inst, onClearSampleResult, NULL);
 }
 
-/* Callback for clear instrument confirmation dialog */
 static void onClearInstrResult(ft2_instance_t *inst, ft2_dialog_result_t result,
                                const char *inputText, void *userData)
 {
-	(void)inputText;
-	(void)userData;
-
-	if (inst == NULL || result != DIALOG_RESULT_YES)
-		return;
+	(void)inputText; (void)userData;
+	if (!inst || result != DIALOG_RESULT_YES) return;
 
 	uint8_t curInstr = inst->editor.curInstr;
 	if (curInstr == 0)
@@ -2728,196 +2289,105 @@ static void onClearInstrResult(ft2_instance_t *inst, ft2_dialog_result_t result,
 
 void clearInstr(ft2_instance_t *inst)
 {
-	if (inst == NULL || inst->editor.curInstr == 0)
-		return;
+	if (!inst || inst->editor.curInstr == 0) return;
+	if (!inst->replayer.instr[inst->editor.curInstr]) return;
 
-	if (inst->replayer.instr[inst->editor.curInstr] == NULL)
-		return;
-
-	/* Show confirmation dialog */
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui != NULL)
-	{
-		ft2_dialog_show_yesno_cb(&ui->dialog,
-			"System request", "Clear instrument?",
-			inst, onClearInstrResult, NULL);
-	}
+	if (ui) ft2_dialog_show_yesno_cb(&ui->dialog, "System request", "Clear instrument?",
+	                                  inst, onClearInstrResult, NULL);
 }
 
 void clearCopyBuffer(ft2_instance_t *inst)
 {
 	(void)inst;
-	
-	if (sampleClipboard != NULL)
-	{
-		free(sampleClipboard);
-		sampleClipboard = NULL;
-	}
+	if (sampleClipboard) { free(sampleClipboard); sampleClipboard = NULL; }
 	clipboardLength = 0;
 	clipboardIs16Bit = false;
 }
 
-/* ============ COPY/EXCHANGE OPERATIONS ============ */
+/* ------------------------------------------------------------------------- */
+/*                      COPY/EXCHANGE OPERATIONS                             */
+/* ------------------------------------------------------------------------- */
 
-/* Clone sample data from src to dst */
+/* Deep copies sample including data allocation */
 bool cloneSample(ft2_sample_t *src, ft2_sample_t *dst)
 {
-	if (dst == NULL)
-		return false;
+	if (!dst) return false;
 
-	/* Free existing data in dst - must free origDataPtr, not dataPtr */
-	if (dst->origDataPtr != NULL)
-	{
-		free(dst->origDataPtr);
-		dst->origDataPtr = NULL;
-		dst->dataPtr = NULL;
-	}
+	if (dst->origDataPtr) { free(dst->origDataPtr); dst->origDataPtr = dst->dataPtr = NULL; }
+	if (!src) { memset(dst, 0, sizeof(ft2_sample_t)); return true; }
 
-	if (src == NULL)
-	{
-		memset(dst, 0, sizeof(ft2_sample_t));
-		return true;
-	}
-
-	/* Copy sample struct */
 	memcpy(dst, src, sizeof(ft2_sample_t));
-
-	/* Zero out pointer stuff */
-	dst->origDataPtr = NULL;
-	dst->dataPtr = NULL;
+	dst->origDataPtr = dst->dataPtr = NULL;
 	dst->isFixed = false;
 	dst->fixedPos = 0;
 
-	/* If source has sample data, allocate and copy with proper padding */
-	if (src->length > 0 && src->dataPtr != NULL)
+	if (src->length > 0 && src->dataPtr)
 	{
 		bool is16Bit = (src->flags & SAMPLE_16BIT) != 0;
 		int32_t bytesPerSample = is16Bit ? 2 : 1;
-		int32_t leftPadding = FT2_MAX_TAPS * bytesPerSample;
-		int32_t rightPadding = FT2_MAX_TAPS * bytesPerSample;
+		int32_t padding = FT2_MAX_TAPS * bytesPerSample;
 		int32_t dataLen = src->length * bytesPerSample;
-		int32_t allocLen = leftPadding + dataLen + rightPadding;
 
-		dst->origDataPtr = (int8_t *)calloc(allocLen, 1);
-		if (dst->origDataPtr == NULL)
-		{
-			dst->length = 0;
-			return false;
-		}
+		dst->origDataPtr = (int8_t *)calloc(padding + dataLen + padding, 1);
+		if (!dst->origDataPtr) { dst->length = 0; return false; }
 
-		dst->dataPtr = dst->origDataPtr + leftPadding;
+		dst->dataPtr = dst->origDataPtr + padding;
 		memcpy(dst->dataPtr, src->dataPtr, dataLen);
 		ft2_fix_sample(dst);
 	}
-
 	return true;
 }
 
 void copySmp(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
+	uint8_t curInstr = inst->editor.curInstr, srcInstr = inst->editor.srcInstr;
+	uint8_t curSmp = inst->editor.curSmp, srcSmp = inst->editor.srcSmp;
+	if (curInstr == 0 || (curInstr == srcInstr && curSmp == srcSmp)) return;
 
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t srcInstr = inst->editor.srcInstr;
-	uint8_t curSmp = inst->editor.curSmp;
-	uint8_t srcSmp = inst->editor.srcSmp;
+	ft2_sample_t *src = inst->replayer.instr[srcInstr] ? &inst->replayer.instr[srcInstr]->smp[srcSmp] : NULL;
+	if (!inst->replayer.instr[curInstr] && !ft2_instance_alloc_instr(inst, curInstr)) return;
 
-	/* Can't copy to instrument 0 or copy same to same */
-	if (curInstr == 0 || (curInstr == srcInstr && curSmp == srcSmp))
-		return;
-
-	/* Get source sample */
-	ft2_sample_t *src = NULL;
-	if (inst->replayer.instr[srcInstr] != NULL)
-		src = &inst->replayer.instr[srcInstr]->smp[srcSmp];
-
-	/* Allocate dest instrument if needed */
-	if (inst->replayer.instr[curInstr] == NULL)
-	{
-		if (!ft2_instance_alloc_instr(inst, curInstr))
-			return;
-	}
-
-	ft2_sample_t *dst = &inst->replayer.instr[curInstr]->smp[curSmp];
-
-	if (!cloneSample(src, dst))
-		return;
-
-	inst->uiState.updateSampleEditor = true;
-	inst->uiState.updateInstrSwitcher = true;
+	if (!cloneSample(src, &inst->replayer.instr[curInstr]->smp[curSmp])) return;
+	inst->uiState.updateSampleEditor = inst->uiState.updateInstrSwitcher = true;
 }
 
 void xchgSmp(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
-	uint8_t srcSmp = inst->editor.srcSmp;
-
-	/* Can't exchange in instrument 0 or exchange same with same */
-	if (curInstr == 0 || curSmp == srcSmp)
-		return;
+	if (!inst) return;
+	uint8_t curInstr = inst->editor.curInstr, curSmp = inst->editor.curSmp, srcSmp = inst->editor.srcSmp;
+	if (curInstr == 0 || curSmp == srcSmp) return;
 
 	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
+	if (!instr) return;
 
-	ft2_sample_t *src = &instr->smp[srcSmp];
-	ft2_sample_t *dst = &instr->smp[curSmp];
-
-	/* Swap sample structs */
-	ft2_sample_t tmp = *dst;
-	*dst = *src;
-	*src = tmp;
-
-	inst->uiState.updateSampleEditor = true;
-	inst->uiState.updateInstrSwitcher = true;
+	ft2_sample_t tmp = instr->smp[curSmp];
+	instr->smp[curSmp] = instr->smp[srcSmp];
+	instr->smp[srcSmp] = tmp;
+	inst->uiState.updateSampleEditor = inst->uiState.updateInstrSwitcher = true;
 }
 
 void copyInstr(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t srcInstr = inst->editor.srcInstr;
-
-	/* Can't copy to instrument 0 or copy same to same */
-	if (curInstr == 0 || curInstr == srcInstr)
-		return;
+	if (!inst) return;
+	uint8_t curInstr = inst->editor.curInstr, srcInstr = inst->editor.srcInstr;
+	if (curInstr == 0 || curInstr == srcInstr) return;
 
 	ft2_instr_t *srcIns = inst->replayer.instr[srcInstr];
-
-	/* Allocate dest instrument if needed */
-	if (inst->replayer.instr[curInstr] == NULL)
-	{
-		if (!ft2_instance_alloc_instr(inst, curInstr))
-			return;
-	}
+	if (!inst->replayer.instr[curInstr] && !ft2_instance_alloc_instr(inst, curInstr)) return;
 
 	ft2_instr_t *dstIns = inst->replayer.instr[curInstr];
 
-	/* Free all sample data in dest first */
 	for (int i = 0; i < 16; i++)
-	{
-		if (dstIns->smp[i].dataPtr != NULL)
-		{
-			free(dstIns->smp[i].dataPtr);
-			dstIns->smp[i].dataPtr = NULL;
-		}
-	}
+		if (dstIns->smp[i].dataPtr) { free(dstIns->smp[i].dataPtr); dstIns->smp[i].dataPtr = NULL; }
 
-	if (srcIns == NULL)
+	if (!srcIns)
 	{
-		/* Clear the dest instrument */
 		memset(dstIns, 0, sizeof(ft2_instr_t));
 	}
 	else
 	{
-		/* Copy instrument header (not samples) */
 		memcpy(dstIns->note2SampleLUT, srcIns->note2SampleLUT, sizeof(dstIns->note2SampleLUT));
 		memcpy(dstIns->volEnvPoints, srcIns->volEnvPoints, sizeof(dstIns->volEnvPoints));
 		memcpy(dstIns->panEnvPoints, srcIns->panEnvPoints, sizeof(dstIns->panEnvPoints));
@@ -2943,74 +2413,43 @@ void copyInstr(ft2_instance_t *inst)
 		dstIns->mute = srcIns->mute;
 		dstIns->numSamples = srcIns->numSamples;
 
-		/* Clone all samples */
 		for (int i = 0; i < 16; i++)
 		{
 			memset(&dstIns->smp[i], 0, sizeof(ft2_sample_t));
-			if (!cloneSample(&srcIns->smp[i], &dstIns->smp[i]))
-				break;
+			if (!cloneSample(&srcIns->smp[i], &dstIns->smp[i])) break;
 		}
 	}
-
-	inst->uiState.updateSampleEditor = true;
-	inst->uiState.updateInstrSwitcher = true;
+	inst->uiState.updateSampleEditor = inst->uiState.updateInstrSwitcher = true;
 }
 
 void xchgInstr(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
+	uint8_t curInstr = inst->editor.curInstr, srcInstr = inst->editor.srcInstr;
+	if (curInstr == 0 || curInstr == srcInstr) return;
 
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t srcInstr = inst->editor.srcInstr;
-
-	/* Can't exchange instrument 0 or exchange same with same */
-	if (curInstr == 0 || curInstr == srcInstr)
-		return;
-
-	/* Swap instrument pointers */
 	ft2_instr_t *tmp = inst->replayer.instr[curInstr];
 	inst->replayer.instr[curInstr] = inst->replayer.instr[srcInstr];
 	inst->replayer.instr[srcInstr] = tmp;
-
-	/* Note: we do not swap instrument names (like FT2) */
-
-	inst->uiState.updateSampleEditor = true;
-	inst->uiState.updateInstrSwitcher = true;
+	inst->uiState.updateSampleEditor = inst->uiState.updateInstrSwitcher = true;
 }
 
-/* ============ SAMPLE PROCESSING ============ */
-
+/* Reverses sample data in selection or entire sample */
 void sampleBackwards(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
 
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
 
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
+	if (!s->dataPtr || s->length < 2) return;
 
-	ft2_sample_t *s = &instr->smp[curSmp];
-	if (s->dataPtr == NULL || s->length < 2)
-		return;
-
-	ft2_sample_editor_t *ed = (inst->ui != NULL) ? FT2_SAMPLE_ED(inst) : NULL;
-	
-	int32_t start = (ed != NULL && ed->hasRange) ? ed->rangeStart : 0;
-	int32_t end = (ed != NULL && ed->hasRange) ? ed->rangeEnd : s->length;
-
-	if (start > end)
-	{
-		int32_t tmp = start;
-		start = end;
-		end = tmp;
-	}
-
-	if (start >= end)
-		return;
+	ft2_sample_editor_t *ed = inst->ui ? FT2_SAMPLE_ED(inst) : NULL;
+	int32_t start = (ed && ed->hasRange) ? ed->rangeStart : 0;
+	int32_t end = (ed && ed->hasRange) ? ed->rangeEnd : s->length;
+	if (start > end) { int32_t tmp = start; start = end; end = tmp; }
+	if (start >= end) return;
 
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
@@ -3040,83 +2479,57 @@ void sampleBackwards(ft2_instance_t *inst)
 	inst->uiState.updateSampleEditor = true;
 }
 
+/* XORs sample data with sign bit to convert signed<->unsigned */
 void sampleChangeSign(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
 
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
 
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
-
-	ft2_sample_t *s = &instr->smp[curSmp];
-	if (s->dataPtr == NULL || s->length == 0)
-		return;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
+	if (!s->dataPtr || s->length == 0) return;
 
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
 
-	bool is16Bit = (s->flags & SAMPLE_16BIT) != 0;
-
-	if (is16Bit)
+	if (s->flags & SAMPLE_16BIT)
 	{
 		int16_t *ptr = (int16_t *)s->dataPtr;
-		int32_t len = s->length;
-		for (int32_t i = 0; i < len; i++)
-			ptr[i] ^= 0x8000;
+		for (int32_t i = 0; i < s->length; i++) ptr[i] ^= 0x8000;
 	}
 	else
 	{
-		int8_t *ptr = s->dataPtr;
-		int32_t len = s->length;
-		for (int32_t i = 0; i < len; i++)
-			ptr[i] ^= 0x80;
+		for (int32_t i = 0; i < s->length; i++) s->dataPtr[i] ^= 0x80;
 	}
 
 	ft2_fix_sample(s);
 	inst->uiState.updateSampleEditor = true;
 }
 
+/* Removes DC offset (average value) from sample */
 void fixDC(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
 
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
 
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
+	if (!s->dataPtr || s->length == 0) return;
 
-	ft2_sample_t *s = &instr->smp[curSmp];
-	if (s->dataPtr == NULL || s->length == 0)
-		return;
-
-	ft2_sample_editor_t *ed = (inst->ui != NULL) ? FT2_SAMPLE_ED(inst) : NULL;
-	bool sampleDataMarked = (ed != NULL && ed->hasRange && ed->rangeStart != ed->rangeEnd);
+	ft2_sample_editor_t *ed = inst->ui ? FT2_SAMPLE_ED(inst) : NULL;
+	bool sampleDataMarked = ed && ed->hasRange && ed->rangeStart != ed->rangeEnd;
 
 	int32_t start = sampleDataMarked ? ed->rangeStart : 0;
 	int32_t length = sampleDataMarked ? (ed->rangeEnd - ed->rangeStart) : s->length;
-
-	if (start > ed->rangeEnd && sampleDataMarked)
-	{
-		start = ed->rangeEnd;
-		length = ed->rangeStart - ed->rangeEnd;
-	}
-
-	if (length <= 0 || length > s->length)
-		return;
+	if (start > ed->rangeEnd && sampleDataMarked) { start = ed->rangeEnd; length = ed->rangeStart - ed->rangeEnd; }
+	if (length <= 0 || length > s->length) return;
 
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
 
 	bool is16Bit = (s->flags & SAMPLE_16BIT) != 0;
-
-	/* Calculate DC offset */
 	int64_t sum = 0;
 
 	if (is16Bit)
@@ -3168,93 +2581,65 @@ void fixDC(ft2_instance_t *inst)
 	inst->uiState.updateSampleEditor = true;
 }
 
+/* Swaps byte order (useful for importing wrong-endian samples) */
 void sampleByteSwap(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
 
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
 
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
-
-	ft2_sample_t *s = &instr->smp[curSmp];
-	if (s->dataPtr == NULL || s->length == 0)
-		return;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
+	if (!s->dataPtr || s->length == 0) return;
 
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
 
-	bool is16Bit = (s->flags & SAMPLE_16BIT) != 0;
-
-	int32_t len = s->length;
-	if (!is16Bit)
-		len >>= 1;
-
+	int32_t len = (s->flags & SAMPLE_16BIT) ? s->length : (s->length >> 1);
 	int8_t *ptr = s->dataPtr;
 	for (int32_t i = 0; i < len; i++, ptr += 2)
 	{
-		int8_t tmp = ptr[0];
-		ptr[0] = ptr[1];
-		ptr[1] = tmp;
+		int8_t tmp = ptr[0]; ptr[0] = ptr[1]; ptr[1] = tmp;
 	}
 
 	ft2_fix_sample(s);
 	inst->uiState.updateSampleEditor = true;
 }
 
+/* Resizes sample allocation preserving existing data */
 static bool reallocateSmpData(ft2_sample_t *s, int32_t newLength, bool is16Bit)
 {
-	if (s == NULL)
-		return false;
+	if (!s) return false;
 
 	int32_t bytesPerSample = is16Bit ? 2 : 1;
-	int32_t leftPadding = FT2_MAX_TAPS * bytesPerSample;
-	int32_t rightPadding = FT2_MAX_TAPS * bytesPerSample;
-	int32_t dataLen = newLength * bytesPerSample;
-	size_t allocSize = (size_t)(leftPadding + dataLen + rightPadding);
+	int32_t padding = FT2_MAX_TAPS * bytesPerSample;
+	size_t allocSize = padding + (newLength * bytesPerSample) + padding;
 
-	/* If no origDataPtr, need to allocate fresh */
-	if (s->origDataPtr == NULL)
+	if (!s->origDataPtr)
 	{
 		s->origDataPtr = (int8_t *)calloc(allocSize, 1);
-		if (s->origDataPtr == NULL)
-			return false;
-		
-		s->dataPtr = s->origDataPtr + leftPadding;
+		if (!s->origDataPtr) return false;
+		s->dataPtr = s->origDataPtr + padding;
 		return true;
 	}
 
-	/* Realloc on origDataPtr, not dataPtr! */
 	int8_t *newPtr = (int8_t *)realloc(s->origDataPtr, allocSize);
-	if (newPtr == NULL)
-		return false;
-
+	if (!newPtr) return false;
 	s->origDataPtr = newPtr;
-	s->dataPtr = s->origDataPtr + leftPadding;
+	s->dataPtr = s->origDataPtr + padding;
 	return true;
 }
 
+/* Crops sample to selected range, deleting data outside selection */
 void sampCrop(ft2_instance_t *inst)
 {
-	if (inst == NULL || inst->ui == NULL)
-		return;
+	if (!inst || !inst->ui) return;
 
 	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
-	
-	/* Check if we have a valid selection with rangeEnd > 0 */
-	if (ed->rangeEnd == 0)
-		return;
-	
-	/* Need a proper range for crop (not just a point) */
-	if (ed->rangeStart == ed->rangeEnd)
-		return;
+	if (ed->rangeEnd == 0 || ed->rangeStart == ed->rangeEnd) return;
 
 	ft2_sample_t *s = getCurrentSampleWithInst(ed, inst);
-	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
-		return;
+	if (!s || !s->dataPtr || s->length <= 0) return;
 
 	int32_t r1 = ed->rangeStart;
 	int32_t r2 = ed->rangeEnd;
@@ -3344,228 +2729,144 @@ void sampCrop(ft2_instance_t *inst)
 	ft2_song_mark_modified(inst);
 }
 
-/* Callback for minimize sample confirmation dialog */
 static void onMinimizeSampleResult(ft2_instance_t *inst, ft2_dialog_result_t result,
                                    const char *inputText, void *userData)
 {
-	(void)inputText;
-	(void)userData;
+	(void)inputText; (void)userData;
+	if (!inst || result != DIALOG_RESULT_YES) return;
 
-	if (inst == NULL || result != DIALOG_RESULT_YES)
-		return;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
 
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
+	if (!s || !s->dataPtr || s->length <= 0) return;
+	if (GET_LOOPTYPE(s->flags) == LOOP_OFF || s->loopStart + s->loopLength >= s->length) return;
 
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
-
-	ft2_sample_t *s = &instr->smp[curSmp];
-	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
-		return;
-
-	/* Double-check loop is still valid */
-	uint8_t loopType = GET_LOOPTYPE(s->flags);
-	if (loopType == LOOP_OFF)
-		return;
-
-	if (s->loopStart + s->loopLength >= s->length)
-		return;
-
-	bool is16Bit = (s->flags & SAMPLE_16BIT) != 0;
-
-	/* Stop voices playing this sample before modifying */
 	ft2_stop_sample_voices(inst, s);
-
 	ft2_unfix_sample(s);
-
 	s->length = s->loopStart + s->loopLength;
-
-	reallocateSmpData(s, s->length, is16Bit);
-
+	reallocateSmpData(s, s->length, (s->flags & SAMPLE_16BIT) != 0);
 	ft2_fix_sample(s);
 
 	ft2_sample_ed_show_all(inst);
-
 	inst->uiState.updateSampleEditor = true;
 	ft2_song_mark_modified(inst);
 }
 
+/* Truncates sample at loop end (removes post-loop data) */
 void sampMinimize(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (!inst) return;
 
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
 
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
-
-	ft2_sample_t *s = &instr->smp[curSmp];
-	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
-		return;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
+	if (!s || !s->dataPtr || s->length <= 0) return;
 
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-
-	/* Check for loop - matches standalone behavior */
-	uint8_t loopType = GET_LOOPTYPE(s->flags);
-	if (loopType == LOOP_OFF)
+	if (GET_LOOPTYPE(s->flags) == LOOP_OFF)
 	{
-		if (ui != NULL)
-			ft2_dialog_show_message(&ui->dialog, "System message", "Only a looped sample can be minimized!");
+		if (ui) ft2_dialog_show_message(&ui->dialog, "System message", "Only a looped sample can be minimized!");
 		return;
 	}
-
-	/* Check if already minimized - matches standalone behavior */
 	if (s->loopStart + s->loopLength >= s->length)
 	{
-		if (ui != NULL)
-			ft2_dialog_show_message(&ui->dialog, "System message", "This sample is already minimized.");
+		if (ui) ft2_dialog_show_message(&ui->dialog, "System message", "This sample is already minimized.");
 		return;
 	}
 
-	/* Show confirmation dialog */
-	if (ui != NULL)
-	{
-		ft2_dialog_show_yesno_cb(&ui->dialog,
-			"System request", "Minimize sample?",
-			inst, onMinimizeSampleResult, NULL);
-	}
+	if (ui) ft2_dialog_show_yesno_cb(&ui->dialog, "System request", "Minimize sample?",
+	                                  inst, onMinimizeSampleResult, NULL);
 }
 
-/* ============ REPEAT/LENGTH CONTROLS ============ */
+/* ------------------------------------------------------------------------- */
+/*                        REPEAT/LENGTH CONTROLS                             */
+/* ------------------------------------------------------------------------- */
 
 void sampRepeatUp(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
-
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
-
-	ft2_sample_t *s = &instr->smp[curSmp];
+	if (!inst) return;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
 
 	if (s->loopStart < s->length - s->loopLength)
 	{
-		/* Stop voices playing this sample before changing loop points */
 		ft2_stop_sample_voices(inst, s);
 		s->loopStart++;
 		ft2_song_mark_modified(inst);
 	}
-
 	inst->uiState.updateSampleEditor = true;
 }
 
 void sampRepeatDown(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
-
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
-
-	ft2_sample_t *s = &instr->smp[curSmp];
+	if (!inst) return;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
 
 	if (s->loopStart > 0)
 	{
-		/* Stop voices playing this sample before changing loop points */
 		ft2_stop_sample_voices(inst, s);
 		s->loopStart--;
 		ft2_song_mark_modified(inst);
 	}
-
 	inst->uiState.updateSampleEditor = true;
 }
 
 void sampReplenUp(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
-
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
-
-	ft2_sample_t *s = &instr->smp[curSmp];
+	if (!inst) return;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
 
 	if (s->loopStart + s->loopLength < s->length)
 	{
-		/* Stop voices playing this sample before changing loop points */
 		ft2_stop_sample_voices(inst, s);
 		s->loopLength++;
 		ft2_song_mark_modified(inst);
 	}
-
 	inst->uiState.updateSampleEditor = true;
 }
 
 void sampReplenDown(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
-
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
-
-	ft2_sample_t *s = &instr->smp[curSmp];
+	if (!inst) return;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
 
 	if (s->loopLength > 0)
 	{
-		/* Stop voices playing this sample before changing loop points */
 		ft2_stop_sample_voices(inst, s);
 		s->loopLength--;
 		ft2_song_mark_modified(inst);
 	}
-
 	inst->uiState.updateSampleEditor = true;
 }
 
-/* ============ SAMPLE VOLUME ============ */
+/* ------------------------------------------------------------------------- */
+/*                         SAMPLE VOLUME                                     */
+/* ------------------------------------------------------------------------- */
 
+/* Applies volume scaling with optional fade (startVol -> endVol as %) */
 void sampApplyVolume(ft2_instance_t *inst, double startVol, double endVol)
 {
-	if (inst == NULL || inst->ui == NULL)
-		return;
+	if (!inst || !inst->ui) return;
 
 	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
+	if (inst->editor.curInstr == 0) return;
 
-	uint8_t curInstr = inst->editor.curInstr;
-	uint8_t curSmp = inst->editor.curSmp;
+	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
+	if (!instr) return;
 
-	if (curInstr == 0)
-		return;
+	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
+	if (!s->dataPtr || s->length <= 0) return;
+	if (startVol == 100.0 && endVol == 100.0) return;
 
-	ft2_instr_t *instr = inst->replayer.instr[curInstr];
-	if (instr == NULL)
-		return;
-
-	ft2_sample_t *s = &instr->smp[curSmp];
-	if (s->dataPtr == NULL || s->length <= 0)
-		return;
-
-	/* Skip if no change */
-	if (startVol == 100.0 && endVol == 100.0)
-		return;
-
-	/* Determine range to operate on */
 	int32_t x1, x2;
 	if (ed->hasRange && ed->rangeStart < ed->rangeEnd)
 	{

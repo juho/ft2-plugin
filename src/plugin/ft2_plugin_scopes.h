@@ -1,7 +1,7 @@
-/**
- * @file ft2_plugin_scopes.h
- * @brief Exact port of FT2 scope rendering for the plugin.
- */
+/*
+** FT2 Plugin - Scope Rendering API
+** Real-time channel waveform display with interpolation, mute/solo, multi-rec.
+*/
 
 #pragma once
 
@@ -16,8 +16,12 @@ struct ft2_video_t;
 struct ft2_bmp_t;
 struct ft2_instance_t;
 
+/* Limits and dimensions */
 #define MAX_CHANNELS 32
 #define SCOPE_HEIGHT 36
+#define SCOPE_HZ 64  /* Update rate in Hz */
+
+/* Fixed-point position (32.32) */
 #define SCOPE_FRAC_BITS 32
 #define SCOPE_FRAC_SCALE ((int64_t)1 << SCOPE_FRAC_BITS)
 #define SCOPE_FRAC_MASK (SCOPE_FRAC_SCALE-1)
@@ -27,123 +31,82 @@ struct ft2_instance_t;
 #define LOOP_FORWARD 1
 #define LOOP_BIDI 2
 
-/* Scope interpolation constants */
+/* Interpolation LUT constants (4-point cubic B-spline) */
 #define SCOPE_INTRP_WIDTH 4
 #define SCOPE_INTRP_WIDTH_BITS 2
 #define SCOPE_INTRP_SCALE 32768
 #define SCOPE_INTRP_SCALE_BITS 15
 #define SCOPE_INTRP_PHASES 512
 #define SCOPE_INTRP_PHASES_BITS 9
-
-/* Maximum left edge taps for interpolation */
 #define MAX_LEFT_TAPS 2
 
-/* Scope update rate (matching standalone) */
-#define SCOPE_HZ 64
-
-/**
- * Scope state for one channel
- */
+/* Per-channel scope state */
 typedef struct scope_t
 {
-	volatile bool active;
-	const int8_t *base8;
-	const int16_t *base16;
-	bool wasCleared, sample16Bit, samplingBackwards, hasLooped;
-	uint8_t loopType;
-	int16_t volume;
+	volatile bool active;           /* Currently playing */
+	const int8_t *base8;            /* 8-bit sample data pointer */
+	const int16_t *base16;          /* 16-bit sample data pointer */
+	bool wasCleared;                /* Background needs redraw */
+	bool sample16Bit;               /* True if 16-bit sample */
+	bool samplingBackwards;         /* Bidi loop direction */
+	bool hasLooped;                 /* Has passed loop point */
+	uint8_t loopType;               /* LOOP_OFF/LOOP_FORWARD/LOOP_BIDI */
+	int16_t volume;                 /* Display amplitude scale */
 	int32_t loopStart, loopLength, loopEnd, sampleEnd, position;
-	uint64_t delta, drawDelta, positionFrac;
-	const int8_t *leftEdgeTaps8;
+	uint64_t delta;                 /* Position increment (64 Hz) */
+	uint64_t drawDelta;             /* Position increment (display rate) */
+	uint64_t positionFrac;          /* Fractional position */
+	const int8_t *leftEdgeTaps8;    /* Left padding for interpolation */
 	const int16_t *leftEdgeTaps16;
 } scope_t;
 
-/**
- * Plugin scopes state
- */
+/* Scopes manager state */
 typedef struct ft2_scopes_t
 {
 	scope_t scopes[MAX_CHANNELS];
 	bool channelMuted[MAX_CHANNELS];
-	bool multiRecChn[MAX_CHANNELS];
-	int16_t numChannels;
-	bool linedScopes;
-	bool ptnChnNumbers;
-	bool needsFrameworkRedraw;
-	uint8_t interpolation;
-	int16_t *scopeIntrpLUT;
-	uint64_t lastUpdateTick;
+	bool multiRecChn[MAX_CHANNELS]; /* Multi-record channel flags */
+	int16_t numChannels;            /* Active channel count */
+	bool linedScopes;               /* Lined vs dotted display */
+	bool ptnChnNumbers;             /* Show channel numbers */
+	bool needsFrameworkRedraw;      /* Redraw all scope borders */
+	uint8_t interpolation;          /* Interpolation mode */
+	int16_t *scopeIntrpLUT;         /* Cubic interpolation table */
+	uint64_t lastUpdateTick;        /* Timestamp for 64 Hz timing */
 } ft2_scopes_t;
 
-/* Scope draw routine function pointer type */
 typedef void (*scopeDrawRoutine)(scope_t *s, uint32_t x, uint32_t lineY, uint32_t w, struct ft2_video_t *video, struct ft2_scopes_t *scopes);
 
-/* Scope length tables (indexed by [numChannels/2 - 1][channel]) */
+/* Scope width tables */
 extern const uint16_t scopeLenTab[16][32];
-
-/* Scope mute bitmap tables */
 extern const uint8_t scopeMuteBMP_Widths[16];
 extern const uint8_t scopeMuteBMP_Heights[16];
 extern const uint16_t scopeMuteBMP_Offs[16];
 
-/**
- * Initialize scopes
- */
+/* Lifecycle */
 void ft2_scopes_init(ft2_scopes_t *scopes);
-
-/**
- * Free scopes resources
- */
 void ft2_scopes_free(ft2_scopes_t *scopes);
 
-/**
- * Update scopes from audio state
- */
+/* Update (call from UI thread) */
 void ft2_scopes_update(ft2_scopes_t *scopes, struct ft2_instance_t *inst);
 
-/**
- * Calculate scope delta from period (matching standalone period2ScopeDelta)
- */
+/* Period conversion */
 uint64_t ft2_period_to_scope_delta(struct ft2_instance_t *inst, uint32_t period);
-
-/**
- * Calculate scope draw delta from period (matching standalone period2ScopeDrawDelta)
- */
 uint64_t ft2_period_to_scope_draw_delta(struct ft2_instance_t *inst, uint32_t period);
 
-/**
- * Stop a scope
- */
+/* Scope control */
 void ft2_scope_stop(ft2_scopes_t *scopes, int channel);
-
-/**
- * Stop all scopes
- */
 void ft2_scopes_stop_all(ft2_scopes_t *scopes);
 
-/**
- * Draw scopes
- */
+/* Drawing */
 void ft2_scopes_draw(ft2_scopes_t *scopes, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
-
-/**
- * Draw scope framework
- */
 void ft2_scopes_draw_framework(ft2_scopes_t *scopes, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 
-/**
- * Handle mouse click on scopes (mute toggle)
- */
+/* Mouse handling (left=mute, right=multi-rec, both=solo) */
 bool ft2_scopes_mouse_down(ft2_scopes_t *scopes, struct ft2_video_t *video, const struct ft2_bmp_t *bmp, int32_t mouseX, int32_t mouseY, bool leftButton, bool rightButton);
 
-/**
- * Toggle channel mute
- */
+/* Mute state */
 void ft2_scopes_set_mute(ft2_scopes_t *scopes, int channel, bool muted);
-
-/**
- * Get channel mute state
- */
 bool ft2_scopes_get_mute(ft2_scopes_t *scopes, int channel);
 
 #ifdef __cplusplus

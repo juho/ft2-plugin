@@ -1,6 +1,10 @@
 /**
  * @file ft2_plugin_input.c
- * @brief Input handling for the FT2 plugin.
+ * @brief Keyboard/mouse input: note entry, navigation, shortcuts, MIDI recording.
+ *
+ * FT2 keyboard layout: Z-M=C-B, Q-P=C-E (+1 octave), sharps on home/number rows.
+ * Numpad: instrument bank selection, 0-8=quick select, Enter=swap bank.
+ * Pattern editing: Insert/Delete/Backspace for line operations.
  */
 
 #include <string.h>
@@ -12,14 +16,8 @@
 #include "ft2_plugin_sample_ed.h"
 #include "ft2_instance.h"
 
-/* FT2 keyboard layout mapping for notes.
- * Lower row: Z-M = C-1 to B-1
- * Home row: A-L = C#1 to A#1
- * Upper row: Q-P = C-2 to E-2
- * Number row: 1-0 = C#2 to A#2
- */
+/* FT2 keyboard layout: lower row = octave N, upper row = octave N+1 */
 static const int8_t keyToNote[256] = {
-	/* Mapping ASCII characters to note numbers (relative to octave) */
 	['Z'] = 1,  /* C */
 	['S'] = 2,  /* C# */
 	['X'] = 3,  /* D */
@@ -56,8 +54,8 @@ static const int8_t keyToNote[256] = {
 	['O'] = 27, /* D */
 	['0'] = 28, /* D# */
 	['P'] = 29, /* E */
-	
-	/* Lowercase versions */
+
+	/* Lowercase */
 	['z'] = 1, ['s'] = 2, ['x'] = 3, ['d'] = 4, ['c'] = 5,
 	['v'] = 6, ['g'] = 7, ['b'] = 8, ['h'] = 9, ['n'] = 10,
 	['j'] = 11, ['m'] = 12, ['l'] = 14,
@@ -67,235 +65,160 @@ static const int8_t keyToNote[256] = {
 
 void ft2_input_init(ft2_input_state_t *input)
 {
-	if (input == NULL)
-		return;
-
+	if (input == NULL) return;
 	memset(input, 0, sizeof(ft2_input_state_t));
 	input->octave = 4;
 }
 
+/* Convert key to note number: note + octave*12, clamped to 1-96 */
 int8_t ft2_key_to_note(int key, int8_t octave)
 {
-	if (key < 0 || key > 255)
-		return 0;
-	
+	if (key < 0 || key > 255) return 0;
 	int8_t note = keyToNote[key];
-	if (note == 0)
-		return 0;
-	
-	/* Adjust for octave (same formula as standalone: note + curOctave * 12) */
+	if (note == 0) return 0;
 	int8_t adjustedNote = note + (octave * 12);
-	
-	/* Clamp to valid range 1-96 */
-	if (adjustedNote < 1)
-		adjustedNote = 1;
-	if (adjustedNote > 96)
-		adjustedNote = 96;
-	
+	if (adjustedNote < 1) adjustedNote = 1;
+	if (adjustedNote > 96) adjustedNote = 96;
 	return adjustedNote;
 }
 
+/* ---------- Playback control ---------- */
+
 static void handlePlaybackKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 {
-	if (inst == NULL)
-		return;
-	
-	switch (keyCode)
-	{
+	if (inst == NULL) return;
+
+	switch (keyCode) {
 		case FT2_KEY_SPACE:
-			/* Space = toggle edit mode when stopped, or stop playback when playing */
-			if (inst->replayer.playMode == FT2_PLAYMODE_IDLE)
-			{
-				/* Enter edit mode */
+			/* Space: toggle edit mode (idle) or stop (playing) */
+			if (inst->replayer.playMode == FT2_PLAYMODE_IDLE) {
 				memset(inst->editor.keyOnTab, 0, sizeof(inst->editor.keyOnTab));
 				inst->replayer.playMode = FT2_PLAYMODE_EDIT;
-				inst->uiState.updatePosSections = true; /* Update mode text */
-			}
-			else
-			{
+			} else {
 				ft2_instance_stop(inst);
-				inst->uiState.updatePosSections = true; /* Update mode text */
 			}
+			inst->uiState.updatePosSections = true;
 			break;
-		
+
 		case FT2_KEY_RETURN:
 		case '\n':
-			/* Enter = play from current position (Ctrl+Enter = play pattern) */
+			/* Enter: play song, Ctrl+Enter: play pattern */
 			if (modifiers & FT2_MOD_CTRL)
 				ft2_instance_play(inst, FT2_PLAYMODE_PATT, 0);
 			else
 				ft2_instance_play(inst, FT2_PLAYMODE_SONG, 0);
 			break;
-		
+
 		case FT2_KEY_F5:
-			/* F5 = play song from start (unless modifier keys) */
-			if (!(modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT)))
-			{
+			if (!(modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT))) {
 				inst->replayer.song.songPos = 0;
 				inst->replayer.song.row = 0;
 				ft2_instance_play(inst, FT2_PLAYMODE_SONG, 0);
 			}
 			break;
-		
+
 		case FT2_KEY_F6:
-			/* F6 = play song from current position (unless modifier keys) */
 			if (!(modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT)))
 				ft2_instance_play(inst, FT2_PLAYMODE_SONG, 0);
 			break;
-		
+
 		case FT2_KEY_F7:
-			/* F7 = play pattern from start (unless modifier keys) */
-			if (!(modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT)))
-			{
+			if (!(modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT))) {
 				inst->replayer.song.row = 0;
 				ft2_instance_play(inst, FT2_PLAYMODE_PATT, 0);
 			}
 			break;
-		
+
 		case FT2_KEY_F8:
-			/* F8 = stop (unless modifier keys) */
 			if (!(modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT)))
 				ft2_instance_stop(inst);
 			break;
-		
+
 		default:
 			break;
 	}
 }
 
+/* ---------- Pattern navigation ---------- */
+
 static void handleNavigationKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 {
-	if (inst == NULL)
-		return;
-	
-	/* Pattern editor navigation */
-	switch (keyCode)
-	{
+	if (inst == NULL) return;
+
+	switch (keyCode) {
 		case FT2_KEY_UP:
-			if (modifiers & FT2_MOD_SHIFT)
-			{
-				/* Shift+Up = decrease current instrument */
-				if (inst->editor.curInstr > 0)
-					inst->editor.curInstr--;
-			}
-			else if (modifiers & FT2_MOD_ALT)
-			{
-				/* Alt+Up = mark pattern upward */
+			if (modifiers & FT2_MOD_SHIFT) {
+				if (inst->editor.curInstr > 0) inst->editor.curInstr--;
+			} else if (modifiers & FT2_MOD_ALT) {
 				keybPattMarkUp(inst);
-			}
-			else
-			{
-				/* Row navigation - update song.row (source of truth for pattern editor) */
+			} else {
 				uint16_t numRows = inst->replayer.song.currNumRows;
 				if (numRows == 0) numRows = 64;
-				
 				if (inst->replayer.song.row > 0)
 					inst->replayer.song.row--;
 				else
-					inst->replayer.song.row = numRows - 1; /* Wrap to bottom */
-				
-				/* Sync editor.row when not playing */
+					inst->replayer.song.row = numRows - 1;
 				if (!inst->replayer.songPlaying)
 					inst->editor.row = (uint8_t)inst->replayer.song.row;
 			}
 			inst->uiState.updatePatternEditor = true;
 			break;
-		
+
 		case FT2_KEY_DOWN:
-			if (modifiers & FT2_MOD_SHIFT)
-			{
-				/* Shift+Down = increase current instrument */
-				if (inst->editor.curInstr < 127)
-					inst->editor.curInstr++;
-			}
-			else if (modifiers & FT2_MOD_ALT)
-			{
-				/* Alt+Down = mark pattern downward */
+			if (modifiers & FT2_MOD_SHIFT) {
+				if (inst->editor.curInstr < 127) inst->editor.curInstr++;
+			} else if (modifiers & FT2_MOD_ALT) {
 				keybPattMarkDown(inst);
-			}
-			else
-			{
-				/* Row navigation - update song.row (source of truth for pattern editor) */
+			} else {
 				uint16_t numRows = inst->replayer.song.currNumRows;
 				if (numRows == 0) numRows = 64;
-				
 				if (inst->replayer.song.row < numRows - 1)
 					inst->replayer.song.row++;
 				else
-					inst->replayer.song.row = 0; /* Wrap to top */
-				
-				/* Sync editor.row when not playing */
+					inst->replayer.song.row = 0;
 				if (!inst->replayer.songPlaying)
 					inst->editor.row = (uint8_t)inst->replayer.song.row;
 			}
 			inst->uiState.updatePatternEditor = true;
 			break;
-		
+
 		case FT2_KEY_LEFT:
-			if (modifiers & FT2_MOD_SHIFT)
-			{
-				/* Shift+Left = decrease song position */
-				if (inst->replayer.song.songPos > 0)
-				{
+			if (modifiers & FT2_MOD_SHIFT) {
+				if (inst->replayer.song.songPos > 0) {
 					inst->replayer.song.songPos--;
 					inst->editor.editPattern = inst->replayer.song.orders[inst->replayer.song.songPos];
 				}
-			}
-			else if (modifiers & FT2_MOD_CTRL)
-			{
-				/* Ctrl+Left = decrease pattern number */
-				if (inst->editor.editPattern > 0)
-					inst->editor.editPattern--;
-			}
-			else if (modifiers & FT2_MOD_ALT)
-			{
-				/* Alt+Left = mark pattern left */
+			} else if (modifiers & FT2_MOD_CTRL) {
+				if (inst->editor.editPattern > 0) inst->editor.editPattern--;
+			} else if (modifiers & FT2_MOD_ALT) {
 				keybPattMarkLeft(inst);
-			}
-			else
-			{
-				/* Move cursor column left */
+			} else {
 				if (inst->cursor.object > 0)
 					inst->cursor.object--;
-				else if (inst->cursor.ch > 0)
-				{
+				else if (inst->cursor.ch > 0) {
 					inst->cursor.ch--;
-					inst->cursor.object = CURSOR_EFX2; /* Last column in channel */
+					inst->cursor.object = CURSOR_EFX2;
 				}
 			}
 			inst->uiState.updatePatternEditor = true;
 			break;
-		
+
 		case FT2_KEY_RIGHT:
-			if (modifiers & FT2_MOD_SHIFT)
-			{
-				/* Shift+Right = increase song position */
-				if (inst->replayer.song.songPos < inst->replayer.song.songLength - 1)
-				{
+			if (modifiers & FT2_MOD_SHIFT) {
+				if (inst->replayer.song.songPos < inst->replayer.song.songLength - 1) {
 					inst->replayer.song.songPos++;
 					inst->editor.editPattern = inst->replayer.song.orders[inst->replayer.song.songPos];
 				}
-			}
-			else if (modifiers & FT2_MOD_CTRL)
-			{
-				/* Ctrl+Right = increase pattern number */
-				if (inst->editor.editPattern < 255)
-					inst->editor.editPattern++;
-			}
-			else if (modifiers & FT2_MOD_ALT)
-			{
-				/* Alt+Right = mark pattern right */
+			} else if (modifiers & FT2_MOD_CTRL) {
+				if (inst->editor.editPattern < 255) inst->editor.editPattern++;
+			} else if (modifiers & FT2_MOD_ALT) {
 				keybPattMarkRight(inst);
-			}
-			else
-			{
-				/* Move cursor column right */
+			} else {
 				if (inst->cursor.object < CURSOR_EFX2)
 					inst->cursor.object++;
-				else if (inst->cursor.ch < inst->replayer.song.numChannels - 1)
-				{
+				else if (inst->cursor.ch < inst->replayer.song.numChannels - 1) {
 					inst->cursor.ch++;
-					inst->cursor.object = CURSOR_NOTE; /* First column in next channel */
+					inst->cursor.object = CURSOR_NOTE;
 				}
 			}
 			inst->uiState.updatePatternEditor = true;
@@ -350,73 +273,58 @@ static void handleNavigationKeys(ft2_instance_t *inst, int keyCode, int modifier
 		break;
 		
 		case FT2_KEY_TAB:
-			/* Tab = next channel, Shift+Tab = prev channel */
 			if (modifiers & FT2_MOD_SHIFT)
 				cursorTabLeft(inst);
 			else
 				cursorTabRight(inst);
 			break;
-		
+
 		default:
 			break;
 	}
 }
 
+/* ---------- Octave control ---------- */
+
+/* F1/F2 = octave down/up (without modifiers) */
 static void handleOctaveKeys(ft2_instance_t *inst, ft2_input_state_t *input, int keyCode, int modifiers)
 {
-	if (inst == NULL || input == NULL)
-		return;
-	
-	/* F1/F2 for octave up/down, but not with modifier keys (those are for transpose) */
-	if (modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT))
-		return;
-	
-	switch (keyCode)
-	{
+	if (inst == NULL || input == NULL) return;
+	if (modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT)) return;
+
+	switch (keyCode) {
 		case FT2_KEY_F1:
-			if (input->octave > 0)
-			{
-				input->octave--;
-				inst->editor.curOctave = input->octave;
-			}
+			if (input->octave > 0) { input->octave--; inst->editor.curOctave = input->octave; }
 			break;
-		
 		case FT2_KEY_F2:
-			if (input->octave < 7)
-			{
-				input->octave++;
-				inst->editor.curOctave = input->octave;
-			}
+			if (input->octave < 7) { input->octave++; inst->editor.curOctave = input->octave; }
 			break;
-		
-		default:
-			break;
+		default: break;
 	}
 }
 
-/**
- * Handle numpad keys for instrument bank switching.
- * @return true if the key was handled (prevent further processing)
+/* ---------- Numpad instrument selection ---------- */
+
+/*
+ * Numpad layout for instrument bank selection:
+ *   NumLk / * -   = Banks 1-4 (or 5-8 with + held)
+ *   0-8          = Quick select within current bank
+ *   Enter        = Toggle bank 1-64 vs 65-128
+ *   .            = Clear instrument (Shift+. = clear sample)
  */
 static bool handleNumpadInstrumentKeys(ft2_instance_t *inst, ft2_input_state_t *input, int keyCode, int modifiers)
 {
-	if (inst == NULL || input == NULL)
-		return false;
-	
-	/* Check for numpad plus held state - only allow bank selection keys */
-	if (input->numPadPlusPressed && !(modifiers & FT2_MOD_CTRL))
-	{
+	if (inst == NULL || input == NULL) return false;
+
+	/* With + held, only bank selection keys work */
+	if (input->numPadPlusPressed && !(modifiers & FT2_MOD_CTRL)) {
 		if (keyCode != FT2_KEY_NUMLOCK && keyCode != FT2_KEY_NUMPAD_DIVIDE &&
 			keyCode != FT2_KEY_NUMPAD_MULTIPLY && keyCode != FT2_KEY_NUMPAD_MINUS)
-		{
 			return false;
-		}
 	}
-	
-	switch (keyCode)
-	{
+
+	switch (keyCode) {
 		case FT2_KEY_NUMPAD_ENTER:
-			/* Toggle instrument bank (1-64 vs 65-128) */
 			inst->editor.instrBankSwapped ^= 1;
 			if (inst->editor.instrBankSwapped)
 				inst->editor.instrBankOffset += 8 * 8;
@@ -524,173 +432,108 @@ static bool handleNumpadInstrumentKeys(ft2_instance_t *inst, ft2_input_state_t *
 			if (inst->editor.curInstr > 127) inst->editor.curInstr = 127;
 			inst->uiState.updateInstrSwitcher = true;
 			return true;
-		
+
 		default:
 			return false;
 	}
 }
 
+/* ---------- Edit skip ---------- */
+
+/* Backtick: cycle edit row skip 0-16 (Shift = decrease) */
 static void handleEditSkipKey(ft2_instance_t *inst, int keyCode, int modifiers)
 {
-	if (inst == NULL)
-		return;
-	
-	/* Grave/backtick key for edit skip adjustment */
-	if (keyCode == '`' || keyCode == '~')
-	{
-		/* Note off is handled elsewhere - this is for when in edit mode with no note col */
-		if (modifiers & FT2_MOD_SHIFT)
-		{
-			/* Decrease edit skip */
-			if (inst->editor.editRowSkip == 0)
-				inst->editor.editRowSkip = 16;
-			else
-				inst->editor.editRowSkip--;
-		}
-		else
-		{
-			/* Increase edit skip */
-			if (inst->editor.editRowSkip == 16)
-				inst->editor.editRowSkip = 0;
-			else
-				inst->editor.editRowSkip++;
+	if (inst == NULL) return;
+	if (keyCode == '`' || keyCode == '~') {
+		if (modifiers & FT2_MOD_SHIFT) {
+			if (inst->editor.editRowSkip == 0) inst->editor.editRowSkip = 16;
+			else inst->editor.editRowSkip--;
+		} else {
+			if (inst->editor.editRowSkip == 16) inst->editor.editRowSkip = 0;
+			else inst->editor.editRowSkip++;
 		}
 	}
 }
 
+/* ---------- Modified key shortcuts ---------- */
+
 static bool handleModifiedKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 {
-	if (inst == NULL)
-		return false;
-	
+	if (inst == NULL) return false;
+
 	bool ctrlDown = (modifiers & FT2_MOD_CTRL) != 0;
 	bool altDown = (modifiers & FT2_MOD_ALT) != 0;
 	bool shiftDown = (modifiers & FT2_MOD_SHIFT) != 0;
-	
-	/* Ctrl+key combinations */
-	if (ctrlDown && !altDown && !shiftDown)
-	{
-		switch (keyCode)
-		{
-			case 'a':
-			case 'A':
-				/* Ctrl+A = show advanced edit */
-				inst->uiState.advEditShown = !inst->uiState.advEditShown;
-				return true;
-			
-			case 'b':
-			case 'B':
-				/* Ctrl+B = show about screen */
-				if (!inst->uiState.aboutScreenShown)
-				{
+
+	/* Ctrl+key: screen toggles */
+	if (ctrlDown && !altDown && !shiftDown) {
+		switch (keyCode) {
+			case 'a': case 'A': inst->uiState.advEditShown = !inst->uiState.advEditShown; return true;
+			case 'b': case 'B':
+				if (!inst->uiState.aboutScreenShown) {
 					inst->uiState.aboutScreenShown = true;
 					inst->uiState.configScreenShown = false;
 					inst->uiState.helpScreenShown = false;
 				}
 				return true;
-			
-			case 'c':
-			case 'C':
-				/* Ctrl+C = copy (pattern) or show config */
-				if (inst->uiState.sampleEditorShown)
-				{
-					/* Sample copy - handled elsewhere */
-				}
-				else
-				{
+			case 'c': case 'C':
+				if (!inst->uiState.sampleEditorShown) {
 					inst->uiState.configScreenShown = !inst->uiState.configScreenShown;
-					if (inst->uiState.configScreenShown)
-					{
+					if (inst->uiState.configScreenShown) {
 						inst->uiState.aboutScreenShown = false;
 						inst->uiState.helpScreenShown = false;
 					}
 				}
 				return true;
-			
-			case 'd':
-			case 'D':
-				/* Ctrl+D = disk operations */
-				inst->uiState.diskOpShown = !inst->uiState.diskOpShown;
-				return true;
-			
-			case 'e':
-			case 'E':
-				/* Ctrl+E = sample editor extended */
-				if (!inst->uiState.sampleEditorExtShown)
-				{
+			case 'd': case 'D': inst->uiState.diskOpShown = !inst->uiState.diskOpShown; return true;
+			case 'e': case 'E':
+				if (!inst->uiState.sampleEditorExtShown) {
 					inst->uiState.aboutScreenShown = false;
 					inst->uiState.configScreenShown = false;
 					inst->uiState.helpScreenShown = false;
 					inst->uiState.sampleEditorExtShown = true;
 				}
 				return true;
-			
-			case 'h':
-			case 'H':
-				/* Ctrl+H = help screen */
+			case 'h': case 'H':
 				inst->uiState.helpScreenShown = !inst->uiState.helpScreenShown;
-				if (inst->uiState.helpScreenShown)
-				{
+				if (inst->uiState.helpScreenShown) {
 					inst->uiState.aboutScreenShown = false;
 					inst->uiState.configScreenShown = false;
 				}
 				return true;
-			
-			case 'i':
-			case 'I':
-				/* Ctrl+I = instrument editor */
-				if (!inst->uiState.instEditorShown)
-				{
+			case 'i': case 'I':
+				if (!inst->uiState.instEditorShown) {
 					inst->uiState.patternEditorShown = false;
 					inst->uiState.sampleEditorShown = false;
 					inst->uiState.instEditorShown = true;
 				}
 				return true;
-			
-			case 'm':
-			case 'M':
-				/* Ctrl+M = instrument editor extended */
-				if (!inst->uiState.instEditorExtShown)
-				{
+			case 'm': case 'M':
+				if (!inst->uiState.instEditorExtShown) {
 					inst->uiState.aboutScreenShown = false;
 					inst->uiState.configScreenShown = false;
 					inst->uiState.helpScreenShown = false;
 					inst->uiState.instEditorExtShown = true;
 				}
 				return true;
-			
-			case 'p':
-			case 'P':
-				/* Ctrl+P = pattern editor */
-				if (!inst->uiState.patternEditorShown)
-				{
+			case 'p': case 'P':
+				if (!inst->uiState.patternEditorShown) {
 					inst->uiState.sampleEditorShown = false;
 					inst->uiState.sampleEditorExtShown = false;
 					inst->uiState.instEditorShown = false;
 					inst->uiState.patternEditorShown = true;
 				}
 				return true;
-			
-			case 's':
-			case 'S':
-				/* Ctrl+S = sample editor */
-				if (!inst->uiState.sampleEditorShown)
-				{
+			case 's': case 'S':
+				if (!inst->uiState.sampleEditorShown) {
 					inst->uiState.patternEditorShown = false;
 					inst->uiState.instEditorShown = false;
 					inst->uiState.sampleEditorShown = true;
 				}
 				return true;
-			
-			case 't':
-			case 'T':
-				/* Ctrl+T = transpose */
-				inst->uiState.transposeShown = !inst->uiState.transposeShown;
-				return true;
-			
-			case 'x':
-			case 'X':
-				/* Ctrl+X = restore to default view */
+			case 't': case 'T': inst->uiState.transposeShown = !inst->uiState.transposeShown; return true;
+			case 'x': case 'X':
+				/* Restore default view */
 				inst->uiState.sampleEditorShown = false;
 				inst->uiState.sampleEditorExtShown = false;
 				inst->uiState.instEditorShown = false;
@@ -704,44 +547,23 @@ static bool handleModifiedKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 				inst->uiState.extendedPatternEditor = false;
 				inst->uiState.patternEditorShown = true;
 				return true;
-			
-			case 'z':
-			case 'Z':
-				/* Ctrl+Z = toggle extended pattern editor */
-				inst->uiState.extendedPatternEditor = !inst->uiState.extendedPatternEditor;
-				return true;
-			
-			default:
-				break;
+			case 'z': case 'Z': inst->uiState.extendedPatternEditor = !inst->uiState.extendedPatternEditor; return true;
+			default: break;
 		}
 	}
-	
-	/* Alt+key combinations for channel jumping */
-	if (altDown && !ctrlDown && !shiftDown)
-	{
-		/* Alt+F3/F4/F5 for block operations */
-		switch (keyCode)
-		{
-			case FT2_KEY_F3:
-				cutBlock(inst);
-				return true;
-			
-			case FT2_KEY_F4:
-				copyBlock(inst);
-				return true;
-			
-			case FT2_KEY_F5:
-				pasteBlock(inst);
-				return true;
-			
-			default:
-				break;
+
+	/* Alt+key: block ops and channel jumping */
+	if (altDown && !ctrlDown && !shiftDown) {
+		switch (keyCode) {
+			case FT2_KEY_F3: cutBlock(inst); return true;
+			case FT2_KEY_F4: copyBlock(inst); return true;
+			case FT2_KEY_F5: pasteBlock(inst); return true;
+			default: break;
 		}
-		
-		/* Alt+letter for channel jumping */
+
+		/* Alt+QWERTY/ASDF = jump to channel 0-15 */
 		int channel = -1;
-		switch (keyCode)
-		{
+		switch (keyCode) {
 			case 'q': case 'Q': channel = 0; break;
 			case 'w': case 'W': channel = 1; break;
 			case 'e': case 'E': channel = 2; break;
@@ -760,211 +582,139 @@ static bool handleModifiedKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 			case 'k': case 'K': channel = 15; break;
 			default: break;
 		}
-		
-		if (channel >= 0 && channel < inst->replayer.song.numChannels)
-		{
+		if (channel >= 0 && channel < inst->replayer.song.numChannels) {
 			inst->cursor.ch = (uint8_t)channel;
 			inst->cursor.object = CURSOR_NOTE;
 			inst->uiState.updatePatternEditor = true;
 			return true;
 		}
 	}
-	
+
 	return false;
 }
 
+/* ---------- Pattern insert/delete ---------- */
+
+/*
+ * Insert: shift data down (Shift = all channels, else current channel)
+ * Backspace: delete previous row, shift up
+ * Delete: clear current cell (Shift=all, Ctrl=vol+efx, Alt=efx only)
+ */
 static void handlePatternInsertDelete(ft2_instance_t *inst, int keyCode, int modifiers)
 {
-	if (inst == NULL)
-		return;
-	
-	bool inEditMode = (inst->replayer.playMode == FT2_PLAYMODE_EDIT);
-	if (!inEditMode)
-		return;
-	
+	if (inst == NULL) return;
+	if (inst->replayer.playMode != FT2_PLAYMODE_EDIT) return;
+
 	uint16_t patt = inst->editor.editPattern;
-	if (patt >= 256)
-		return;
-	
+	if (patt >= 256) return;
+
 	uint16_t numRows = inst->replayer.patternNumRows[patt];
 	uint16_t numCh = inst->replayer.song.numChannels;
 	ft2_note_t *pattern = inst->replayer.pattern[patt];
-	
 	int16_t curRow = inst->replayer.song.row;
 	if (curRow < 0) curRow = 0;
-	
-	switch (keyCode)
-	{
+
+	switch (keyCode) {
 		case FT2_KEY_INSERT:
-			if (pattern != NULL)
-			{
-				if (modifiers & FT2_MOD_SHIFT)
-				{
-					/* Insert line - shift all data down in all channels */
+			if (pattern != NULL) {
+				if (modifiers & FT2_MOD_SHIFT) {
+					/* Insert line - all channels */
 					for (int16_t row = numRows - 2; row >= curRow; row--)
-					{
 						for (uint8_t ch = 0; ch < numCh; ch++)
-						{
 							pattern[(row + 1) * numCh + ch] = pattern[row * numCh + ch];
-						}
-					}
-					/* Clear current row */
 					for (uint8_t ch = 0; ch < numCh; ch++)
-					{
 						memset(&pattern[curRow * numCh + ch], 0, sizeof(ft2_note_t));
-					}
-				}
-				else
-				{
-					/* Insert note - shift only current channel */
+				} else {
+					/* Insert note - current channel */
 					for (int16_t row = numRows - 2; row >= curRow; row--)
-					{
-						pattern[(row + 1) * numCh + inst->cursor.ch] = 
-							pattern[row * numCh + inst->cursor.ch];
-					}
+						pattern[(row + 1) * numCh + inst->cursor.ch] = pattern[row * numCh + inst->cursor.ch];
 					memset(&pattern[curRow * numCh + inst->cursor.ch], 0, sizeof(ft2_note_t));
 				}
 				ft2_song_mark_modified(inst);
 				inst->uiState.updatePatternEditor = true;
 			}
 			break;
-		
+
 		case FT2_KEY_BACKSPACE:
-			if (pattern != NULL && curRow > 0)
-			{
-				if (modifiers & FT2_MOD_SHIFT)
-				{
-					/* Delete line - shift all data up in all channels */
-					inst->replayer.song.row--;
-					curRow = inst->replayer.song.row;
-					if (!inst->replayer.songPlaying)
-						inst->editor.row = (uint8_t)curRow;
-					
+			if (pattern != NULL && curRow > 0) {
+				inst->replayer.song.row--;
+				curRow = inst->replayer.song.row;
+				if (!inst->replayer.songPlaying) inst->editor.row = (uint8_t)curRow;
+
+				if (modifiers & FT2_MOD_SHIFT) {
 					for (uint16_t row = curRow; row < numRows - 1; row++)
-					{
 						for (uint8_t ch = 0; ch < numCh; ch++)
-						{
 							pattern[row * numCh + ch] = pattern[(row + 1) * numCh + ch];
-						}
-					}
-					/* Clear last row */
 					for (uint8_t ch = 0; ch < numCh; ch++)
-					{
 						memset(&pattern[(numRows - 1) * numCh + ch], 0, sizeof(ft2_note_t));
-					}
-				}
-				else
-				{
-					/* Delete note - shift only current channel */
-					inst->replayer.song.row--;
-					curRow = inst->replayer.song.row;
-					if (!inst->replayer.songPlaying)
-						inst->editor.row = (uint8_t)curRow;
-					
+				} else {
 					for (uint16_t row = curRow; row < numRows - 1; row++)
-					{
-						pattern[row * numCh + inst->cursor.ch] = 
-							pattern[(row + 1) * numCh + inst->cursor.ch];
-					}
+						pattern[row * numCh + inst->cursor.ch] = pattern[(row + 1) * numCh + inst->cursor.ch];
 					memset(&pattern[(numRows - 1) * numCh + inst->cursor.ch], 0, sizeof(ft2_note_t));
 				}
 				ft2_song_mark_modified(inst);
 				inst->uiState.updatePatternEditor = true;
 			}
 			break;
-		
+
 		case FT2_KEY_DELETE:
-			if (pattern != NULL)
-			{
+			if (pattern != NULL) {
 				ft2_note_t *n = &pattern[curRow * numCh + inst->cursor.ch];
-				
 				if (modifiers & FT2_MOD_SHIFT)
-				{
-					/* Delete all columns */
 					memset(n, 0, sizeof(ft2_note_t));
-				}
 				else if (modifiers & FT2_MOD_CTRL)
-				{
-					/* Delete volume + effect */
-					n->vol = 0;
-					n->efx = 0;
-					n->efxData = 0;
-				}
+					{ n->vol = 0; n->efx = 0; n->efxData = 0; }
 				else if (modifiers & FT2_MOD_ALT)
-				{
-					/* Delete effect only */
-					n->efx = 0;
-					n->efxData = 0;
-				}
+					{ n->efx = 0; n->efxData = 0; }
+				else if (inst->cursor.object == CURSOR_VOL1 || inst->cursor.object == CURSOR_VOL2)
+					n->vol = 0;
 				else
-				{
-					/* Delete based on cursor position */
-					if (inst->cursor.object == CURSOR_VOL1 || inst->cursor.object == CURSOR_VOL2)
-					{
-						n->vol = 0;
-					}
-					else
-					{
-						n->note = 0;
-						n->instr = 0;
-					}
-				}
-				
-				/* Advance cursor after delete */
-				if (inst->editor.editRowSkip > 0)
-				{
+					{ n->note = 0; n->instr = 0; }
+
+				if (inst->editor.editRowSkip > 0) {
 					inst->replayer.song.row = (inst->replayer.song.row + inst->editor.editRowSkip) % numRows;
-					if (!inst->replayer.songPlaying)
-						inst->editor.row = (uint8_t)inst->replayer.song.row;
+					if (!inst->replayer.songPlaying) inst->editor.row = (uint8_t)inst->replayer.song.row;
 				}
-				
 				ft2_song_mark_modified(inst);
 				inst->uiState.updatePatternEditor = true;
 			}
 			break;
-		
+
 		default:
 			break;
 	}
 }
 
-/* ============ UNIFIED NOTE RECORDING ============ */
+/* ---------- Unified note recording ---------- */
 
+/*
+ * Record/play a note from keyboard or MIDI.
+ * Handles channel allocation (multiEdit/multiRec/multiKeyJazz), playback,
+ * and pattern recording with optional MIDI velocity/pitch/mod wheel.
+ * Returns channel used or -1 on failure.
+ */
 int8_t ft2_plugin_record_note(ft2_instance_t *inst, ft2_input_state_t *input,
                               uint8_t noteNum, int8_t vol,
                               uint16_t midiVibDepth, int16_t midiPitch)
 {
-	if (inst == NULL || input == NULL)
-		return -1;
-	
-	/* Handle note-off separately */
-	if (noteNum == FT2_KEY_NOTE_OFF)
-	{
-		/* For note-off without a specific channel, we need to find the channel */
-		/* This path is used for keyboard note-off key */
-		return -1;
-	}
-	
-	/* Validate note range */
-	if (noteNum < 1 || noteNum > 96)
-		return -1;
-	
-	/* Get UI for access to scopes (multiRecChn, channelMuted) */
+	if (inst == NULL || input == NULL) return -1;
+	if (noteNum == FT2_KEY_NOTE_OFF) return -1;
+	if (noteNum < 1 || noteNum > 96) return -1;
+
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	bool *multiRecChn = (ui != NULL) ? ui->scopes.multiRecChn : NULL;
 	bool *channelMuted = (ui != NULL) ? ui->scopes.channelMuted : NULL;
-	
-	/* Determine play/edit mode */
-	bool editMode = inst->uiState.patternEditorShown && 
+
+	bool editMode = inst->uiState.patternEditorShown &&
 	                (inst->replayer.playMode == FT2_PLAYMODE_EDIT);
 	bool recMode = (inst->replayer.playMode == FT2_PLAYMODE_RECSONG) ||
 	               (inst->replayer.playMode == FT2_PLAYMODE_RECPATT);
-	
+
 	uint16_t numChannels = inst->replayer.song.numChannels;
 	if (numChannels > 32) numChannels = 32;
-	
-	int8_t c = -1; /* Channel to play/record on */
-	int8_t k = -1; /* Channel where this note is already held */
+
+	int8_t c = -1;  /* Channel to use */
+	int8_t k = -1;  /* Channel where note already held */
 	int32_t time;
 	
 	if (editMode || recMode)
@@ -1181,228 +931,158 @@ int8_t ft2_plugin_record_note(ft2_instance_t *inst, ft2_input_state_t *input,
 	return c;
 }
 
+/* Record note-off on specific channel. Used for MIDI release tracking. */
 void ft2_plugin_record_note_off(ft2_instance_t *inst, ft2_input_state_t *input, int8_t channel)
 {
-	if (inst == NULL || input == NULL || channel < 0 || channel >= 32)
-		return;
-	
-	/* Clear key-on tracking */
+	if (inst == NULL || input == NULL || channel < 0 || channel >= 32) return;
+
 	input->keyOffNr++;
 	input->keyOnTab[channel] = 0;
 	input->keyOffTime[channel] = input->keyOffNr;
-	
-	/* Release the note */
 	ft2_instance_release_note(inst, (uint8_t)channel);
-	
-	/* Record note-off to pattern if in record mode and recRelease is enabled */
+
+	/* Record note-off in record mode if recRelease enabled */
 	bool recMode = (inst->replayer.playMode == FT2_PLAYMODE_RECSONG) ||
 	               (inst->replayer.playMode == FT2_PLAYMODE_RECPATT);
-	
-	if (recMode && inst->config.recRelease)
-	{
+
+	if (recMode && inst->config.recRelease) {
 		uint16_t patt = inst->editor.editPattern;
-		if (!allocatePattern(inst, patt))
-			return;
-		
+		if (!allocatePattern(inst, patt)) return;
+
 		int16_t row = inst->replayer.song.row;
 		uint16_t numRows = inst->replayer.patternNumRows[patt];
-		
-		if (row >= 0 && row < numRows)
-		{
+
+		if (row >= 0 && row < numRows) {
 			ft2_note_t *n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + channel];
-			
-			/* If there's already a note on this row, go to next row */
-			if (n->note != 0)
-			{
-				row++;
-				if (row >= numRows)
-					row = 0;
+			if (n->note != 0) {
+				row = (row + 1) % numRows;
 				n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + channel];
 			}
-			
 			n->note = FT2_KEY_NOTE_OFF;
-			
 			ft2_song_mark_modified(inst);
 			inst->uiState.updatePatternEditor = true;
 		}
 	}
 }
 
+/* ---------- Note input ---------- */
+
+/* Backtick = note-off in edit/record mode */
 static void handleNoteInput(ft2_instance_t *inst, ft2_input_state_t *input, int keyCode)
 {
-	if (inst == NULL || input == NULL)
-		return;
-	
-	/* Check for note off key (backtick) - handled specially */
-	if (keyCode == '`' || keyCode == '~')
-	{
-		/* Get UI for access to scopes */
+	if (inst == NULL || input == NULL) return;
+
+	/* Note-off key */
+	if (keyCode == '`' || keyCode == '~') {
 		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 		bool *multiRecChn = (ui != NULL) ? ui->scopes.multiRecChn : NULL;
 		bool *channelMuted = (ui != NULL) ? ui->scopes.channelMuted : NULL;
-		
-		bool editMode = inst->uiState.patternEditorShown && 
+
+		bool editMode = inst->uiState.patternEditorShown &&
 		                (inst->replayer.playMode == FT2_PLAYMODE_EDIT);
 		bool recMode = (inst->replayer.playMode == FT2_PLAYMODE_RECSONG) ||
 		               (inst->replayer.playMode == FT2_PLAYMODE_RECPATT);
-		
-		if ((editMode || recMode) && inst->uiState.patternEditorShown)
-		{
+
+		if ((editMode || recMode) && inst->uiState.patternEditorShown) {
 			uint16_t numChannels = inst->replayer.song.numChannels;
 			if (numChannels > 32) numChannels = 32;
-			
-			/* Find channel to insert note off */
+
 			int8_t c = inst->cursor.ch;
-			
-			/* In multi-edit/rec mode, find channel from multiRecChn */
-			if (((inst->config.multiEdit && editMode) || (inst->config.multiRec && recMode)) && multiRecChn)
-			{
+			if (((inst->config.multiEdit && editMode) || (inst->config.multiRec && recMode)) && multiRecChn) {
 				int32_t time = 0x7FFFFFFF;
-				for (int8_t i = 0; i < (int8_t)numChannels; i++)
-				{
-					if ((!channelMuted || !channelMuted[i]) && multiRecChn[i] && 
+				for (int8_t i = 0; i < (int8_t)numChannels; i++) {
+					if ((!channelMuted || !channelMuted[i]) && multiRecChn[i] &&
 					    input->keyOffTime[i] < time && input->keyOnTab[i] == 0)
-					{
-						c = i;
-						time = input->keyOffTime[i];
-					}
+						{ c = i; time = input->keyOffTime[i]; }
 				}
 			}
-			
-			if (c < 0 || c >= (int8_t)numChannels)
-				return;
-			
+			if (c < 0 || c >= (int8_t)numChannels) return;
+
 			uint16_t patt = inst->editor.editPattern;
-			if (!allocatePattern(inst, patt))
-				return;
-			
+			if (!allocatePattern(inst, patt)) return;
+
 			int16_t row = inst->replayer.song.row;
-			if (row >= 0 && row < inst->replayer.patternNumRows[patt])
-			{
+			if (row >= 0 && row < inst->replayer.patternNumRows[patt]) {
 				ft2_note_t *n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + c];
 				n->note = FT2_KEY_NOTE_OFF;
 				n->instr = 0;
-				
-				/* In edit mode (not record), advance row */
-				if (!recMode && inst->editor.editRowSkip > 0)
-				{
+
+				if (!recMode && inst->editor.editRowSkip > 0) {
 					uint16_t numRows = inst->replayer.patternNumRows[patt];
 					inst->replayer.song.row = (inst->replayer.song.row + inst->editor.editRowSkip) % numRows;
-					if (!inst->replayer.songPlaying)
-						inst->editor.row = (uint8_t)inst->replayer.song.row;
+					if (!inst->replayer.songPlaying) inst->editor.row = (uint8_t)inst->replayer.song.row;
 				}
-				
 				ft2_song_mark_modified(inst);
 				inst->uiState.updatePatternEditor = true;
 			}
 		}
 		return;
 	}
-	
-	/* Convert key to note number */
+
 	int8_t noteNum = ft2_key_to_note(keyCode, input->octave);
-	if (noteNum <= 0)
-		return;
-	
-	/* Use unified recording function (keyboard: vol=-1 for default, no MIDI mods) */
+	if (noteNum <= 0) return;
 	ft2_plugin_record_note(inst, input, (uint8_t)noteNum, -1, 0, 0);
 }
 
+/* ---------- Effect column input ---------- */
+
 static int8_t hexCharToValue(int keyCode)
 {
-	if (keyCode >= '0' && keyCode <= '9')
-		return (int8_t)(keyCode - '0');
-	if (keyCode >= 'a' && keyCode <= 'f')
-		return (int8_t)(10 + keyCode - 'a');
-	if (keyCode >= 'A' && keyCode <= 'F')
-		return (int8_t)(10 + keyCode - 'A');
+	if (keyCode >= '0' && keyCode <= '9') return (int8_t)(keyCode - '0');
+	if (keyCode >= 'a' && keyCode <= 'f') return (int8_t)(10 + keyCode - 'a');
+	if (keyCode >= 'A' && keyCode <= 'F') return (int8_t)(10 + keyCode - 'A');
 	return -1;
 }
 
-/* Volume column effect key mapping (matches FT2's key2VolTab):
- * 0-4 = volume 0x10-0x50, - = vol slide down, + = vol slide up
- * d = fine vol down, u = fine vol up, s = set vibrato speed
- * v = vibrato, p = set panning, l = pan slide left, r = pan slide right
- * m = tone portamento
- */
+/* Volume column keys: 0-4=vol, -/+=slide, d/u=fine, s=vib speed, v=vib, p=pan, l/r=pan slide, m=porta */
 static int8_t volKeyToValue(int keyCode)
 {
-	switch (keyCode)
-	{
-		case '0': return 0;  /* Volume 00 (0x10) */
-		case '1': return 1;  /* Volume 10 (0x20) */
-		case '2': return 2;  /* Volume 20 (0x30) */
-		case '3': return 3;  /* Volume 30 (0x40) */
-		case '4': return 4;  /* Volume 40 (0x50) */
-		case '-': return 5;  /* Volume slide down (0x60) */
-		case '+':
-		case '=': return 6;  /* Volume slide up (0x70) */
-		case 'd':
-		case 'D': return 7;  /* Fine volume down (0x80) */
-		case 'u':
-		case 'U': return 8;  /* Fine volume up (0x90) */
-		case 's':
-		case 'S': return 9;  /* Set vibrato speed (0xA0) */
-		case 'v':
-		case 'V': return 10; /* Vibrato (0xB0) */
-		case 'p':
-		case 'P': return 11; /* Set panning (0xC0) */
-		case 'l':
-		case 'L': return 12; /* Panning slide left (0xD0) */
-		case 'r':
-		case 'R': return 13; /* Panning slide right (0xE0) */
-		case 'm':
-		case 'M': return 14; /* Tone portamento (0xF0) */
+	switch (keyCode) {
+		case '0': return 0;
+		case '1': return 1;
+		case '2': return 2;
+		case '3': return 3;
+		case '4': return 4;
+		case '-': return 5;
+		case '+': case '=': return 6;
+		case 'd': case 'D': return 7;
+		case 'u': case 'U': return 8;
+		case 's': case 'S': return 9;
+		case 'v': case 'V': return 10;
+		case 'p': case 'P': return 11;
+		case 'l': case 'L': return 12;
+		case 'r': case 'R': return 13;
+		case 'm': case 'M': return 14;
 		default: return -1;
 	}
 }
 
-/* Effect type key mapping (matches FT2's key2EfxTab - A-Z plus 0-9) */
+/* Effect type: 0-9 + A-Z (maps to effect 0-35) */
 static int8_t efxKeyToValue(int keyCode)
 {
-	if (keyCode >= '0' && keyCode <= '9')
-		return (int8_t)(keyCode - '0');
-	if (keyCode >= 'a' && keyCode <= 'z')
-		return (int8_t)(10 + keyCode - 'a');
-	if (keyCode >= 'A' && keyCode <= 'Z')
-		return (int8_t)(10 + keyCode - 'A');
+	if (keyCode >= '0' && keyCode <= '9') return (int8_t)(keyCode - '0');
+	if (keyCode >= 'a' && keyCode <= 'z') return (int8_t)(10 + keyCode - 'a');
+	if (keyCode >= 'A' && keyCode <= 'Z') return (int8_t)(10 + keyCode - 'A');
 	return -1;
 }
 
 static void handleEffectInput(ft2_instance_t *inst, ft2_input_state_t *input, int keyCode)
 {
-	int8_t val;
-	
-	if (inst == NULL || input == NULL)
-		return;
-	
+	if (inst == NULL || input == NULL) return;
 	if (inst->replayer.playMode != FT2_PLAYMODE_EDIT &&
 	    inst->replayer.playMode != FT2_PLAYMODE_RECSONG &&
 	    inst->replayer.playMode != FT2_PLAYMODE_RECPATT)
 		return;
-	
-	if (!inst->uiState.patternEditorShown)
-		return;
-	
-	/* Determine the key value based on cursor position */
+	if (!inst->uiState.patternEditorShown) return;
+
+	int8_t val;
 	if (inst->cursor.object == CURSOR_VOL1)
-	{
-		/* Volume column effect type uses special key mapping */
 		val = volKeyToValue(keyCode);
-	}
 	else if (inst->cursor.object == CURSOR_EFX0)
-	{
-		/* Effect type uses extended key mapping (0-9, A-Z) */
 		val = efxKeyToValue(keyCode);
-	}
 	else
-	{
-		/* All other columns use hex input (0-9, A-F) */
 		val = hexCharToValue(keyCode);
-	}
-	
-	if (val < 0)
-		return;
+	if (val < 0) return;
 	
 	uint16_t patt = inst->editor.editPattern;
 	
@@ -1420,165 +1100,92 @@ static void handleEffectInput(ft2_instance_t *inst, ft2_input_state_t *input, in
 	
 	ft2_note_t *n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + ch];
 	
-	/* Determine which column we're editing based on cursor.object */
-	switch (inst->cursor.object)
-	{
-		case CURSOR_NOTE: /* Note column - handled by handleNoteInput */
-			break;
-		
-		case CURSOR_INST1: /* Instrument high nibble */
+	switch (inst->cursor.object) {
+		case CURSOR_NOTE: break;
+		case CURSOR_INST1:
 			n->instr = (n->instr & 0x0F) | (uint8_t)(val << 4);
 			if (n->instr > 127) n->instr = 127;
 			break;
-		
-		case CURSOR_INST2: /* Instrument low nibble */
+		case CURSOR_INST2:
 			n->instr = (n->instr & 0xF0) | (uint8_t)val;
 			if (n->instr > 127) n->instr = 127;
 			break;
-		
-		case CURSOR_VOL1: /* Volume column effect type */
+		case CURSOR_VOL1:
 			n->vol = (n->vol & 0x0F) | (uint8_t)((val + 1) << 4);
-			if (n->vol >= 0x51 && n->vol <= 0x5F)
-				n->vol = 0x50;
+			if (n->vol >= 0x51 && n->vol <= 0x5F) n->vol = 0x50;
 			break;
-		
-		case CURSOR_VOL2: /* Volume column param nibble */
-			if (n->vol < 0x10)
-				n->vol = 0x10 + (uint8_t)val;
-			else
-				n->vol = (n->vol & 0xF0) | (uint8_t)val;
-			if (n->vol >= 0x51 && n->vol <= 0x5F)
-				n->vol = 0x50;
+		case CURSOR_VOL2:
+			if (n->vol < 0x10) n->vol = 0x10 + (uint8_t)val;
+			else n->vol = (n->vol & 0xF0) | (uint8_t)val;
+			if (n->vol >= 0x51 && n->vol <= 0x5F) n->vol = 0x50;
 			break;
-		
-		case CURSOR_EFX0: /* Effect type */
-			n->efx = (uint8_t)val;
-			break;
-		
-		case CURSOR_EFX1: /* Effect param high nibble */
-			n->efxData = (n->efxData & 0x0F) | (uint8_t)(val << 4);
-			break;
-		
-		case CURSOR_EFX2: /* Effect param low nibble */
-			n->efxData = (n->efxData & 0xF0) | (uint8_t)val;
-			break;
-		
-		default:
-			return;
+		case CURSOR_EFX0: n->efx = (uint8_t)val; break;
+		case CURSOR_EFX1: n->efxData = (n->efxData & 0x0F) | (uint8_t)(val << 4); break;
+		case CURSOR_EFX2: n->efxData = (n->efxData & 0xF0) | (uint8_t)val; break;
+		default: return;
 	}
-	
-	/* Advance row (matching original FT2 behavior) */
+
 	uint16_t numRows = inst->replayer.patternNumRows[patt];
-	if (numRows >= 1 && inst->editor.editRowSkip > 0)
-	{
+	if (numRows >= 1 && inst->editor.editRowSkip > 0) {
 		inst->replayer.song.row = (inst->replayer.song.row + inst->editor.editRowSkip) % numRows;
-		if (!inst->replayer.songPlaying)
-			inst->editor.row = (uint8_t)inst->replayer.song.row;
+		if (!inst->replayer.songPlaying) inst->editor.row = (uint8_t)inst->replayer.song.row;
 	}
-	
+
 	ft2_song_mark_modified(inst);
 	inst->uiState.updatePatternEditor = true;
 }
 
+/* ---------- Main key handlers ---------- */
+
 void ft2_input_key_down(ft2_instance_t *inst, ft2_input_state_t *input, int keyCode, int modifiers)
 {
-	if (input == NULL)
-		return;
-
-	if (keyCode >= 0 && keyCode < 512)
-		input->keyDown[keyCode] = true;
-
+	if (input == NULL) return;
+	if (keyCode >= 0 && keyCode < 512) input->keyDown[keyCode] = true;
 	input->lastKeyPressed = keyCode;
 	input->modifiers = (uint8_t)modifiers;
-	
-	if (inst == NULL)
-		return;
-	
-	/* Handle nibbles input when playing - block ALL keys from other handlers */
-	if (inst->uiState.nibblesShown && inst->nibbles.playing)
-	{
+	if (inst == NULL) return;
+
+	/* Nibbles consumes all input when playing */
+	if (inst->uiState.nibblesShown && inst->nibbles.playing) {
 		ft2_nibbles_handle_key(inst, keyCode);
-		return; /* Always return - matches standalone behavior */
-	}
-	
-	/* Track numpad plus state */
-	if (keyCode == FT2_KEY_NUMPAD_PLUS)
-		input->numPadPlusPressed = true;
-	
-	/* Handle modified keys first (Ctrl, Alt, Shift combos) */
-	if (modifiers & (FT2_MOD_CTRL | FT2_MOD_ALT))
-	{
-		if (handleModifiedKeys(inst, keyCode, modifiers))
-			return;
-	}
-	
-	/* Handle playback control keys */
-	handlePlaybackKeys(inst, keyCode, modifiers);
-	
-	/* Handle numpad instrument bank keys - if handled, don't process as note/effect input */
-	if (handleNumpadInstrumentKeys(inst, input, keyCode, modifiers))
 		return;
-	
-	/* Handle octave keys (F1/F2 without modifiers) */
+	}
+
+	if (keyCode == FT2_KEY_NUMPAD_PLUS) input->numPadPlusPressed = true;
+
+	if (modifiers & (FT2_MOD_CTRL | FT2_MOD_ALT))
+		if (handleModifiedKeys(inst, keyCode, modifiers)) return;
+
+	handlePlaybackKeys(inst, keyCode, modifiers);
+	if (handleNumpadInstrumentKeys(inst, input, keyCode, modifiers)) return;
 	handleOctaveKeys(inst, input, keyCode, modifiers);
-	
-	/* Handle pattern navigation */
 	handleNavigationKeys(inst, keyCode, modifiers);
-	
-	/* Handle edit skip adjustment */
 	handleEditSkipKey(inst, keyCode, modifiers);
-	
-	/* Handle pattern insert/delete keys */
 	handlePatternInsertDelete(inst, keyCode, modifiers);
-	
-	/* Handle note input (only on note column) or effect input (on other columns) */
-	if (!(modifiers & (FT2_MOD_CTRL | FT2_MOD_ALT | FT2_MOD_CMD)))
-	{
+
+	if (!(modifiers & (FT2_MOD_CTRL | FT2_MOD_ALT | FT2_MOD_CMD))) {
 		if (inst->cursor.object == CURSOR_NOTE)
-		{
-			/* Note column - handle note input */
 			handleNoteInput(inst, input, keyCode);
-		}
 		else
-		{
-			/* Effect/instrument/volume columns - handle hex input */
 			handleEffectInput(inst, input, keyCode);
-		}
 	}
 }
 
 void ft2_input_key_up(ft2_instance_t *inst, ft2_input_state_t *input, int keyCode, int modifiers)
 {
-	if (input == NULL)
-		return;
-
-	if (keyCode >= 0 && keyCode < 512)
-		input->keyDown[keyCode] = false;
-
+	if (input == NULL) return;
+	if (keyCode >= 0 && keyCode < 512) input->keyDown[keyCode] = false;
 	input->modifiers = (uint8_t)modifiers;
-	
-	/* Track numpad plus state */
-	if (keyCode == FT2_KEY_NUMPAD_PLUS)
-		input->numPadPlusPressed = false;
-	
-	/* Ignore key up if flagged */
-	if (input->ignoreCurrKeyUp)
-	{
-		input->ignoreCurrKeyUp = false;
-		return;
-	}
-	
-	/* Release note on key up (for proper note-off in live play) */
-	if (inst != NULL && !(modifiers & (FT2_MOD_CTRL | FT2_MOD_ALT | FT2_MOD_CMD)))
-	{
+
+	if (keyCode == FT2_KEY_NUMPAD_PLUS) input->numPadPlusPressed = false;
+	if (input->ignoreCurrKeyUp) { input->ignoreCurrKeyUp = false; return; }
+
+	/* Release note on key up for proper jamming */
+	if (inst != NULL && !(modifiers & (FT2_MOD_CTRL | FT2_MOD_ALT | FT2_MOD_CMD))) {
 		int8_t note = ft2_key_to_note(keyCode, input->octave);
-		if (note > 0)
-		{
-			/* Find which channel has this note */
-			for (uint8_t ch = 0; ch < 32; ch++)
-			{
-				if (input->keyOnTab[ch] == note)
-				{
+		if (note > 0) {
+			for (uint8_t ch = 0; ch < 32; ch++) {
+				if (input->keyOnTab[ch] == note) {
 					input->keyOnTab[ch] = 0;
 					input->keyOffNr++;
 					input->keyOffTime[ch] = (int32_t)input->keyOffNr;
@@ -1588,15 +1195,14 @@ void ft2_input_key_up(ft2_instance_t *inst, ft2_input_state_t *input, int keyCod
 			}
 		}
 	}
-	
 	input->keyRepeat = false;
 }
 
+/* ---------- Mouse input ---------- */
+
 void ft2_input_mouse_down(ft2_input_state_t *input, int x, int y, int button)
 {
-	if (input == NULL)
-		return;
-
+	if (input == NULL) return;
 	input->mouseX = x;
 	input->mouseY = y;
 	input->mouseButtons |= (uint8_t)(1 << button);
@@ -1605,9 +1211,7 @@ void ft2_input_mouse_down(ft2_input_state_t *input, int x, int y, int button)
 
 void ft2_input_mouse_up(ft2_input_state_t *input, int x, int y, int button)
 {
-	if (input == NULL)
-		return;
-
+	if (input == NULL) return;
 	input->mouseX = x;
 	input->mouseY = y;
 	input->mouseButtons &= ~(uint8_t)(1 << button);
@@ -1616,9 +1220,7 @@ void ft2_input_mouse_up(ft2_input_state_t *input, int x, int y, int button)
 
 void ft2_input_mouse_move(ft2_input_state_t *input, int x, int y)
 {
-	if (input == NULL)
-		return;
-
+	if (input == NULL) return;
 	input->mouseX = x;
 	input->mouseY = y;
 }

@@ -1,11 +1,16 @@
 /**
  * @file ft2_plugin_config.c
- * @brief Configuration screen implementation for the FT2 plugin.
+ * @brief Configuration screen: tabs for Audio, Layout, Misc, I/O Routing, MIDI.
+ *
+ * Plugin-specific additions vs standalone:
+ *   - DAW sync options (BPM, transport, position)
+ *   - I/O routing (map 32 tracker channels to 15 output buses + main mix)
+ *   - MIDI input with pattern trigger mode
  */
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
+#include <string.h> 
 #include <stdio.h>
 #include "ft2_plugin_config.h"
 #include "ft2_plugin_video.h"
@@ -22,7 +27,7 @@
 #include "ft2_plugin_timemap.h"
 #include "ft2_instance.h"
 
-/* Default configuration values */
+/* Initialize config with FT2 defaults. Called once per instance at creation. */
 void ft2_config_init(ft2_plugin_config_t *config)
 {
 	if (config == NULL)
@@ -106,25 +111,20 @@ void ft2_config_init(ft2_plugin_config_t *config)
 	/* Start on audio screen (matches standalone) */
 	config->currConfigScreen = CONFIG_SCREEN_AUDIO;
 
-	/* Initialize default envelope presets (matches standalone defConfigData exactly) */
+	/*
+	 * Envelope presets 1-6: match standalone defConfigData.
+	 * Volume envelope: attack-decay shape. Panning: subtle sweep to center.
+	 */
 	for (int i = 0; i < 6; i++)
 	{
-		/* Default volume envelope: 6 points matching FT2's classic shape */
-		config->stdEnvPoints[i][0][0][0] = 0;    /* Point 0 X */
-		config->stdEnvPoints[i][0][0][1] = 48;   /* Point 0 Y */
-		config->stdEnvPoints[i][0][1][0] = 4;    /* Point 1 X */
-		config->stdEnvPoints[i][0][1][1] = 64;   /* Point 1 Y (peak) */
-		config->stdEnvPoints[i][0][2][0] = 8;    /* Point 2 X */
-		config->stdEnvPoints[i][0][2][1] = 44;   /* Point 2 Y */
-		config->stdEnvPoints[i][0][3][0] = 14;   /* Point 3 X */
-		config->stdEnvPoints[i][0][3][1] = 8;    /* Point 3 Y (dip) */
-		config->stdEnvPoints[i][0][4][0] = 24;   /* Point 4 X */
-		config->stdEnvPoints[i][0][4][1] = 22;   /* Point 4 Y */
-		config->stdEnvPoints[i][0][5][0] = 32;   /* Point 5 X */
-		config->stdEnvPoints[i][0][5][1] = 8;    /* Point 5 Y (end low) */
-		/* Initialize remaining points to zero */
-		for (int p = 6; p < 12; p++)
-		{
+		/* Volume envelope: 6 points, attack-decay shape */
+		config->stdEnvPoints[i][0][0][0] = 0;  config->stdEnvPoints[i][0][0][1] = 48;
+		config->stdEnvPoints[i][0][1][0] = 4;  config->stdEnvPoints[i][0][1][1] = 64;
+		config->stdEnvPoints[i][0][2][0] = 8;  config->stdEnvPoints[i][0][2][1] = 44;
+		config->stdEnvPoints[i][0][3][0] = 14; config->stdEnvPoints[i][0][3][1] = 8;
+		config->stdEnvPoints[i][0][4][0] = 24; config->stdEnvPoints[i][0][4][1] = 22;
+		config->stdEnvPoints[i][0][5][0] = 32; config->stdEnvPoints[i][0][5][1] = 8;
+		for (int p = 6; p < 12; p++) {
 			config->stdEnvPoints[i][0][p][0] = 0;
 			config->stdEnvPoints[i][0][p][1] = 0;
 		}
@@ -134,22 +134,14 @@ void ft2_config_init(ft2_plugin_config_t *config)
 		config->stdVolEnvLoopEnd[i] = 5;
 		config->stdVolEnvFlags[i] = 0;
 
-		/* Default panning envelope: 6 points with slight sweep settling to center */
-		config->stdEnvPoints[i][1][0][0] = 0;    /* Point 0 X */
-		config->stdEnvPoints[i][1][0][1] = 32;   /* Point 0 Y (center) */
-		config->stdEnvPoints[i][1][1][0] = 10;   /* Point 1 X */
-		config->stdEnvPoints[i][1][1][1] = 40;   /* Point 1 Y (slight right) */
-		config->stdEnvPoints[i][1][2][0] = 30;   /* Point 2 X */
-		config->stdEnvPoints[i][1][2][1] = 24;   /* Point 2 Y (slight left) */
-		config->stdEnvPoints[i][1][3][0] = 50;   /* Point 3 X */
-		config->stdEnvPoints[i][1][3][1] = 32;   /* Point 3 Y (center) */
-		config->stdEnvPoints[i][1][4][0] = 60;   /* Point 4 X */
-		config->stdEnvPoints[i][1][4][1] = 32;   /* Point 4 Y (center) */
-		config->stdEnvPoints[i][1][5][0] = 70;   /* Point 5 X */
-		config->stdEnvPoints[i][1][5][1] = 32;   /* Point 5 Y (center) */
-		/* Initialize remaining points to zero */
-		for (int p = 6; p < 12; p++)
-		{
+		/* Panning envelope: 6 points, subtle sweep settling to center (Y=32) */
+		config->stdEnvPoints[i][1][0][0] = 0;  config->stdEnvPoints[i][1][0][1] = 32;
+		config->stdEnvPoints[i][1][1][0] = 10; config->stdEnvPoints[i][1][1][1] = 40;
+		config->stdEnvPoints[i][1][2][0] = 30; config->stdEnvPoints[i][1][2][1] = 24;
+		config->stdEnvPoints[i][1][3][0] = 50; config->stdEnvPoints[i][1][3][1] = 32;
+		config->stdEnvPoints[i][1][4][0] = 60; config->stdEnvPoints[i][1][4][1] = 32;
+		config->stdEnvPoints[i][1][5][0] = 70; config->stdEnvPoints[i][1][5][1] = 32;
+		for (int p = 6; p < 12; p++) {
 			config->stdEnvPoints[i][1][p][0] = 0;
 			config->stdEnvPoints[i][1][p][1] = 0;
 		}
@@ -159,7 +151,6 @@ void ft2_config_init(ft2_plugin_config_t *config)
 		config->stdPanEnvLoopEnd[i] = 5;
 		config->stdPanEnvFlags[i] = 0;
 
-		/* Default vibrato and fadeout */
 		config->stdFadeout[i] = 128;
 		config->stdVibRate[i] = 0;
 		config->stdVibDepth[i] = 0;
@@ -167,20 +158,20 @@ void ft2_config_init(ft2_plugin_config_t *config)
 		config->stdVibType[i] = 0;
 	}
 
-	/* Default channel routing: wrap around (Ch 1->Out1, ..., Ch15->Out15, Ch16->Out1, ...) */
-	for (int i = 0; i < 32; i++)
-	{
+	/* Channel routing: wrap 32 channels across 15 outputs, all to main mix */
+	for (int i = 0; i < 32; i++) {
 		config->channelRouting[i] = i % FT2_NUM_OUTPUTS;
-		config->channelToMain[i] = true;  /* All channels go to main by default */
+		config->channelToMain[i] = true;
 	}
 }
 
+/* Copy config values to instance state. Called after loading config or changing tabs. */
 void ft2_config_apply(ft2_instance_t *inst, ft2_plugin_config_t *config)
 {
 	if (inst == NULL || config == NULL)
 		return;
 
-	/* Apply pattern editor settings */
+	/* Pattern editor */
 	inst->uiState.ptnStretch = config->ptnStretch;
 	inst->uiState.ptnHex = config->ptnHex;
 	inst->uiState.ptnInstrZero = config->ptnInstrZero;
@@ -191,11 +182,10 @@ void ft2_config_apply(ft2_instance_t *inst, ft2_plugin_config_t *config)
 	inst->uiState.ptnAcc = config->ptnAcc;
 	inst->uiState.ptnFont = config->ptnFont;
 
-	/* Apply audio/mixer settings */
+	/* Audio/mixer */
 	inst->audio.interpolationType = config->interpolation;
 	inst->audio.volumeRampingFlag = config->volumeRamp;
 
-	/* Update max visible channels based on config */
 	switch (config->ptnMaxChannels)
 	{
 		case MAX_CHANS_SHOWN_4:  inst->uiState.maxVisibleChannels = 4;  break;
@@ -206,18 +196,16 @@ void ft2_config_apply(ft2_instance_t *inst, ft2_plugin_config_t *config)
 	}
 }
 
-/* ============ SET RADIO BUTTON STATES ============ */
+/* ---------- Radio button state sync ---------- */
 
+/* Sync tab selector radio buttons to current config screen */
 static void setConfigRadioButtonStates(ft2_widgets_t *widgets, ft2_plugin_config_t *config)
 {
-	if (widgets == NULL)
-		return;
-
-	uint16_t tmpID;
+	if (widgets == NULL) return;
 
 	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_SELECT);
-	switch (config->currConfigScreen)
-	{
+	uint16_t tmpID;
+	switch (config->currConfigScreen) {
 		default:
 		case CONFIG_SCREEN_AUDIO:         tmpID = RB_CONFIG_AUDIO; break;
 		case CONFIG_SCREEN_LAYOUT:        tmpID = RB_CONFIG_LAYOUT; break;
@@ -230,12 +218,10 @@ static void setConfigRadioButtonStates(ft2_widgets_t *widgets, ft2_plugin_config
 
 static void setAudioConfigRadioButtonStates(ft2_widgets_t *widgets, ft2_plugin_config_t *config)
 {
-	if (widgets == NULL)
-		return;
+	if (widgets == NULL) return;
 
 	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_AUDIO_INTERPOLATION);
-	switch (config->interpolation)
-	{
+	switch (config->interpolation) {
 		case INTERPOLATION_DISABLED:  widgets->radioButtonState[RB_CONFIG_AUDIO_INTRP_NONE] = RADIOBUTTON_CHECKED; break;
 		case INTERPOLATION_LINEAR:    widgets->radioButtonState[RB_CONFIG_AUDIO_INTRP_LINEAR] = RADIOBUTTON_CHECKED; break;
 		case INTERPOLATION_QUADRATIC: widgets->radioButtonState[RB_CONFIG_AUDIO_INTRP_QUADRATIC] = RADIOBUTTON_CHECKED; break;
@@ -248,12 +234,10 @@ static void setAudioConfigRadioButtonStates(ft2_widgets_t *widgets, ft2_plugin_c
 
 static void setLayoutConfigRadioButtonStates(ft2_widgets_t *widgets, ft2_plugin_config_t *config)
 {
-	if (widgets == NULL)
-		return;
+	if (widgets == NULL) return;
 
 	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_PATTERN_CHANS);
-	switch (config->ptnMaxChannels)
-	{
+	switch (config->ptnMaxChannels) {
 		case MAX_CHANS_SHOWN_4:  widgets->radioButtonState[RB_CONFIG_PATT_4CHANS] = RADIOBUTTON_CHECKED; break;
 		case MAX_CHANS_SHOWN_6:  widgets->radioButtonState[RB_CONFIG_PATT_6CHANS] = RADIOBUTTON_CHECKED; break;
 		default:
@@ -262,8 +246,7 @@ static void setLayoutConfigRadioButtonStates(ft2_widgets_t *widgets, ft2_plugin_
 	}
 
 	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_FONT);
-	switch (config->ptnFont)
-	{
+	switch (config->ptnFont) {
 		default:
 		case PATT_FONT_CAPITALS:  widgets->radioButtonState[RB_CONFIG_FONT_CAPITALS] = RADIOBUTTON_CHECKED; break;
 		case PATT_FONT_LOWERCASE: widgets->radioButtonState[RB_CONFIG_FONT_LOWERCASE] = RADIOBUTTON_CHECKED; break;
@@ -272,27 +255,22 @@ static void setLayoutConfigRadioButtonStates(ft2_widgets_t *widgets, ft2_plugin_
 	}
 
 	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_SCOPE);
-	if (config->linedScopes)
-		widgets->radioButtonState[RB_CONFIG_SCOPE_LINED] = RADIOBUTTON_CHECKED;
-	else
-		widgets->radioButtonState[RB_CONFIG_SCOPE_STANDARD] = RADIOBUTTON_CHECKED;
+	widgets->radioButtonState[config->linedScopes ? RB_CONFIG_SCOPE_LINED : RB_CONFIG_SCOPE_STANDARD] = RADIOBUTTON_CHECKED;
 }
 
-/* ============ HIDE CONFIG SCREEN ============ */
+/* ---------- Screen visibility ---------- */
 
+/* Hide all config widgets. Called when switching tabs or exiting config. */
 void hideConfigScreen(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
-	{
+	if (widgets == NULL) {
 		inst->uiState.configScreenShown = false;
 		return;
 	}
 
-	/* CONFIG LEFT SIDE */
 	hideRadioButtonGroup(widgets, RB_GROUP_CONFIG_SELECT);
 	hideCheckBox(widgets, CB_CONF_AUTOSAVE);
 	hidePushButton(widgets, PB_CONFIG_RESET);
@@ -405,13 +383,9 @@ void hideConfigScreen(ft2_instance_t *inst)
 	inst->uiState.configScreenShown = false;
 }
 
-/* ============ SHOW CONFIG SCREEN ============ */
-
 void showConfigScreen(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	inst->uiState.configScreenShown = true;
 	inst->uiState.scopesShown = false;
 }
@@ -422,45 +396,44 @@ void exitConfigScreen(ft2_instance_t *inst)
 	inst->uiState.scopesShown = true;
 }
 
-/* ============ DRAW CONFIG AUDIO TAB ============ */
+/* ---------- Audio tab ---------- */
 
+/*
+ * Audio config: DAW sync, interpolation, amplification, frequency slides.
+ * Plugin diverges from standalone: no device selection, adds DAW sync options.
+ */
 static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
 	ft2_plugin_config_t *cfg = &inst->config;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
-		return;
+	if (widgets == NULL) return;
 
-	/* Framework sections - reorganized for plugin */
-	drawFramework(video, 110, 0, 522, 87, FRAMEWORK_TYPE1);   /* DAW Sync (full width) */
-	drawFramework(video, 110, 87, 138, 86, FRAMEWORK_TYPE1);  /* Interpolation */
-	drawFramework(video, 248, 87, 153, 86, FRAMEWORK_TYPE1);  /* Amp/MasterVol/VolRamp */
-	drawFramework(video, 401, 87, 231, 86, FRAMEWORK_TYPE1);  /* Frequency slides (full width) */
+	/* Framework boxes */
+	drawFramework(video, 110, 0, 522, 87, FRAMEWORK_TYPE1);
+	drawFramework(video, 110, 87, 138, 86, FRAMEWORK_TYPE1);
+	drawFramework(video, 248, 87, 153, 86, FRAMEWORK_TYPE1);
+	drawFramework(video, 401, 87, 231, 86, FRAMEWORK_TYPE1);
 
-	/* DAW Sync section (replaces unused Audio output/input devices) */
+	/* DAW Sync (plugin-specific) */
 	textOutShadow(video, bmp, 114, 4, PAL_FORGRND, PAL_DSKTOP2, "DAW Sync:");
 
-	/* Sync BPM checkbox */
 	widgets->checkBoxChecked[CB_CONF_SYNC_BPM] = cfg->syncBpmFromDAW;
 	showCheckBox(widgets, video, bmp, CB_CONF_SYNC_BPM);
 	textOutShadow(video, bmp, 131, 21, PAL_FORGRND, PAL_DSKTOP2, "Sync BPM");
 
-	/* Sync transport checkbox */
 	widgets->checkBoxChecked[CB_CONF_SYNC_TRANSPORT] = cfg->syncTransportFromDAW;
 	showCheckBox(widgets, video, bmp, CB_CONF_SYNC_TRANSPORT);
 	textOutShadow(video, bmp, 131, 37, PAL_FORGRND, PAL_DSKTOP2, "Sync transport (start/stop)");
 
-	/* Sync position checkbox */
 	widgets->checkBoxChecked[CB_CONF_SYNC_POSITION] = cfg->syncPositionFromDAW;
 	showCheckBox(widgets, video, bmp, CB_CONF_SYNC_POSITION);
 	textOutShadow(video, bmp, 131, 53, PAL_FORGRND, PAL_DSKTOP2, "Sync position (seek)");
 
-	/* Allow Fxx speed changes checkbox */
 	widgets->checkBoxChecked[CB_CONF_ALLOW_FXX_SPEED] = cfg->allowFxxSpeedChanges;
 	showCheckBox(widgets, video, bmp, CB_CONF_ALLOW_FXX_SPEED);
 	textOutShadow(video, bmp, 131, 69, PAL_FORGRND, PAL_DSKTOP2, "Allow Fxx speed changes");
 
-	/* Interpolation - ACTIVE */
+	/* Interpolation */
 	setAudioConfigRadioButtonStates(widgets, cfg);
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_AUDIO_INTERPOLATION);
 	textOutShadow(video, bmp, 131, 91, PAL_FORGRND, PAL_DSKTOP2, "No interpolation");
@@ -470,7 +443,7 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	textOutShadow(video, bmp, 131, 147, PAL_FORGRND, PAL_DSKTOP2, "Sinc (8 point)");
 	textOutShadow(video, bmp, 131, 161, PAL_FORGRND, PAL_DSKTOP2, "Sinc (16 point)");
 
-	/* Frequency slides - ACTIVE */
+	/* Frequency slides: Amiga (hardware period table) vs Linear (FT2 default) */
 	textOutShadow(video, bmp, 405, 91, PAL_FORGRND, PAL_DSKTOP2, "Frequency slides:");
 	textOutShadow(video, bmp, 420, 105, PAL_FORGRND, PAL_DSKTOP2, "Amiga");
 	textOutShadow(video, bmp, 420, 119, PAL_FORGRND, PAL_DSKTOP2, "Linear (default)");
@@ -481,7 +454,7 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 		widgets->radioButtonState[RB_CONFIG_FREQ_AMIGA] = RADIOBUTTON_CHECKED;
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_FREQ_SLIDES);
 
-	/* Amplification - ACTIVE */
+	/* Amplification: 1x-32x boost applied before master volume */
 	textOutShadow(video, bmp, 252, 91, PAL_FORGRND, PAL_DSKTOP2, "Amplification:");
 	char ampStr[8];
 	snprintf(ampStr, sizeof(ampStr), "%2dx", cfg->boostLevel);
@@ -491,7 +464,7 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	showPushButton(widgets, video, bmp, PB_CONFIG_AMP_DOWN);
 	showPushButton(widgets, video, bmp, PB_CONFIG_AMP_UP);
 
-	/* Master volume - ACTIVE */
+	/* Master volume: 0-256 final output scaling */
 	textOutShadow(video, bmp, 252, 119, PAL_FORGRND, PAL_DSKTOP2, "Master volume:");
 	char volStr[8];
 	snprintf(volStr, sizeof(volStr), "%3d", cfg->masterVol);
@@ -501,31 +474,31 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	showPushButton(widgets, video, bmp, PB_CONFIG_MASTVOL_DOWN);
 	showPushButton(widgets, video, bmp, PB_CONFIG_MASTVOL_UP);
 
-	/* Volume ramping - ACTIVE */
+	/* Volume ramping: prevents clicks on note start/stop */
 	widgets->checkBoxChecked[CB_CONF_VOLRAMP] = cfg->volumeRamp;
 	showCheckBox(widgets, video, bmp, CB_CONF_VOLRAMP);
 	textOutShadow(video, bmp, 268, 147, PAL_FORGRND, PAL_DSKTOP2, "Volume ramping");
 }
 
-/* ============ DRAW CONFIG LAYOUT TAB ============ */
+/* ---------- Layout tab ---------- */
 
+/* Layout config: pattern display, fonts, scopes, palette. Matches standalone. */
 static void showConfigLayout(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
 	ft2_plugin_config_t *cfg = &inst->config;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
-		return;
+	if (widgets == NULL) return;
 
-	/* Framework sections matching standalone layout */
-	drawFramework(video, 110, 0, 142, 106, FRAMEWORK_TYPE1);   /* Pattern layout */
-	drawFramework(video, 252, 0, 142, 98, FRAMEWORK_TYPE1);    /* Pattern modes */
-	drawFramework(video, 394, 0, 238, 86, FRAMEWORK_TYPE1);    /* Palette/Pattern text */
-	drawFramework(video, 110, 106, 142, 67, FRAMEWORK_TYPE1);  /* Mouse shape */
-	drawFramework(video, 252, 98, 142, 45, FRAMEWORK_TYPE1);   /* Pattern font */
-	drawFramework(video, 394, 86, 238, 87, FRAMEWORK_TYPE1);   /* Palette presets */
-	drawFramework(video, 252, 143, 142, 30, FRAMEWORK_TYPE1);  /* Scopes/software mouse */
+	/* Framework boxes (same layout as standalone) */
+	drawFramework(video, 110, 0, 142, 106, FRAMEWORK_TYPE1);
+	drawFramework(video, 252, 0, 142, 98, FRAMEWORK_TYPE1);
+	drawFramework(video, 394, 0, 238, 86, FRAMEWORK_TYPE1);
+	drawFramework(video, 110, 106, 142, 67, FRAMEWORK_TYPE1);
+	drawFramework(video, 252, 98, 142, 45, FRAMEWORK_TYPE1);
+	drawFramework(video, 394, 86, 238, 87, FRAMEWORK_TYPE1);
+	drawFramework(video, 252, 143, 142, 30, FRAMEWORK_TYPE1);
 
-	/* Pattern layout section - ACTIVE */
+	/* Pattern layout checkboxes */
 	textOutShadow(video, bmp, 114, 3, PAL_FORGRND, PAL_DSKTOP2, "Pattern layout:");
 
 	widgets->checkBoxChecked[CB_CONF_PATTSTRETCH] = cfg->ptnStretch;
@@ -556,7 +529,7 @@ static void showConfigLayout(ft2_instance_t *inst, ft2_video_t *video, const ft2
 	showCheckBox(widgets, video, bmp, CB_CONF_CHANNUMS);
 	textOutShadow(video, bmp, 130, 94, PAL_FORGRND, PAL_DSKTOP2, "Channel numbering");
 
-	/* Pattern modes section - ACTIVE */
+	/* Pattern modes: volume column, max channels */
 	textOutShadow(video, bmp, 256, 3, PAL_FORGRND, PAL_DSKTOP2, "Pattern modes:");
 
 	widgets->checkBoxChecked[CB_CONF_SHOWVOLCOL] = cfg->ptnShowVolColumn;
@@ -572,7 +545,7 @@ static void showConfigLayout(ft2_instance_t *inst, ft2_video_t *video, const ft2
 	textOutShadow(video, bmp, 272, 71, PAL_FORGRND, PAL_DSKTOP2, "8 channels");
 	textOutShadow(video, bmp, 272, 85, PAL_FORGRND, PAL_DSKTOP2, "12 channels");
 
-	/* Pattern font section - ACTIVE */
+	/* Pattern font: 4 styles from original FT2 */
 	textOutShadow(video, bmp, 257, 101, PAL_FORGRND, PAL_DSKTOP2, "Pattern font:");
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_FONT);
 	textOutShadow(video, bmp, 272, 115, PAL_FORGRND, PAL_DSKTOP2, "Capitals");
@@ -580,13 +553,13 @@ static void showConfigLayout(ft2_instance_t *inst, ft2_video_t *video, const ft2
 	textOutShadow(video, bmp, 272, 130, PAL_FORGRND, PAL_DSKTOP2, "Future");
 	textOutShadow(video, bmp, 338, 129, PAL_FORGRND, PAL_DSKTOP2, "Bold");
 
-	/* Scopes section - ACTIVE */
+	/* Scopes: FT2 (filled) vs Lined (vector) */
 	textOutShadow(video, bmp, 256, 146, PAL_FORGRND, PAL_DSKTOP2, "Scopes:");
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_SCOPE);
 	textOutShadow(video, bmp, 319, 146, PAL_FORGRND, PAL_DSKTOP2, "FT2");
 	textOutShadow(video, bmp, 360, 146, PAL_FORGRND, PAL_DSKTOP2, "Lined");
 
-	/* Pattern text / Palette section - ACTIVE */
+	/* Palette entry labels (for color editor) */
 	textOutShadow(video, bmp, 414, 3, PAL_FORGRND, PAL_DSKTOP2, "Pattern text");
 	textOutShadow(video, bmp, 414, 17, PAL_FORGRND, PAL_DSKTOP2, "Block mark");
 	textOutShadow(video, bmp, 414, 31, PAL_FORGRND, PAL_DSKTOP2, "Text on block");
@@ -594,7 +567,7 @@ static void showConfigLayout(ft2_instance_t *inst, ft2_video_t *video, const ft2
 	textOutShadow(video, bmp, 414, 59, PAL_FORGRND, PAL_DSKTOP2, "Desktop");
 	textOutShadow(video, bmp, 414, 73, PAL_FORGRND, PAL_DSKTOP2, "Buttons");
 
-	/* Palette presets - ACTIVE */
+	/* Palette presets (12 total, including user-defined) */
 	textOutShadow(video, bmp, 414, 90, PAL_FORGRND, PAL_DSKTOP2, "Arctic");
 	textOutShadow(video, bmp, 528, 90, PAL_FORGRND, PAL_DSKTOP2, "LiTHe dark");
 	textOutShadow(video, bmp, 414, 104, PAL_FORGRND, PAL_DSKTOP2, "Aurora Borealis");
@@ -612,22 +585,21 @@ static void showConfigLayout(ft2_instance_t *inst, ft2_video_t *video, const ft2
 	showPaletteEditor(inst, video, bmp);
 }
 
-/* ============ DRAW CONFIG MISCELLANEOUS TAB ============ */
+/* ---------- Miscellaneous tab ---------- */
 
+/* Misc config: cut behavior, file sorting, record/edit options. */
 static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
 	ft2_plugin_config_t *cfg = &inst->config;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
-		return;
+	if (widgets == NULL) return;
 
-	/* Framework sections - reorganized layout */
-	drawFramework(video, 110, 0, 198, 57, FRAMEWORK_TYPE1);    /* Cut to buffer / kill voices / overwrite */
-	drawFramework(video, 308, 0, 324, 57, FRAMEWORK_TYPE1);    /* Dir sorting */
-	drawFramework(video, 110, 57, 198, 116, FRAMEWORK_TYPE1);  /* Rec./Edit/Play */
-	drawFramework(video, 308, 57, 324, 116, FRAMEWORK_TYPE1);  /* Empty right side */
+	drawFramework(video, 110, 0, 198, 57, FRAMEWORK_TYPE1);
+	drawFramework(video, 308, 0, 324, 57, FRAMEWORK_TYPE1);
+	drawFramework(video, 110, 57, 198, 116, FRAMEWORK_TYPE1);
+	drawFramework(video, 308, 57, 324, 116, FRAMEWORK_TYPE1);
 
-	/* Sample/Pattern cut to buffer - ACTIVE (moved to left) */
+	/* Cut to buffer: if enabled, cut also copies to clipboard */
 	widgets->checkBoxChecked[CB_CONF_SAMPCUTBUF] = cfg->smpCutToBuffer;
 	showCheckBox(widgets, video, bmp, CB_CONF_SAMPCUTBUF);
 	textOutShadow(video, bmp, 128, 4, PAL_FORGRND, PAL_DSKTOP2, "Sample \"cut to buffer\"");
@@ -636,17 +608,16 @@ static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, co
 	showCheckBox(widgets, video, bmp, CB_CONF_PATTCUTBUF);
 	textOutShadow(video, bmp, 128, 17, PAL_FORGRND, PAL_DSKTOP2, "Pattern \"cut to buffer\"");
 
-	/* Kill voices at music stop - ACTIVE */
+	/* Kill voices: stop all sound immediately when playback stops */
 	widgets->checkBoxChecked[CB_CONF_KILLNOTES] = cfg->killNotesOnStopPlay;
 	showCheckBox(widgets, video, bmp, CB_CONF_KILLNOTES);
 	textOutShadow(video, bmp, 128, 30, PAL_FORGRND, PAL_DSKTOP2, "Kill voices at music stop");
 
-	/* File-overwrite warning - ACTIVE */
 	widgets->checkBoxChecked[CB_CONF_OVERWRITE_WARN] = cfg->overwriteWarning;
 	showCheckBox(widgets, video, bmp, CB_CONF_OVERWRITE_WARN);
 	textOutShadow(video, bmp, 128, 43, PAL_FORGRND, PAL_DSKTOP2, "File-overwrite warning");
 
-	/* Dir sorting priority - ACTIVE (moved to right) */
+	/* Dir sorting: extension-first groups files by type, name sorts alphabetically */
 	textOutShadow(video, bmp, 312, 3, PAL_FORGRND, PAL_DSKTOP2, "Dir. sorting pri.:");
 	textOutShadow(video, bmp, 328, 16, PAL_FORGRND, PAL_DSKTOP2, "Ext.");
 	textOutShadow(video, bmp, 328, 30, PAL_FORGRND, PAL_DSKTOP2, "Name");
@@ -657,13 +628,14 @@ static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, co
 		widgets->radioButtonState[RB_CONFIG_FILESORT_NAME] = RADIOBUTTON_CHECKED;
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_FILESORT);
 
-	/* Rec./Edit/Play section - ACTIVE (moved to left) */
+	/* Record/Edit options */
 	textOutShadow(video, bmp, 114, 59, PAL_FORGRND, PAL_DSKTOP2, "Rec./Edit/Play:");
 
 	widgets->checkBoxChecked[CB_CONF_MULTICHAN_REC] = cfg->multiRec;
 	showCheckBox(widgets, video, bmp, CB_CONF_MULTICHAN_REC);
 	textOutShadow(video, bmp, 128, 72, PAL_FORGRND, PAL_DSKTOP2, "Multichannel record");
 
+	/* Multichannel keyjazz: spread polyphonic notes across channels */
 	widgets->checkBoxChecked[CB_CONF_MULTICHAN_KEYJAZZ] = cfg->multiKeyJazz;
 	showCheckBox(widgets, video, bmp, CB_CONF_MULTICHAN_KEYJAZZ);
 	textOutShadow(video, bmp, 128, 85, PAL_FORGRND, PAL_DSKTOP2, "Multichannel \"key jazz\"");
@@ -676,11 +648,11 @@ static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, co
 	showCheckBox(widgets, video, bmp, CB_CONF_REC_KEYOFF);
 	textOutShadow(video, bmp, 128, 111, PAL_FORGRND, PAL_DSKTOP2, "Record key-off notes");
 
+	/* Quantization: snap recorded notes to grid */
 	widgets->checkBoxChecked[CB_CONF_QUANTIZE] = cfg->recQuant;
 	showCheckBox(widgets, video, bmp, CB_CONF_QUANTIZE);
 	textOutShadow(video, bmp, 128, 124, PAL_FORGRND, PAL_DSKTOP2, "Quantization");
 
-	/* Quantization value and up/down buttons */
 	textOutShadow(video, bmp, 238, 124, PAL_FORGRND, PAL_DSKTOP2, "1/");
 	char quantStr[8];
 	snprintf(quantStr, sizeof(quantStr), "%d", cfg->recQuantRes);
@@ -688,35 +660,36 @@ static void showConfigMiscellaneous(ft2_instance_t *inst, ft2_video_t *video, co
 	showPushButton(widgets, video, bmp, PB_CONFIG_QUANTIZE_UP);
 	showPushButton(widgets, video, bmp, PB_CONFIG_QUANTIZE_DOWN);
 
+	/* True insert: insert/delete actually changes pattern length */
 	widgets->checkBoxChecked[CB_CONF_CHANGE_PATTLEN] = cfg->recTrueInsert;
 	showCheckBox(widgets, video, bmp, CB_CONF_CHANGE_PATTLEN);
 	textOutShadow(video, bmp, 128, 137, PAL_FORGRND, PAL_DSKTOP2, "Change pattern length when");
 	textOutShadow(video, bmp, 128, 148, PAL_FORGRND, PAL_DSKTOP2, "inserting/deleting line.");
 
-	/* Automatic update check */
 	widgets->checkBoxChecked[CB_CONF_AUTO_UPDATE_CHECK] = cfg->autoUpdateCheck;
 	showCheckBox(widgets, video, bmp, CB_CONF_AUTO_UPDATE_CHECK);
 	textOutShadow(video, bmp, 128, 161, PAL_FORGRND, PAL_DSKTOP2, "Automatic update check");
 }
 
+/* ---------- I/O Routing tab (plugin-specific) ---------- */
+
+/*
+ * Route 32 tracker channels to 15 output buses plus optional main mix.
+ * Each channel can go to one bus (multi-out) and/or to main stereo out.
+ * Useful for DAW mixing, stem export, or per-channel processing.
+ */
 static void showConfigIORouting(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL || video == NULL)
-		return;
+	if (inst == NULL || video == NULL) return;
 
 	ft2_plugin_config_t *cfg = &inst->config;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
-		return;
+	if (widgets == NULL) return;
 
-	/* Draw main content framework */
 	drawFramework(video, 110, 0, 522, 173, FRAMEWORK_TYPE1);
 
-	/* Title */
 	textOutShadow(video, bmp, 116, 4, PAL_FORGRND, PAL_DSKTOP2, "Channel Output Routing:");
 	textOutShadow(video, bmp, 116, 16, PAL_FORGRND, PAL_DSKTOP2, "Map each tracker channel (1-32) to an output bus (1-15) and/or to the main mix.");
-
-	/* Column headers - "Ch" aligned with channel numbers, "Out" and "M" (Main) headers */
 	textOutShadow(video, bmp, 120, 32, PAL_FORGRND, PAL_DSKTOP2, "Ch");
 	textOutShadow(video, bmp, 152, 32, PAL_FORGRND, PAL_DSKTOP2, "Out");
 	textOutShadow(video, bmp, 210, 32, PAL_FORGRND, PAL_DSKTOP2, "Main");
@@ -727,76 +700,67 @@ static void showConfigIORouting(ft2_instance_t *inst, ft2_video_t *video, const 
 	textOutShadow(video, bmp, 472, 32, PAL_FORGRND, PAL_DSKTOP2, "Out");
 	textOutShadow(video, bmp, 530, 32, PAL_FORGRND, PAL_DSKTOP2, "Main");
 
-	/* Draw 32 channel routing assignments in 3 columns */
+	/* 32 channels in 3 columns */
 	char buf[16];
-	for (int i = 0; i < 32; i++)
-	{
-		int col = i / 11;  /* 0, 1, 2 */
-		int row = i % 11;
-		int baseX = 120 + col * 160;
-		int baseY = 43 + row * 11;  /* 1px higher than before */
+	for (int i = 0; i < 32; i++) {
+		int col = i / 11, row = i % 11;
+		int baseX = 120 + col * 160, baseY = 43 + row * 11;
 
-		/* Channel number */
 		sprintf(buf, "%2d:", i + 1);
 		textOutShadow(video, bmp, baseX, baseY, PAL_FORGRND, PAL_DSKTOP2, buf);
 
-		/* Output assignment (1-15) */
 		sprintf(buf, "%2d", cfg->channelRouting[i] + 1);
 		textOutShadow(video, bmp, baseX + 32, baseY, PAL_FORGRND, PAL_DSKTOP2, buf);
 
-		/* Show up/down buttons */
 		showPushButton(widgets, video, bmp, PB_CONFIG_ROUTING_CH1_UP + (i * 2));
 		showPushButton(widgets, video, bmp, PB_CONFIG_ROUTING_CH1_DOWN + (i * 2));
 
-		/* Show "to main" checkbox */
 		widgets->checkBoxChecked[CB_CONF_ROUTING_CH1_TOMAIN + i] = cfg->channelToMain[i];
 		showCheckBox(widgets, video, bmp, CB_CONF_ROUTING_CH1_TOMAIN + i);
 	}
 }
 
+/* ---------- MIDI Input tab (plugin-specific) ---------- */
+
+/*
+ * MIDI input config: channel filter, transpose, velocity/CC recording.
+ * Two trigger modes:
+ *   Notes: play notes on current instrument (default)
+ *   Patterns: use MIDI notes to trigger patterns (for live performance)
+ */
 static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL || video == NULL)
-		return;
+	if (inst == NULL || video == NULL) return;
 
 	ft2_plugin_config_t *cfg = &inst->config;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
-		return;
+	if (widgets == NULL) return;
 
-	/* Determine what's enabled */
+	/* Disable note settings when MIDI off or in pattern-trigger mode */
 	const bool midiEnabled = cfg->midiEnabled;
 	const bool notesMode = !cfg->midiTriggerPatterns;
 	const bool noteSettingsEnabled = midiEnabled && notesMode;
-
-	/* Colors for enabled/disabled states */
 	const uint8_t triggerColor = midiEnabled ? PAL_FORGRND : PAL_DSKTOP2;
 	const uint8_t noteSettingsColor = noteSettingsEnabled ? PAL_FORGRND : PAL_DSKTOP2;
 
-	/* Draw framework sections */
-	drawFramework(video, 110, 0, 240, 173, FRAMEWORK_TYPE1);   /* Content area */
-	drawFramework(video, 350, 0, 282, 173, FRAMEWORK_TYPE1);   /* Empty right area */
-
-	/* Line 1: MIDI Enable checkbox - always active */
+	drawFramework(video, 110, 0, 240, 173, FRAMEWORK_TYPE1);
+	drawFramework(video, 350, 0, 282, 173, FRAMEWORK_TYPE1);
 	textOutShadow(video, bmp, 129, 4, PAL_FORGRND, PAL_DSKTOP2, "Enable MIDI input");
 	widgets->checkBoxChecked[CB_CONF_MIDI_ENABLE] = cfg->midiEnabled;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_ENABLE] = false;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_ENABLE);
 
-	/* Line 2: Notes trigger mode - active if MIDI enabled */
+	/* Trigger mode: Notes (play instrument) or Patterns (trigger by note) */
 	textOutShadow(video, bmp, 114, 20, triggerColor, PAL_DSKTOP2, "Notes trigger:");
 	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_MIDI_TRIGGER);
-	if (cfg->midiTriggerPatterns)
-		widgets->radioButtonState[RB_CONFIG_MIDI_PATTERNS] = RADIOBUTTON_CHECKED;
-	else
-		widgets->radioButtonState[RB_CONFIG_MIDI_NOTES] = RADIOBUTTON_CHECKED;
+	widgets->radioButtonState[cfg->midiTriggerPatterns ? RB_CONFIG_MIDI_PATTERNS : RB_CONFIG_MIDI_NOTES] = RADIOBUTTON_CHECKED;
 	widgets->radioButtonDisabled[RB_CONFIG_MIDI_NOTES] = !midiEnabled;
 	widgets->radioButtonDisabled[RB_CONFIG_MIDI_PATTERNS] = !midiEnabled;
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_MIDI_TRIGGER);
 	textOutShadow(video, bmp, 231, 20, triggerColor, PAL_DSKTOP2, "Notes");
 	textOutShadow(video, bmp, 294, 20, triggerColor, PAL_DSKTOP2, "Patterns");
 
-	/* Line 3: Record MIDI chn. ([x] all) + value + up/down */
+	/* Channel filter: all or specific (1-16) */
 	textOutShadow(video, bmp, 114, 36, noteSettingsColor, PAL_DSKTOP2, "Record MIDI chn.");
 	charOutShadow(video, bmp, 225, 36, noteSettingsColor, PAL_DSKTOP2, '(');
 	textOutShadow(video, bmp, 248, 36, noteSettingsColor, PAL_DSKTOP2, "all )");
@@ -812,7 +776,7 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	showPushButton(widgets, video, bmp, PB_CONFIG_MIDICHN_UP);
 	showPushButton(widgets, video, bmp, PB_CONFIG_MIDICHN_DOWN);
 
-	/* Line 4: Record transpose checkbox + value + up/down */
+	/* Transpose: shift incoming notes by semitones */
 	textOutShadow(video, bmp, 129, 52, noteSettingsColor, PAL_DSKTOP2, "Record transpose");
 	widgets->checkBoxChecked[CB_CONF_MIDI_TRANSP] = cfg->midiRecordTranspose;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_TRANSP] = !noteSettingsEnabled;
@@ -831,19 +795,19 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	showPushButton(widgets, video, bmp, PB_CONFIG_MIDITRANS_UP);
 	showPushButton(widgets, video, bmp, PB_CONFIG_MIDITRANS_DOWN);
 
-	/* Line 5: Record velocity checkbox */
+	/* Velocity: record as volume column value */
 	textOutShadow(video, bmp, 129, 68, noteSettingsColor, PAL_DSKTOP2, "Record velocity");
 	widgets->checkBoxChecked[CB_CONF_MIDI_VELOCITY] = cfg->midiRecordVelocity;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_VELOCITY] = !noteSettingsEnabled;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_VELOCITY);
 
-	/* Line 6: Record aftertouch checkbox */
+	/* Aftertouch: record as volume slides */
 	textOutShadow(video, bmp, 129, 84, noteSettingsColor, PAL_DSKTOP2, "Record aftertouch");
 	widgets->checkBoxChecked[CB_CONF_MIDI_AFTERTOUCH] = cfg->midiRecordAftertouch;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_AFTERTOUCH] = !noteSettingsEnabled;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_AFTERTOUCH);
 
-	/* Line 7: Vel./A.T. sens. with scrollbar */
+	/* Sensitivity: scale velocity/aftertouch values */
 	textOutShadow(video, bmp, 114, 100, noteSettingsColor, PAL_DSKTOP2, "Vel./A.T. sens.");
 	setScrollBarPos(inst, widgets, video, SB_MIDI_SENS, cfg->midiVelocitySens, false);
 	widgets->scrollBarDisabled[SB_MIDI_SENS] = !noteSettingsEnabled;
@@ -857,12 +821,11 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	textOutShadow(video, bmp, 310, 100, noteSettingsColor, PAL_DSKTOP2, sensStr);
 	charOutShadow(video, bmp, 334, 100, noteSettingsColor, PAL_DSKTOP2, '%');
 
-	/* Line 8: Record mod wheel checkbox + range */
+	/* Mod wheel: record as vibrato effect (4xy) */
 	textOutShadow(video, bmp, 129, 116, noteSettingsColor, PAL_DSKTOP2, "Record mod wheel");
 	widgets->checkBoxChecked[CB_CONF_MIDI_MODWHEEL] = cfg->midiRecordModWheel;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_MODWHEEL] = !noteSettingsEnabled;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_MODWHEEL);
-	/* Mod range - only enabled if mod wheel recording is on */
 	const bool modEnabled = noteSettingsEnabled && cfg->midiRecordModWheel;
 	const uint8_t modColor = modEnabled ? PAL_FORGRND : PAL_DSKTOP2;
 	textOutShadow(video, bmp, 246, 116, modColor, PAL_DSKTOP2, "range:");
@@ -874,12 +837,11 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	showPushButton(widgets, video, bmp, PB_CONFIG_MODRANGE_UP);
 	showPushButton(widgets, video, bmp, PB_CONFIG_MODRANGE_DOWN);
 
-	/* Line 9: Record pitch bend checkbox + range */
+	/* Pitch bend: record as portamento effect (1xx/2xx) */
 	textOutShadow(video, bmp, 129, 132, noteSettingsColor, PAL_DSKTOP2, "Record pitch bend");
 	widgets->checkBoxChecked[CB_CONF_MIDI_PITCHBEND] = cfg->midiRecordPitchBend;
 	widgets->checkBoxDisabled[CB_CONF_MIDI_PITCHBEND] = !noteSettingsEnabled;
 	showCheckBox(widgets, video, bmp, CB_CONF_MIDI_PITCHBEND);
-	/* Bend range - only enabled if pitch bend recording is on */
 	const bool bendEnabled = noteSettingsEnabled && cfg->midiRecordPitchBend;
 	const uint8_t bendColor = bendEnabled ? PAL_FORGRND : PAL_DSKTOP2;
 	textOutShadow(video, bmp, 246, 132, bendColor, PAL_DSKTOP2, "range:");
@@ -891,54 +853,41 @@ static void showConfigMidiInput(ft2_instance_t *inst, ft2_video_t *video, const 
 	showPushButton(widgets, video, bmp, PB_CONFIG_BENDRANGE_UP);
 	showPushButton(widgets, video, bmp, PB_CONFIG_BENDRANGE_DOWN);
 
-	/* Line 10: Recording priority radio buttons */
+	/* Priority: which CC gets effect column (other goes to volume) */
 	textOutShadow(video, bmp, 114, 148, noteSettingsColor, PAL_DSKTOP2, "Recording priority:");
 	uncheckRadioButtonGroup(widgets, RB_GROUP_CONFIG_MIDI_PRIORITY);
-	if (cfg->midiRecordPriority == 0)
-		widgets->radioButtonState[RB_CONFIG_MIDI_PITCH_PRIO] = RADIOBUTTON_CHECKED;
-	else
-		widgets->radioButtonState[RB_CONFIG_MIDI_MOD_PRIO] = RADIOBUTTON_CHECKED;
+	widgets->radioButtonState[(cfg->midiRecordPriority == 0) ? RB_CONFIG_MIDI_PITCH_PRIO : RB_CONFIG_MIDI_MOD_PRIO] = RADIOBUTTON_CHECKED;
 	widgets->radioButtonDisabled[RB_CONFIG_MIDI_PITCH_PRIO] = !noteSettingsEnabled;
 	widgets->radioButtonDisabled[RB_CONFIG_MIDI_MOD_PRIO] = !noteSettingsEnabled;
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_MIDI_PRIORITY);
 	textOutShadow(video, bmp, 239, 148, noteSettingsColor, PAL_DSKTOP2, "Bend");
 	textOutShadow(video, bmp, 287, 148, noteSettingsColor, PAL_DSKTOP2, "Mod whl.");
 
-	/* Dynamic explanation text based on priority selection */
-	const char *priorityExplain = (cfg->midiRecordPriority == 0) 
-		? "Bend to effects, mod to volume" 
+	const char *priorityExplain = (cfg->midiRecordPriority == 0)
+		? "Bend to effects, mod to volume"
 		: "Mod to effects, bend to volume";
 	textOutShadow(video, bmp, 114, 160, noteSettingsColor, PAL_DSKTOP2, priorityExplain);
 }
 
-/* ============ MAIN DRAW FUNCTION ============ */
+/* ---------- Main draw ---------- */
 
 void drawConfigScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL || video == NULL)
-		return;
+	if (inst == NULL || video == NULL) return;
 
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL)
-		return;
+	if (widgets == NULL) return;
 
-	/* Clear the top screen area (0-173 pixels) */
 	clearRect(video, 0, 0, 632, 173);
 
-	/* Draw left sidebar framework */
+	/* Left sidebar: tab selector and action buttons */
 	drawFramework(video, 0, 0, 110, 173, FRAMEWORK_TYPE1);
-	
-	/* Set and show config tab radio buttons */
 	setConfigRadioButtonStates(widgets, &inst->config);
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_SELECT);
-
-	/* Show push buttons */
 	showPushButton(widgets, video, bmp, PB_CONFIG_RESET);
 	showPushButton(widgets, video, bmp, PB_CONFIG_LOAD);
 	showPushButton(widgets, video, bmp, PB_CONFIG_SAVE);
 	showPushButton(widgets, video, bmp, PB_CONFIG_EXIT);
-
-	/* Draw text labels for tabs */
 	textOutShadow(video, bmp, 4, 4, PAL_FORGRND, PAL_DSKTOP2, "Configuration:");
 	textOutShadow(video, bmp, 21, 19, PAL_FORGRND, PAL_DSKTOP2, "Audio");
 	textOutShadow(video, bmp, 21, 35, PAL_FORGRND, PAL_DSKTOP2, "Layout");
@@ -946,36 +895,21 @@ void drawConfigScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 	textOutShadow(video, bmp, 21, 67, PAL_FORGRND, PAL_DSKTOP2, "MIDI input");
 	textOutShadow(video, bmp, 21, 83, PAL_FORGRND, PAL_DSKTOP2, "I/O Routing");
 
-	/* Draw current tab content */
-	switch (inst->config.currConfigScreen)
-	{
-		case CONFIG_SCREEN_AUDIO:
-			showConfigAudio(inst, video, bmp);
-			break;
-		case CONFIG_SCREEN_LAYOUT:
-			showConfigLayout(inst, video, bmp);
-			break;
-		case CONFIG_SCREEN_MISCELLANEOUS:
-			showConfigMiscellaneous(inst, video, bmp);
-			break;
-		case CONFIG_SCREEN_IO_ROUTING:
-			showConfigIORouting(inst, video, bmp);
-			break;
-		case CONFIG_SCREEN_MIDI_INPUT:
-			showConfigMidiInput(inst, video, bmp);
-			break;
-		default:
-			showConfigAudio(inst, video, bmp);
-			break;
+	switch (inst->config.currConfigScreen) {
+		case CONFIG_SCREEN_AUDIO:         showConfigAudio(inst, video, bmp); break;
+		case CONFIG_SCREEN_LAYOUT:        showConfigLayout(inst, video, bmp); break;
+		case CONFIG_SCREEN_MISCELLANEOUS: showConfigMiscellaneous(inst, video, bmp); break;
+		case CONFIG_SCREEN_IO_ROUTING:    showConfigIORouting(inst, video, bmp); break;
+		case CONFIG_SCREEN_MIDI_INPUT:    showConfigMidiInput(inst, video, bmp); break;
+		default:                          showConfigAudio(inst, video, bmp); break;
 	}
 }
 
-/* ============ TAB SWITCHING ============ */
+/* ---------- Tab switching callbacks ---------- */
 
 void rbConfigAudio(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	hideConfigScreen(inst);
 	inst->config.currConfigScreen = CONFIG_SCREEN_AUDIO;
 	showConfigScreen(inst);
@@ -984,8 +918,7 @@ void rbConfigAudio(ft2_instance_t *inst)
 
 void rbConfigLayout(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	hideConfigScreen(inst);
 	inst->config.currConfigScreen = CONFIG_SCREEN_LAYOUT;
 	showConfigScreen(inst);
@@ -994,8 +927,7 @@ void rbConfigLayout(ft2_instance_t *inst)
 
 void rbConfigMiscellaneous(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	hideConfigScreen(inst);
 	inst->config.currConfigScreen = CONFIG_SCREEN_MISCELLANEOUS;
 	showConfigScreen(inst);
@@ -1004,8 +936,7 @@ void rbConfigMiscellaneous(ft2_instance_t *inst)
 
 void rbConfigIORouting(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	hideConfigScreen(inst);
 	inst->config.currConfigScreen = CONFIG_SCREEN_IO_ROUTING;
 	showConfigScreen(inst);
@@ -1014,148 +945,117 @@ void rbConfigIORouting(ft2_instance_t *inst)
 
 void rbConfigMidiInput(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	hideConfigScreen(inst);
 	inst->config.currConfigScreen = CONFIG_SCREEN_MIDI_INPUT;
 	showConfigScreen(inst);
 	inst->uiState.needsFullRedraw = true;
 }
 
-/* ============ FILE SORTING CALLBACKS ============ */
+/* ---------- File sorting ---------- */
 
 void rbFileSortExt(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	inst->config.dirSortPriority = 0;  /* Extension first */
+	if (inst == NULL) return;
+	inst->config.dirSortPriority = 0;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_FILESORT_EXT);
-	/* Request directory re-read to apply new sorting */
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_FILESORT_EXT);
 	inst->diskop.requestReadDir = true;
 }
 
 void rbFileSortName(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	inst->config.dirSortPriority = 1;  /* Name only */
+	if (inst == NULL) return;
+	inst->config.dirSortPriority = 1;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_FILESORT_NAME);
-	/* Request directory re-read to apply new sorting */
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_FILESORT_NAME);
 	inst->diskop.requestReadDir = true;
 }
 
-/* ============ FREQUENCY SLIDES CALLBACKS ============ */
+/* ---------- Frequency slides ---------- */
 
 void rbConfigFreqSlidesAmiga(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->audio.linearPeriodsFlag = false;
 }
 
 void rbConfigFreqSlidesLinear(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->audio.linearPeriodsFlag = true;
 }
 
-/* ============ MIDI TRIGGER MODE CALLBACKS ============ */
+/* ---------- MIDI trigger mode ---------- */
 
 void rbConfigMidiTriggerNotes(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->config.midiTriggerPatterns = false;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_NOTES);
-	/* Redraw config screen to update widget enable states */
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_NOTES);
 	inst->uiState.needsFullRedraw = true;
 }
 
-/* Callback for sync settings warning dialog */
+/* Dialog callback for pattern-trigger sync warning */
 static void onMidiPatternSyncWarningResult(ft2_instance_t *inst,
 	ft2_dialog_result_t result, const char *inputText, void *userData)
 {
-	(void)inputText;
-	(void)userData;
+	(void)inputText; (void)userData;
 
-	if (result == DIALOG_RESULT_YES)
-	{
-		/* User wants to disable sync settings */
+	if (result == DIALOG_RESULT_YES) {
 		inst->config.syncTransportFromDAW = false;
 		inst->config.syncPositionFromDAW = false;
 	}
 
-	/* Enable pattern trigger mode either way */
 	inst->config.midiTriggerPatterns = true;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PATTERNS);
-	/* Redraw config screen to update widget enable states */
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PATTERNS);
 	inst->uiState.needsFullRedraw = true;
 }
 
+/* Pattern trigger mode conflicts with DAW sync; warn user if sync is on */
 void rbConfigMidiTriggerPatterns(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 
-	/* Check if sync settings are enabled */
-	if (inst->config.syncTransportFromDAW || inst->config.syncPositionFromDAW)
-	{
+	if (inst->config.syncTransportFromDAW || inst->config.syncPositionFromDAW) {
 		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-		if (ui != NULL)
-		{
-			ft2_dialog_show_yesno_cb(&ui->dialog,
-				"System request",
+		if (ui != NULL) {
+			ft2_dialog_show_yesno_cb(&ui->dialog, "System request",
 				"For consistent playback, turn off \"Sync transport\" and \"Sync position\" in audio settings?",
 				inst, onMidiPatternSyncWarningResult, NULL);
 			return;
 		}
 	}
 
-	/* No sync settings enabled, just enable pattern mode */
 	inst->config.midiTriggerPatterns = true;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PATTERNS);
-	/* Redraw config screen to update widget enable states */
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PATTERNS);
 	inst->uiState.needsFullRedraw = true;
 }
 
 void rbConfigMidiPitchPrio(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	inst->config.midiRecordPriority = 0;  /* Pitch bend to effect column */
+	if (inst == NULL) return;
+	inst->config.midiRecordPriority = 0;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PITCH_PRIO);
-	inst->uiState.needsFullRedraw = true;  /* Redraw to update explanation text */
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_PITCH_PRIO);
+	inst->uiState.needsFullRedraw = true;
 }
 
 void rbConfigMidiModPrio(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	inst->config.midiRecordPriority = 1;  /* Mod wheel to effect column */
+	if (inst == NULL) return;
+	inst->config.midiRecordPriority = 1;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_MOD_PRIO);
-	inst->uiState.needsFullRedraw = true;  /* Redraw to update explanation text */
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_MIDI_MOD_PRIO);
+	inst->uiState.needsFullRedraw = true;
 }
 
-/* ============ INTERPOLATION CALLBACKS ============ */
+/* ---------- Interpolation ---------- */
 
-/* Helper to safely change interpolation mode.
- * Stops all voices first to prevent race conditions with the audio thread,
- * matching the standalone's use of lockMixerCallback()/unlockMixerCallback(). */
+/* Stop voices before changing interpolation to avoid audio glitches */
 static void setInterpolationType(ft2_instance_t *inst, uint8_t type)
 {
 	ft2_stop_all_voices(inst);
@@ -1165,205 +1065,163 @@ static void setInterpolationType(ft2_instance_t *inst, uint8_t type)
 
 void rbConfigIntrpNone(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	setInterpolationType(inst, INTERPOLATION_DISABLED);
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_NONE);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_NONE);
 }
 
 void rbConfigIntrpLinear(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	setInterpolationType(inst, INTERPOLATION_LINEAR);
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_LINEAR);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_LINEAR);
 }
 
 void rbConfigIntrpQuadratic(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	setInterpolationType(inst, INTERPOLATION_QUADRATIC);
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_QUADRATIC);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_QUADRATIC);
 }
 
 void rbConfigIntrpCubic(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	setInterpolationType(inst, INTERPOLATION_CUBIC);
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_CUBIC);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_CUBIC);
 }
 
 void rbConfigIntrpSinc8(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	setInterpolationType(inst, INTERPOLATION_SINC8);
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_SINC8);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_SINC8);
 }
 
 void rbConfigIntrpSinc16(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	setInterpolationType(inst, INTERPOLATION_SINC16);
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_SINC16);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_AUDIO_INTRP_SINC16);
 }
 
-/* ============ SCOPE STYLE CALLBACKS ============ */
+/* ---------- Scope style ---------- */
 
 void rbConfigScopeFT2(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->config.linedScopes = false;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_SCOPE_STANDARD);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_SCOPE_STANDARD);
 }
 
 void rbConfigScopeLined(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->config.linedScopes = true;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_SCOPE_LINED);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_SCOPE_LINED);
 }
 
-/* ============ CHANNEL COUNT CALLBACKS ============ */
+/* ---------- Channel count ---------- */
 
 void rbConfigPatt4Chans(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnMaxChannels = MAX_CHANS_SHOWN_4;
 	inst->uiState.maxVisibleChannels = 4;
 	updateChanNums(inst);
 	inst->uiState.updatePatternEditor = true;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_PATT_4CHANS);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_PATT_4CHANS);
 }
 
 void rbConfigPatt6Chans(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnMaxChannels = MAX_CHANS_SHOWN_6;
 	inst->uiState.maxVisibleChannels = 6;
 	updateChanNums(inst);
 	inst->uiState.updatePatternEditor = true;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_PATT_6CHANS);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_PATT_6CHANS);
 }
 
 void rbConfigPatt8Chans(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnMaxChannels = MAX_CHANS_SHOWN_8;
 	inst->uiState.maxVisibleChannels = 8;
 	updateChanNums(inst);
 	inst->uiState.updatePatternEditor = true;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_PATT_8CHANS);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_PATT_8CHANS);
 }
 
 void rbConfigPatt12Chans(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnMaxChannels = MAX_CHANS_SHOWN_12;
 	inst->uiState.maxVisibleChannels = 12;
 	updateChanNums(inst);
 	inst->uiState.updatePatternEditor = true;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_PATT_12CHANS);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_PATT_12CHANS);
 }
 
-/* ============ FONT CALLBACKS ============ */
+/* ---------- Pattern font ---------- */
 
 void rbConfigFontCapitals(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnFont = PATT_FONT_CAPITALS;
 	inst->uiState.ptnFont = PATT_FONT_CAPITALS;
 	inst->uiState.updatePatternEditor = true;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_FONT_CAPITALS);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_FONT_CAPITALS);
 }
 
 void rbConfigFontLowerCase(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnFont = PATT_FONT_LOWERCASE;
 	inst->uiState.ptnFont = PATT_FONT_LOWERCASE;
 	inst->uiState.updatePatternEditor = true;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_FONT_LOWERCASE);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_FONT_LOWERCASE);
 }
 
 void rbConfigFontFuture(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnFont = PATT_FONT_FUTURE;
 	inst->uiState.ptnFont = PATT_FONT_FUTURE;
 	inst->uiState.updatePatternEditor = true;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_FONT_FUTURE);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_FONT_FUTURE);
 }
 
 void rbConfigFontBold(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnFont = PATT_FONT_BOLD;
 	inst->uiState.ptnFont = PATT_FONT_BOLD;
 	inst->uiState.updatePatternEditor = true;
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets != NULL)
-		checkRadioButtonNoRedraw(widgets, RB_CONFIG_FONT_BOLD);
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_FONT_BOLD);
 }
 
-/* ============ PATTERN EDITOR CHECKBOXES ============ */
+/* ---------- Pattern editor checkboxes ---------- */
 
 void cbConfigPattStretch(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnStretch = !inst->config.ptnStretch;
 	inst->uiState.ptnStretch = inst->config.ptnStretch;
 	inst->uiState.updatePatternEditor = true;
@@ -1371,9 +1229,7 @@ void cbConfigPattStretch(ft2_instance_t *inst)
 
 void cbConfigHexCount(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnHex = !inst->config.ptnHex;
 	inst->uiState.ptnHex = inst->config.ptnHex;
 	inst->uiState.updatePatternEditor = true;
@@ -1381,9 +1237,7 @@ void cbConfigHexCount(ft2_instance_t *inst)
 
 void cbConfigAccidential(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnAcc = !inst->config.ptnAcc;
 	inst->uiState.ptnAcc = inst->config.ptnAcc;
 	inst->uiState.updatePatternEditor = true;
@@ -1391,9 +1245,7 @@ void cbConfigAccidential(ft2_instance_t *inst)
 
 void cbConfigShowZeroes(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnInstrZero = !inst->config.ptnInstrZero;
 	inst->uiState.ptnInstrZero = inst->config.ptnInstrZero;
 	inst->uiState.updatePatternEditor = true;
@@ -1401,9 +1253,7 @@ void cbConfigShowZeroes(ft2_instance_t *inst)
 
 void cbConfigFramework(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	inst->config.ptnFrmWrk = !inst->config.ptnFrmWrk;
 	inst->uiState.ptnFrmWrk = inst->config.ptnFrmWrk;
 	inst->uiState.updatePatternEditor = true;
@@ -1411,9 +1261,7 @@ void cbConfigFramework(ft2_instance_t *inst)
 
 void cbConfigLineColors(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnLineLight = !inst->config.ptnLineLight;
 	inst->uiState.ptnLineLight = inst->config.ptnLineLight;
 	inst->uiState.updatePatternEditor = true;
@@ -1421,9 +1269,7 @@ void cbConfigLineColors(ft2_instance_t *inst)
 
 void cbConfigChanNums(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnChnNumbers = !inst->config.ptnChnNumbers;
 	inst->uiState.ptnChnNumbers = inst->config.ptnChnNumbers;
 	inst->uiState.updatePatternEditor = true;
@@ -1431,104 +1277,41 @@ void cbConfigChanNums(ft2_instance_t *inst)
 
 void cbConfigShowVolCol(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	inst->config.ptnShowVolColumn = !inst->config.ptnShowVolColumn;
 	inst->uiState.ptnShowVolColumn = inst->config.ptnShowVolColumn;
 	updateChanNums(inst);
 	inst->uiState.updatePatternEditor = true;
 }
 
-/* ============ VOLUME RAMPING CHECKBOX ============ */
+/* ---------- Volume ramping ---------- */
 
 void cbConfigVolRamp(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	inst->config.volumeRamp = !inst->config.volumeRamp;
 	inst->audio.volumeRampingFlag = inst->config.volumeRamp;
 }
 
-/* ============ MISCELLANEOUS CHECKBOXES ============ */
+/* ---------- Miscellaneous checkboxes ---------- */
 
-void cbSampCutToBuff(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	inst->config.smpCutToBuffer = !inst->config.smpCutToBuffer;
-}
+void cbSampCutToBuff(ft2_instance_t *inst) { if (inst) inst->config.smpCutToBuffer = !inst->config.smpCutToBuffer; }
+void cbPattCutToBuff(ft2_instance_t *inst) { if (inst) inst->config.ptnCutToBuffer = !inst->config.ptnCutToBuffer; }
+void cbKillNotesAtStop(ft2_instance_t *inst) { if (inst) inst->config.killNotesOnStopPlay = !inst->config.killNotesOnStopPlay; }
+void cbFileOverwriteWarn(ft2_instance_t *inst) { if (inst) inst->config.overwriteWarning = !inst->config.overwriteWarning; }
+void cbMultiChanRec(ft2_instance_t *inst) { if (inst) inst->config.multiRec = !inst->config.multiRec; }
+void cbMultiChanKeyJazz(ft2_instance_t *inst) { if (inst) inst->config.multiKeyJazz = !inst->config.multiKeyJazz; }
+void cbMultiChanEdit(ft2_instance_t *inst) { if (inst) inst->config.multiEdit = !inst->config.multiEdit; }
+void cbRecKeyOff(ft2_instance_t *inst) { if (inst) inst->config.recRelease = !inst->config.recRelease; }
+void cbQuantize(ft2_instance_t *inst) { if (inst) inst->config.recQuant = !inst->config.recQuant; }
+void cbChangePattLen(ft2_instance_t *inst) { if (inst) inst->config.recTrueInsert = !inst->config.recTrueInsert; }
+void cbAutoUpdateCheck(ft2_instance_t *inst) { if (inst) inst->config.autoUpdateCheck = !inst->config.autoUpdateCheck; }
 
-void cbPattCutToBuff(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	inst->config.ptnCutToBuffer = !inst->config.ptnCutToBuffer;
-}
-
-void cbKillNotesAtStop(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	inst->config.killNotesOnStopPlay = !inst->config.killNotesOnStopPlay;
-}
-
-void cbFileOverwriteWarn(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	inst->config.overwriteWarning = !inst->config.overwriteWarning;
-}
-
-void cbMultiChanRec(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	inst->config.multiRec = !inst->config.multiRec;
-}
-
-void cbMultiChanKeyJazz(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	inst->config.multiKeyJazz = !inst->config.multiKeyJazz;
-}
-
-void cbMultiChanEdit(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	inst->config.multiEdit = !inst->config.multiEdit;
-}
-
-void cbRecKeyOff(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	inst->config.recRelease = !inst->config.recRelease;
-}
-
-void cbQuantize(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	inst->config.recQuant = !inst->config.recQuant;
-}
-
-void cbChangePattLen(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	inst->config.recTrueInsert = !inst->config.recTrueInsert;
-}
-
+/* Quantization: 1/1, 1/2, 1/4, 1/8, 1/16 */
 void configQuantizeUp(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	if (inst->config.recQuantRes <= 8)
-	{
+	if (inst == NULL) return;
+	if (inst->config.recQuantRes <= 8) {
 		inst->config.recQuantRes *= 2;
 		inst->uiState.needsFullRedraw = true;
 	}
@@ -1536,181 +1319,125 @@ void configQuantizeUp(ft2_instance_t *inst)
 
 void configQuantizeDown(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	if (inst->config.recQuantRes > 1)
-	{
+	if (inst == NULL) return;
+	if (inst->config.recQuantRes > 1) {
 		inst->config.recQuantRes /= 2;
 		inst->uiState.needsFullRedraw = true;
 	}
 }
 
-void cbAutoUpdateCheck(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	inst->config.autoUpdateCheck = !inst->config.autoUpdateCheck;
-}
+/* ---------- DAW sync checkboxes ---------- */
 
-/* ============ DAW SYNC CHECKBOXES ============ */
-
+/*
+ * BPM sync: when enabled, DAW controls tempo; when disabled, internal BPM restored.
+ * Also auto-disables position sync (requires BPM sync).
+ */
 void cbSyncBpmFromDAW(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	inst->config.syncBpmFromDAW = !inst->config.syncBpmFromDAW;
 
-	if (inst->config.syncBpmFromDAW)
-	{
-		/* Enabling sync: save current BPM (DAW will control it now) */
+	if (inst->config.syncBpmFromDAW) {
 		inst->config.savedBpm = inst->replayer.song.BPM;
-	}
-	else
-	{
-		/* Disabling sync: restore saved BPM */
-		if (inst->config.savedBpm > 0)
-		{
+	} else {
+		if (inst->config.savedBpm > 0) {
 			inst->replayer.song.BPM = inst->config.savedBpm;
 			ft2_set_bpm(inst, inst->config.savedBpm);
 		}
-
-		/* Also disable position sync (it depends on BPM sync) */
 		if (inst->config.syncPositionFromDAW)
 			inst->config.syncPositionFromDAW = false;
 	}
 
-	/* Invalidate timemap since BPM handling changes affect timing */
 	ft2_timemap_invalidate(inst);
-
-	/* Trigger full redraw to update BPM buttons and display */
 	inst->uiState.needsFullRedraw = true;
 }
 
 void cbSyncTransportFromDAW(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 	inst->config.syncTransportFromDAW = !inst->config.syncTransportFromDAW;
 }
 
+/* Position sync requires BPM sync (for accurate timing calculation) */
 void cbSyncPositionFromDAW(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
+	if (inst == NULL) return;
 
-	/* Position sync requires BPM sync to be enabled */
-	if (!inst->config.syncBpmFromDAW && !inst->config.syncPositionFromDAW)
-	{
+	if (!inst->config.syncBpmFromDAW && !inst->config.syncPositionFromDAW) {
 		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 		if (ui != NULL)
-		{
-			ft2_dialog_show_message(&ui->dialog, "System message",
-				"Position sync requires BPM sync to be enabled.");
-		}
+			ft2_dialog_show_message(&ui->dialog, "System message", "Position sync requires BPM sync to be enabled.");
 		return;
 	}
-
 	inst->config.syncPositionFromDAW = !inst->config.syncPositionFromDAW;
 }
 
+/*
+ * Fxx speed changes: when disabled, speed locked to 3 or 6 for consistent timing.
+ * Used with DAW sync for predictable bar/beat alignment.
+ */
 void cbAllowFxxSpeedChanges(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	inst->config.allowFxxSpeedChanges = !inst->config.allowFxxSpeedChanges;
 
-	if (inst->config.allowFxxSpeedChanges)
-	{
-		/* Restoring: bring back the saved speed */
+	if (inst->config.allowFxxSpeedChanges) {
 		if (inst->config.savedSpeed > 0)
 			inst->replayer.song.speed = inst->config.savedSpeed;
-	}
-	else
-	{
-		/* Disabling: save current speed and lock to lockedSpeed */
+	} else {
 		inst->config.savedSpeed = inst->replayer.song.speed;
 		inst->replayer.song.speed = inst->config.lockedSpeed;
 	}
 
-	/* Invalidate timemap since speed handling changes affect timing */
 	ft2_timemap_invalidate(inst);
-
-	/* Trigger full redraw to update speed buttons and display */
 	inst->uiState.needsFullRedraw = true;
 	inst->uiState.updatePosSections = true;
 }
 
-/* ============ AMPLIFICATION ARROW CALLBACKS ============ */
+/* ---------- Amplification and master volume ---------- */
 
 void configAmpDown(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-	
-	scrollBarScrollLeft(inst, widgets, video, SB_AMP_SCROLL, 1);
+	if (ui != NULL) scrollBarScrollLeft(inst, &ui->widgets, &ui->video, SB_AMP_SCROLL, 1);
 }
 
 void configAmpUp(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-	
-	scrollBarScrollRight(inst, widgets, video, SB_AMP_SCROLL, 1);
+	if (ui != NULL) scrollBarScrollRight(inst, &ui->widgets, &ui->video, SB_AMP_SCROLL, 1);
 }
 
 void configMasterVolDown(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-	
-	scrollBarScrollLeft(inst, widgets, video, SB_MASTERVOL_SCROLL, 1);
+	if (ui != NULL) scrollBarScrollLeft(inst, &ui->widgets, &ui->video, SB_MASTERVOL_SCROLL, 1);
 }
 
 void configMasterVolUp(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-	
-	scrollBarScrollRight(inst, widgets, video, SB_MASTERVOL_SCROLL, 1);
+	if (ui != NULL) scrollBarScrollRight(inst, &ui->widgets, &ui->video, SB_MASTERVOL_SCROLL, 1);
 }
 
-/* Scrollbar position callbacks - these are called when the scrollbar is moved */
 void sbAmpPos(ft2_instance_t *inst, uint32_t pos)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
+
 	uint8_t newLevel = (uint8_t)(pos + 1);
 	if (newLevel < 1) newLevel = 1;
 	if (newLevel > 32) newLevel = 32;
-	
-	if (inst->config.boostLevel != newLevel)
-	{
+
+	if (inst->config.boostLevel != newLevel) {
 		inst->config.boostLevel = newLevel;
 		ft2_instance_set_audio_amp(inst, inst->config.boostLevel, inst->config.masterVol);
-		
-		/* Redraw amp value */
+
 		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-		if (ui != NULL && inst->uiState.configScreenShown && inst->config.currConfigScreen == CONFIG_SCREEN_AUDIO)
-		{
+		if (ui != NULL && inst->uiState.configScreenShown && inst->config.currConfigScreen == CONFIG_SCREEN_AUDIO) {
 			char ampStr[8];
 			snprintf(ampStr, sizeof(ampStr), "%2dx", inst->config.boostLevel);
 			fillRect(&ui->video, 374, 91, 24, 9, PAL_DESKTOP);
@@ -1721,21 +1448,17 @@ void sbAmpPos(ft2_instance_t *inst, uint32_t pos)
 
 void sbMasterVolPos(ft2_instance_t *inst, uint32_t pos)
 {
-	if (inst == NULL)
-		return;
-	
+	if (inst == NULL) return;
+
 	uint16_t newVol = (uint16_t)pos;
 	if (newVol > 256) newVol = 256;
-	
-	if (inst->config.masterVol != newVol)
-	{
+
+	if (inst->config.masterVol != newVol) {
 		inst->config.masterVol = newVol;
 		ft2_instance_set_audio_amp(inst, inst->config.boostLevel, inst->config.masterVol);
-		
-		/* Redraw master vol value */
+
 		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-		if (ui != NULL && inst->uiState.configScreenShown && inst->config.currConfigScreen == CONFIG_SCREEN_AUDIO)
-		{
+		if (ui != NULL && inst->uiState.configScreenShown && inst->config.currConfigScreen == CONFIG_SCREEN_AUDIO) {
 			char volStr[8];
 			snprintf(volStr, sizeof(volStr), "%3d", inst->config.masterVol);
 			fillRect(&ui->video, 374, 119, 24, 9, PAL_DESKTOP);
@@ -1744,115 +1467,71 @@ void sbMasterVolPos(ft2_instance_t *inst, uint32_t pos)
 	}
 }
 
-/* ============ CONFIG BUTTON CALLBACKS ============ */
+/* ---------- Config action buttons ---------- */
 
-static void onResetConfigResult(ft2_instance_t *inst, ft2_dialog_result_t result,
-                                const char *inputText, void *userData)
+static void onResetConfigResult(ft2_instance_t *inst, ft2_dialog_result_t result, const char *inputText, void *userData)
 {
-	(void)inputText;
-	(void)userData;
-
-	if (result != DIALOG_RESULT_YES || inst == NULL)
-		return;
-
-	inst->uiState.requestResetConfig = true;
+	(void)inputText; (void)userData;
+	if (result == DIALOG_RESULT_YES && inst != NULL)
+		inst->uiState.requestResetConfig = true;
 }
 
 void pbConfigReset(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (ui != NULL)
-	{
-		ft2_dialog_show_yesno_cb(&ui->dialog,
-			"System request", "Reset all settings to factory defaults?",
-			inst, onResetConfigResult, NULL);
-	}
+		ft2_dialog_show_yesno_cb(&ui->dialog, "System request", "Reset all settings to factory defaults?", inst, onResetConfigResult, NULL);
 }
 
-static void onLoadGlobalConfigResult(ft2_instance_t *inst, ft2_dialog_result_t result,
-                                     const char *inputText, void *userData)
+static void onLoadGlobalConfigResult(ft2_instance_t *inst, ft2_dialog_result_t result, const char *inputText, void *userData)
 {
-	(void)inputText;
-	(void)userData;
-
-	if (result != DIALOG_RESULT_YES || inst == NULL)
-		return;
-
-	inst->uiState.requestLoadGlobalConfig = true;
+	(void)inputText; (void)userData;
+	if (result == DIALOG_RESULT_YES && inst != NULL)
+		inst->uiState.requestLoadGlobalConfig = true;
 }
 
 void pbConfigLoad(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (ui != NULL)
-	{
-		ft2_dialog_show_yesno_cb(&ui->dialog,
-			"System request", "Load your global config?",
-			inst, onLoadGlobalConfigResult, NULL);
-	}
+		ft2_dialog_show_yesno_cb(&ui->dialog, "System request", "Load your global config?", inst, onLoadGlobalConfigResult, NULL);
 }
 
-static void onSaveGlobalConfigResult(ft2_instance_t *inst, ft2_dialog_result_t result,
-                                     const char *inputText, void *userData)
+static void onSaveGlobalConfigResult(ft2_instance_t *inst, ft2_dialog_result_t result, const char *inputText, void *userData)
 {
-	(void)inputText;
-	(void)userData;
-
-	if (result != DIALOG_RESULT_YES || inst == NULL)
-		return;
-
-	inst->uiState.requestSaveGlobalConfig = true;
+	(void)inputText; (void)userData;
+	if (result == DIALOG_RESULT_YES && inst != NULL)
+		inst->uiState.requestSaveGlobalConfig = true;
 }
 
 void pbConfigSave(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (ui != NULL)
-	{
-		ft2_dialog_show_yesno_cb(&ui->dialog,
-			"System request", "Overwrite global config?",
-			inst, onSaveGlobalConfigResult, NULL);
-	}
+		ft2_dialog_show_yesno_cb(&ui->dialog, "System request", "Overwrite global config?", inst, onSaveGlobalConfigResult, NULL);
 }
 
-/* ============ CHANNEL OUTPUT ROUTING CALLBACKS ============ */
+/* ---------- Channel output routing ---------- */
 
+/* Cycle output bus assignment (wraps 0-14) */
 static void routingUp(ft2_instance_t *inst, int channel)
 {
-	if (inst == NULL || channel < 0 || channel >= 32)
-		return;
-
-	if (inst->config.channelRouting[channel] < FT2_NUM_OUTPUTS - 1)
-		inst->config.channelRouting[channel]++;
-	else
-		inst->config.channelRouting[channel] = 0;
-
+	if (inst == NULL || channel < 0 || channel >= 32) return;
+	inst->config.channelRouting[channel] = (inst->config.channelRouting[channel] + 1) % FT2_NUM_OUTPUTS;
 	inst->uiState.needsFullRedraw = true;
 }
 
 static void routingDown(ft2_instance_t *inst, int channel)
 {
-	if (inst == NULL || channel < 0 || channel >= 32)
-		return;
-
-	if (inst->config.channelRouting[channel] > 0)
-		inst->config.channelRouting[channel]--;
-	else
-		inst->config.channelRouting[channel] = FT2_NUM_OUTPUTS - 1;
-
+	if (inst == NULL || channel < 0 || channel >= 32) return;
+	inst->config.channelRouting[channel] = (inst->config.channelRouting[channel] + FT2_NUM_OUTPUTS - 1) % FT2_NUM_OUTPUTS;
 	inst->uiState.needsFullRedraw = true;
 }
 
-/* Generate callbacks for all 32 channels */
+/* Macro generates Up/Down callbacks for each channel */
 #define ROUTING_CALLBACK(n) \
 	void pbRoutingCh##n##Up(ft2_instance_t *inst) { routingUp(inst, n - 1); } \
 	void pbRoutingCh##n##Down(ft2_instance_t *inst) { routingDown(inst, n - 1); }
@@ -1890,35 +1569,26 @@ ROUTING_CALLBACK(30)
 ROUTING_CALLBACK(31)
 ROUTING_CALLBACK(32)
 
-/* Callback for "to main" checkboxes - syncs checkbox state to config */
+/* Sync "to main" checkbox states to config (called on any checkbox toggle) */
 void cbRoutingToMain(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-
+	if (inst == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui == NULL)
-		return;
-	ft2_widgets_t *widgets = &ui->widgets;
+	if (ui == NULL) return;
 
-	/* Sync all 32 checkbox states to config */
-	for (int i = 0; i < 32; i++)
-	{
+	for (int i = 0; i < 32; i++) {
 		uint16_t cbId = CB_CONF_ROUTING_CH1_TOMAIN + i;
-		if (widgets->checkBoxVisible[cbId])
-			inst->config.channelToMain[i] = widgets->checkBoxChecked[cbId];
+		if (ui->widgets.checkBoxVisible[cbId])
+			inst->config.channelToMain[i] = ui->widgets.checkBoxChecked[cbId];
 	}
 }
 
-/* ============ MIDI INPUT CALLBACKS ============ */
+/* ---------- MIDI input value display helpers ---------- */
 
 static void drawMidiChannelValue(ft2_instance_t *inst)
 {
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui == NULL || !inst->uiState.configScreenShown || 
-	    inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT)
-		return;
-
+	if (ui == NULL || !inst->uiState.configScreenShown || inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT) return;
 	char str[8];
 	snprintf(str, sizeof(str), "%02d", inst->config.midiChannel);
 	fillRect(&ui->video, 288, 36, 20, 9, PAL_DESKTOP);
@@ -1928,16 +1598,9 @@ static void drawMidiChannelValue(ft2_instance_t *inst)
 static void drawMidiTransposeValue(ft2_instance_t *inst)
 {
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui == NULL || !inst->uiState.configScreenShown || 
-	    inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT)
-		return;
-
+	if (ui == NULL || !inst->uiState.configScreenShown || inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT) return;
 	char str[8];
-	int8_t val = inst->config.midiTranspose;
-	if (val >= 0)
-		snprintf(str, sizeof(str), "+%d", val);
-	else
-		snprintf(str, sizeof(str), "%d", val);
+	snprintf(str, sizeof(str), inst->config.midiTranspose >= 0 ? "+%d" : "%d", inst->config.midiTranspose);
 	fillRect(&ui->video, 288, 52, 20, 9, PAL_DESKTOP);
 	textOutShadow(&ui->video, &ui->bmp, 288, 52, PAL_FORGRND, PAL_DSKTOP2, str);
 }
@@ -1945,210 +1608,119 @@ static void drawMidiTransposeValue(ft2_instance_t *inst)
 static void drawMidiSensValue(ft2_instance_t *inst)
 {
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui == NULL || !inst->uiState.configScreenShown || 
-	    inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT)
-		return;
-
+	if (ui == NULL || !inst->uiState.configScreenShown || inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT) return;
 	char str[8];
 	snprintf(str, sizeof(str), "%3d", inst->config.midiVelocitySens);
 	fillRect(&ui->video, 310, 100, 24, 10, PAL_DESKTOP);
 	textOutShadow(&ui->video, &ui->bmp, 310, 100, PAL_FORGRND, PAL_DSKTOP2, str);
 }
 
-void configMidiChnDown(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-
-	if (inst->config.midiChannel > 1)
-	{
-		inst->config.midiChannel--;
-		drawMidiChannelValue(inst);
-	}
-}
-
-void configMidiChnUp(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-
-	if (inst->config.midiChannel < 16)
-	{
-		inst->config.midiChannel++;
-		drawMidiChannelValue(inst);
-	}
-}
-
-void sbMidiChannel(ft2_instance_t *inst, uint32_t pos)
-{
-	if (inst == NULL)
-		return;
-
-	uint8_t newCh = (uint8_t)(pos + 1);  /* 0-15 -> 1-16 */
-	if (newCh < 1) newCh = 1;
-	if (newCh > 16) newCh = 16;
-
-	if (inst->config.midiChannel != newCh)
-	{
-		inst->config.midiChannel = newCh;
-		drawMidiChannelValue(inst);
-	}
-}
-
-void configMidiTransDown(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-
-	if (inst->config.midiTranspose > -72)
-	{
-		inst->config.midiTranspose--;
-		drawMidiTransposeValue(inst);
-	}
-}
-
-void configMidiTransUp(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-
-	if (inst->config.midiTranspose < 72)
-	{
-		inst->config.midiTranspose++;
-		drawMidiTransposeValue(inst);
-	}
-}
-
-void sbMidiTranspose(ft2_instance_t *inst, uint32_t pos)
-{
-	if (inst == NULL)
-		return;
-
-	int8_t newTrans = (int8_t)((int32_t)pos - 48);  /* 0-96 -> -48 to +48 */
-	if (newTrans < -48) newTrans = -48;
-	if (newTrans > 48) newTrans = 48;
-
-	if (inst->config.midiTranspose != newTrans)
-	{
-		inst->config.midiTranspose = newTrans;
-		drawMidiTransposeValue(inst);
-	}
-}
-
-void configMidiSensDown(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-
-	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-
-	scrollBarScrollLeft(inst, widgets, video, SB_MIDI_SENS, 1);
-}
-
-void configMidiSensUp(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-
-	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_video_t *video = (ui != NULL) ? &ui->video : NULL;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-
-	scrollBarScrollRight(inst, widgets, video, SB_MIDI_SENS, 1);
-}
-
-void sbMidiSens(ft2_instance_t *inst, uint32_t pos)
-{
-	if (inst == NULL)
-		return;
-
-	uint16_t newSens = (uint16_t)pos;
-	if (newSens > 200) newSens = 200;
-
-	if (inst->config.midiVelocitySens != newSens)
-	{
-		inst->config.midiVelocitySens = newSens;
-		drawMidiSensValue(inst);
-	}
-}
-
 static void drawBendRangeValue(ft2_instance_t *inst)
 {
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui == NULL || !inst->uiState.configScreenShown || 
-	    inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT)
-		return;
-
+	if (ui == NULL || !inst->uiState.configScreenShown || inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT) return;
 	char str[8];
 	snprintf(str, sizeof(str), "%2d", inst->config.midiBendRange);
 	fillRect(&ui->video, 288, 132, 16, 9, PAL_DESKTOP);
 	textOutShadow(&ui->video, &ui->bmp, 288, 132, PAL_FORGRND, PAL_DSKTOP2, str);
 }
 
-void configBendRangeUp(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	
-	if (inst->config.midiBendRange < 12)
-	{
-		inst->config.midiBendRange++;
-		drawBendRangeValue(inst);
-	}
-}
-
-void configBendRangeDown(ft2_instance_t *inst)
-{
-	if (inst == NULL)
-		return;
-	
-	if (inst->config.midiBendRange > 1)
-	{
-		inst->config.midiBendRange--;
-		drawBendRangeValue(inst);
-	}
-}
-
-/* ---- Mod wheel range value display and callbacks ---- */
-
 static void drawModRangeValue(ft2_instance_t *inst)
 {
-	if (inst == NULL || inst->ui == NULL)
-		return;
-
-	ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
-	if (ui == NULL || !inst->uiState.configScreenShown || 
-	    inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT)
-		return;
-
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	if (ui == NULL || !inst->uiState.configScreenShown || inst->config.currConfigScreen != CONFIG_SCREEN_MIDI_INPUT) return;
 	char str[8];
 	snprintf(str, sizeof(str), "%2d", inst->config.midiModRange);
 	fillRect(&ui->video, 288, 116, 16, 9, PAL_DESKTOP);
 	textOutShadow(&ui->video, &ui->bmp, 288, 116, PAL_FORGRND, PAL_DSKTOP2, str);
 }
 
+/* ---------- MIDI input callbacks ---------- */
+
+void configMidiChnDown(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	if (inst->config.midiChannel > 1) { inst->config.midiChannel--; drawMidiChannelValue(inst); }
+}
+
+void configMidiChnUp(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	if (inst->config.midiChannel < 16) { inst->config.midiChannel++; drawMidiChannelValue(inst); }
+}
+
+void sbMidiChannel(ft2_instance_t *inst, uint32_t pos)
+{
+	if (inst == NULL) return;
+	uint8_t newCh = (uint8_t)(pos + 1);
+	if (newCh < 1) newCh = 1;
+	if (newCh > 16) newCh = 16;
+	if (inst->config.midiChannel != newCh) { inst->config.midiChannel = newCh; drawMidiChannelValue(inst); }
+}
+
+void configMidiTransDown(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	if (inst->config.midiTranspose > -72) { inst->config.midiTranspose--; drawMidiTransposeValue(inst); }
+}
+
+void configMidiTransUp(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	if (inst->config.midiTranspose < 72) { inst->config.midiTranspose++; drawMidiTransposeValue(inst); }
+}
+
+void sbMidiTranspose(ft2_instance_t *inst, uint32_t pos)
+{
+	if (inst == NULL) return;
+	int8_t newTrans = (int8_t)((int32_t)pos - 48);
+	if (newTrans < -48) newTrans = -48;
+	if (newTrans > 48) newTrans = 48;
+	if (inst->config.midiTranspose != newTrans) { inst->config.midiTranspose = newTrans; drawMidiTransposeValue(inst); }
+}
+
+void configMidiSensDown(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	if (ui != NULL) scrollBarScrollLeft(inst, &ui->widgets, &ui->video, SB_MIDI_SENS, 1);
+}
+
+void configMidiSensUp(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	if (ui != NULL) scrollBarScrollRight(inst, &ui->widgets, &ui->video, SB_MIDI_SENS, 1);
+}
+
+void sbMidiSens(ft2_instance_t *inst, uint32_t pos)
+{
+	if (inst == NULL) return;
+	uint16_t newSens = (uint16_t)pos;
+	if (newSens > 200) newSens = 200;
+	if (inst->config.midiVelocitySens != newSens) { inst->config.midiVelocitySens = newSens; drawMidiSensValue(inst); }
+}
+
+void configBendRangeUp(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	if (inst->config.midiBendRange < 12) { inst->config.midiBendRange++; drawBendRangeValue(inst); }
+}
+
+void configBendRangeDown(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	if (inst->config.midiBendRange > 1) { inst->config.midiBendRange--; drawBendRangeValue(inst); }
+}
+
 void configModRangeUp(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
-	if (inst->config.midiModRange < 15)
-	{
-		inst->config.midiModRange++;
-		drawModRangeValue(inst);
-	}
+	if (inst == NULL) return;
+	if (inst->config.midiModRange < 15) { inst->config.midiModRange++; drawModRangeValue(inst); }
 }
 
 void configModRangeDown(ft2_instance_t *inst)
 {
-	if (inst == NULL)
-		return;
-	
-	if (inst->config.midiModRange > 1)
-	{
-		inst->config.midiModRange--;
-		drawModRangeValue(inst);
-	}
+	if (inst == NULL) return;
+	if (inst->config.midiModRange > 1) { inst->config.midiModRange--; drawModRangeValue(inst); }
 }
