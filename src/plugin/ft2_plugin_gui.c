@@ -50,10 +50,10 @@ void hideAllTopLeftPanelOverlays(ft2_instance_t *inst)
 	 * already cleared (e.g., by ft2_instance_reset during module loading).
 	 * Calling hide on an already-hidden overlay is safe and idempotent. */
 	hideSampleEditorExt(inst);
-	hideInstEditorExt(inst);
-	hideTranspose(inst);
-	hideAdvEdit(inst);
-	hideTrimScreen(inst);
+		hideInstEditorExt(inst);
+		hideTranspose(inst);
+		hideAdvEdit(inst);
+		hideTrimScreen(inst);
 }
 
 void hideTopLeftMainScreen(ft2_instance_t *inst)

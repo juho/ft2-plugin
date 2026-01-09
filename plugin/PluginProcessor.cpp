@@ -43,6 +43,19 @@ FT2PluginProcessor::FT2PluginProcessor()
     strncpy(instance->diskop.currentPath, homeDir.getFullPathName().toRawUTF8(), FT2_PATH_MAX - 1);
     instance->diskop.currentPath[FT2_PATH_MAX - 1] = '\0';
     
+#ifdef _WIN32
+    // Initialize drive enumeration at startup (Windows only)
+    juce::Array<juce::File> roots;
+    juce::File::findFileSystemRoots(roots);
+    instance->diskop.numDrives = juce::jmin((int)roots.size(), (int)FT2_DISKOP_MAX_DRIVES);
+    for (int i = 0; i < instance->diskop.numDrives; i++)
+    {
+        juce::String driveName = roots[i].getFullPathName();
+        strncpy(instance->diskop.driveNames[i], driveName.toRawUTF8(), 3);
+        instance->diskop.driveNames[i][3] = '\0';
+    }
+#endif
+    
     // Initialize persistent storage
     initAppProperties();
     

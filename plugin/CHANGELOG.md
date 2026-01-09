@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.46 (Jan 9, 2026)
+
+- Fix: Drive buttons in Diskop on Windows.
+
 ## 1.0.45 (Jan 6, 2026)
 
 - Fix: default disk op to home folder.
