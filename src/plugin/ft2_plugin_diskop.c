@@ -831,9 +831,9 @@ static int16_t countUsedSamples(ft2_instr_t *ins)
 
 #ifdef _MSC_VER
 #pragma pack(push, 1)
-#define PACKED_STRUCT
+#define PACKED_ATTR
 #else
-#define PACKED_STRUCT __attribute__((packed))
+#define PACKED_ATTR __attribute__((packed))
 #endif
 
 typedef struct xm_patt_hdr_t {
@@ -841,7 +841,7 @@ typedef struct xm_patt_hdr_t {
 	uint8_t type;
 	int16_t numRows;
 	uint16_t dataSize;
-} PACKED_STRUCT xm_patt_hdr_t;
+} PACKED_ATTR xm_patt_hdr_t;
 
 typedef struct xm_smp_hdr_t {
 	uint32_t length, loopStart, loopLength;
@@ -851,7 +851,7 @@ typedef struct xm_smp_hdr_t {
 	int8_t relativeNote;
 	uint8_t nameLength;
 	char name[22];
-} PACKED_STRUCT xm_smp_hdr_t;
+} PACKED_ATTR xm_smp_hdr_t;
 
 typedef struct xm_ins_hdr_t {
 	uint32_t instrSize;
@@ -873,12 +873,11 @@ typedef struct xm_ins_hdr_t {
 	int8_t mute;
 	uint8_t reserved[15];
 	xm_smp_hdr_t smp[16];
-} PACKED_STRUCT xm_ins_hdr_t;
+} PACKED_ATTR xm_ins_hdr_t;
 
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif
-#undef PACKED_STRUCT
 
 /* Delta encoding for XM/XI sample data (saves space) */
 static void sample_to_delta(int8_t *p, int32_t length, uint8_t smpFlags)
@@ -1302,7 +1301,7 @@ typedef struct xi_header_t {
 	int16_t midiProgram, midiBend;
 	uint8_t mute, reserved[15];
 	int16_t numSamples;
-} __attribute__((packed)) xi_header_t;
+} PACKED_ATTR xi_header_t;
 
 typedef struct xi_sample_header_t {
 	uint32_t length, loopStart, loopLength;
@@ -1312,11 +1311,12 @@ typedef struct xi_sample_header_t {
 	int8_t relativeNote;
 	uint8_t nameLength;
 	char name[22];
-} __attribute__((packed)) xi_sample_header_t;
+} PACKED_ATTR xi_sample_header_t;
 
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif
+#undef PACKED_ATTR
 
 static void xi_delta_to_sample_8bit(int8_t *p, int32_t length)
 {
@@ -1907,14 +1907,18 @@ bool ft2_save_sample(ft2_instance_t *inst, int16_t instrNum, int16_t sampleNum,
 
 #ifdef _MSC_VER
 #pragma pack(push, 1)
+#define XP_PACKED_ATTR
+#else
+#define XP_PACKED_ATTR __attribute__((packed))
 #endif
 typedef struct xp_header_t {
 	uint16_t version;
 	uint16_t numRows;
-} __attribute__((packed)) xp_header_t;
+} XP_PACKED_ATTR xp_header_t;
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif
+#undef XP_PACKED_ATTR
 
 #define XP_TRACK_WIDTH (5 * FT2_MAX_CHANNELS)
 
