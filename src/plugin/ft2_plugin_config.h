@@ -125,6 +125,8 @@ typedef struct ft2_plugin_config_t
 
 	bool autoUpdateCheck;
 	uint8_t palettePreset;      /* PAL_* */
+	uint8_t userPalette[16][3]; /* User-defined palette RGB (0-63 per channel) */
+	uint8_t userPaletteContrast[2]; /* Contrast for Desktop/Buttons */
 
 	/* I/O routing (plugin-specific) */
 	uint8_t channelRouting[32]; /* Output bus 0-14 */

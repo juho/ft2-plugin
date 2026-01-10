@@ -108,6 +108,17 @@ void ft2_config_init(ft2_plugin_config_t *config)
 	/* Palette */
 	config->palettePreset = PAL_ARCTIC;
 
+	/* User-defined palette defaults (Blues variant from pluginPalTable[PAL_USER_DEFINED]) */
+	static const uint8_t defaultUserPalette[16][3] = {
+		{0, 0, 0}, {36, 47, 63}, {9, 9, 16}, {63, 63, 63},
+		{19, 24, 38}, {63, 63, 63}, {39, 39, 39}, {0, 0, 0},
+		{8, 10, 15}, {32, 41, 63}, {15, 15, 15}, {63, 63, 63},
+		{63, 63, 63}, {63, 63, 63}, {63, 63, 63}, {63, 63, 63}
+	};
+	memcpy(config->userPalette, defaultUserPalette, sizeof(defaultUserPalette));
+	config->userPaletteContrast[0] = 52; /* Desktop */
+	config->userPaletteContrast[1] = 57; /* Buttons */
+
 	/* Start on audio screen (matches standalone) */
 	config->currConfigScreen = CONFIG_SCREEN_AUDIO;
 

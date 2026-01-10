@@ -39,7 +39,8 @@ pal16;
 #pragma pack(pop)
 #endif
 
-extern pal16 pluginPalTable[12][16]; /* [preset][color] */
+extern pal16 pluginPalTable[12][16];  /* [preset][color] */
+extern uint8_t palContrast[12][2];    /* [preset][Desktop/Buttons] */
 extern uint8_t cfg_ColorNum;          /* Current editor entry (0-5) */
 
 /* Core functions */

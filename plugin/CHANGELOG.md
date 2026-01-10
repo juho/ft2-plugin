@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.51 (Jan 10, 2026)
+
+- Fix: Saving of user-defined colours in config works properly.
+
 ## 1.0.50 (Jan 10, 2026)
 
 - Refactor: State tracking in widgets.

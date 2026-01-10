@@ -34,7 +34,7 @@ static const uint8_t FTC_EditOrder[6] = { PAL_PATTEXT, PAL_BLCKMRK, PAL_BLCKTXT,
 static const uint8_t scaleOrder[3] = { 8, 4, 9 };
 
 /* Contrast values per preset [preset][0=Desktop, 1=Buttons] */
-static uint8_t palContrast[12][2] = {
+uint8_t palContrast[12][2] = {
 	{59, 55}, {59, 53}, {56, 59}, {68, 55}, {57, 59}, {48, 55},
 	{66, 62}, {68, 57}, {58, 42}, {57, 55}, {62, 57}, {52, 57}
 };
@@ -256,6 +256,15 @@ static void paletteDragMoved(ft2_instance_t *inst)
 	setScrollBarPos(inst, widgets, video, SB_PAL_CONTRAST, cfg_Contrast, false);
 	setPal16(video, pluginPalTable[inst->config.palettePreset], true);
 	drawCurrentPaletteColor(inst, video, &ui->bmp);
+
+	/* Sync changes to config struct for persistence */
+	for (int i = 0; i < 16; i++) {
+		inst->config.userPalette[i][0] = pluginPalTable[PAL_USER_DEFINED][i].r;
+		inst->config.userPalette[i][1] = pluginPalTable[PAL_USER_DEFINED][i].g;
+		inst->config.userPalette[i][2] = pluginPalTable[PAL_USER_DEFINED][i].b;
+	}
+	inst->config.userPaletteContrast[0] = palContrast[PAL_USER_DEFINED][0];
+	inst->config.userPaletteContrast[1] = palContrast[PAL_USER_DEFINED][1];
 }
 
 /* ---------- Scrollbar callbacks ---------- */

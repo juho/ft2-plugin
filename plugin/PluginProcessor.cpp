@@ -10,6 +10,7 @@ extern "C" {
 #include "../src/plugin/ft2_plugin_timemap.h"
 #include "../src/plugin/ft2_plugin_diskop.h"
 #include "../src/plugin/ft2_plugin_loader.h"
+#include "../src/plugin/ft2_plugin_palette.h"
 }
 #if defined(_WIN32)
 #pragma pack(pop)
@@ -716,7 +717,7 @@ void FT2PluginProcessor::loadNibblesHighScores()
 }
 
 // Global config version - increment when adding new fields that need migration
-static constexpr int GLOBAL_CONFIG_VERSION = 2;
+static constexpr int GLOBAL_CONFIG_VERSION = 3;
 
 void FT2PluginProcessor::saveGlobalConfig()
 {
@@ -802,6 +803,22 @@ void FT2PluginProcessor::saveGlobalConfig()
     
     // Palette
     props->setValue("config_palettePreset", cfg.palettePreset);
+    
+    // User-defined palette colors (16 colors x RGB = 48 values)
+    juce::String userPalStr;
+    for (int i = 0; i < 16; ++i)
+    {
+        if (i > 0) userPalStr += ",";
+        userPalStr += juce::String(cfg.userPalette[i][0]) + "," +
+                      juce::String(cfg.userPalette[i][1]) + "," +
+                      juce::String(cfg.userPalette[i][2]);
+    }
+    props->setValue("config_userPalette", userPalStr);
+    
+    // User-defined palette contrast (Desktop, Buttons)
+    props->setValue("config_userPaletteContrast",
+        juce::String(cfg.userPaletteContrast[0]) + "," +
+        juce::String(cfg.userPaletteContrast[1]));
     
     // Logo/Badge settings
     props->setValue("config_id_FastLogo", cfg.id_FastLogo);
@@ -927,6 +944,43 @@ void FT2PluginProcessor::loadGlobalConfig()
     
     // Palette
     cfg.palettePreset = static_cast<uint8_t>(props->getIntValue("config_palettePreset", cfg.palettePreset));
+    
+    // User-defined palette colors (16 colors x RGB = 48 values)
+    juce::String userPalStr = props->getValue("config_userPalette", "");
+    if (userPalStr.isNotEmpty())
+    {
+        juce::StringArray tokens;
+        tokens.addTokens(userPalStr, ",", "");
+        for (int i = 0; i < 16 && (i * 3 + 2) < tokens.size(); ++i)
+        {
+            cfg.userPalette[i][0] = static_cast<uint8_t>(tokens[i * 3].getIntValue());
+            cfg.userPalette[i][1] = static_cast<uint8_t>(tokens[i * 3 + 1].getIntValue());
+            cfg.userPalette[i][2] = static_cast<uint8_t>(tokens[i * 3 + 2].getIntValue());
+        }
+    }
+    
+    // User-defined palette contrast
+    juce::String contrastStr = props->getValue("config_userPaletteContrast", "");
+    if (contrastStr.isNotEmpty())
+    {
+        juce::StringArray tokens;
+        tokens.addTokens(contrastStr, ",", "");
+        if (tokens.size() >= 2)
+        {
+            cfg.userPaletteContrast[0] = static_cast<uint8_t>(tokens[0].getIntValue());
+            cfg.userPaletteContrast[1] = static_cast<uint8_t>(tokens[1].getIntValue());
+        }
+    }
+    
+    // Copy user palette to global palette table (PAL_USER_DEFINED = 11)
+    for (int i = 0; i < 16; ++i)
+    {
+        pluginPalTable[PAL_USER_DEFINED][i].r = cfg.userPalette[i][0];
+        pluginPalTable[PAL_USER_DEFINED][i].g = cfg.userPalette[i][1];
+        pluginPalTable[PAL_USER_DEFINED][i].b = cfg.userPalette[i][2];
+    }
+    palContrast[PAL_USER_DEFINED][0] = cfg.userPaletteContrast[0];
+    palContrast[PAL_USER_DEFINED][1] = cfg.userPaletteContrast[1];
     
     // Logo/Badge settings
     cfg.id_FastLogo = props->getBoolValue("config_id_FastLogo", cfg.id_FastLogo);
