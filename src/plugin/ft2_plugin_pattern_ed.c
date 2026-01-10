@@ -22,6 +22,7 @@
 #include "ft2_plugin_ui.h"
 #include "ft2_plugin_sample_ed.h"
 #include "ft2_plugin_instr_ed.h"
+#include "ft2_plugin_textbox.h"
 #include "ft2_instance.h"
 
 #ifndef MAX_CHANNELS
@@ -1735,6 +1736,13 @@ void updatePatternEditorGUI(ft2_instance_t *inst)
 			widgets->pushButtons[PB_RANGE1 + i].x = iSwitchExtX[i & 3];
 			widgets->pushButtons[PB_RANGE1 + i].y = iSwitchExtY[i & 7];
 		}
+
+		/* Instrument textboxes: two columns in extended mode */
+		static const uint16_t instExtY[4] = { 5, 16, 27, 38 };
+		for (int i = 0; i < 4; i++) {
+			ft2_textbox_set_position(TB_INST1 + i, 406, instExtY[i], 99);
+			ft2_textbox_set_position(TB_INST1 + 4 + i, 529, instExtY[i], 99);
+		}
 	} else {
 		/* Normal mode */
 		widgets->scrollBars[SB_POS_ED].h = 21;
@@ -1760,6 +1768,11 @@ void updatePatternEditorGUI(ft2_instance_t *inst)
 			widgets->pushButtons[PB_RANGE1 + i].x = 590;
 			widgets->pushButtons[PB_RANGE1 + i].y = iSwitchY[i & 7];
 		}
+
+		/* Instrument textboxes: single column in normal mode */
+		static const uint16_t instNormY[8] = { 5, 16, 27, 38, 49, 60, 71, 82 };
+		for (int i = 0; i < 8; i++)
+			ft2_textbox_set_position(TB_INST1 + i, 446, instNormY[i], 140);
 	}
 }
 

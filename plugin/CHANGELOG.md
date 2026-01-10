@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.49 (Jan 10, 2026)
+
+- Fix: Better textbox drawing.
+
 ## 1.0.48 (Jan 9, 2026)
 
 - Fix: Restore view state after coming back from extended pattern editor.

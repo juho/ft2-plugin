@@ -427,6 +427,21 @@ void ft2_textbox_hide(uint16_t textBoxID)
 	if (activeTextBox == (int16_t)textBoxID) ft2_textbox_exit_editing();
 }
 
+void ft2_textbox_set_position(uint16_t textBoxID, uint16_t x, uint16_t y, uint16_t w)
+{
+	if (textBoxID >= NUM_TEXTBOXES) return;
+	textBox_t *t = &textBoxes[textBoxID];
+
+	t->x = x;
+	t->y = y;
+
+	if (w != t->w)
+	{
+		t->w = w;
+		t->renderW = w - (t->tx * 2);
+	}
+}
+
 /* ------------------------------------------------------------------------- */
 /*                          UTILITIES                                        */
 /* ------------------------------------------------------------------------- */

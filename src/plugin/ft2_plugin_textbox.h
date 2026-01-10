@@ -63,6 +63,9 @@ int16_t ft2_textbox_get_needs_redraw(void);
 void ft2_textbox_show(uint16_t textBoxID);
 void ft2_textbox_hide(uint16_t textBoxID);
 
+/* Position (for dynamic repositioning in extended/normal mode) */
+void ft2_textbox_set_position(uint16_t textBoxID, uint16_t x, uint16_t y, uint16_t w);
+
 /* Drawing */
 void ft2_textbox_draw(struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t textBoxID, const struct ft2_instance_t *inst);
 void ft2_textbox_draw_with_cursor(struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t textBoxID, bool showCursor, const struct ft2_instance_t *inst);

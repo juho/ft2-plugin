@@ -18,6 +18,7 @@
 #include "ft2_plugin_bmp.h"
 #include "ft2_plugin_pushbuttons.h"
 #include "ft2_plugin_scrollbars.h"
+#include "ft2_plugin_textbox.h"
 #include "ft2_plugin_ui.h"
 #include "ft2_instance.h"
 
@@ -62,12 +63,8 @@ void updateInstrumentSwitcher(struct ft2_instance_t *inst, struct ft2_video_t *v
 			uint8_t instrNum = 1 + instrBankOffset + i;
 			hexOut(video, bmp, 388, 5 + (i * 11), PAL_FORGRND, instrNum, 2);
 			hexOut(video, bmp, 511, 5 + (i * 11), PAL_FORGRND, instrNum + 4, 2);
-			if (inst->replayer.instr[instrNum] != NULL)
-				textOut(video, bmp, 406, 5 + (i * 11), PAL_FORGRND,
-					inst->replayer.song.instrName[instrNum]);
-			if (inst->replayer.instr[instrNum + 4] != NULL)
-				textOut(video, bmp, 529, 5 + (i * 11), PAL_FORGRND,
-					inst->replayer.song.instrName[instrNum + 4]);
+			ft2_textbox_draw(video, bmp, TB_INST1 + i, inst);
+			ft2_textbox_draw(video, bmp, TB_INST1 + 4 + i, inst);
 		}
 	} else {
 		/* Normal: single column, 8 instruments + 5 samples */
@@ -90,8 +87,7 @@ void updateInstrumentSwitcher(struct ft2_instance_t *inst, struct ft2_video_t *v
 		for (int16_t i = 0; i < 8; i++) {
 			uint8_t instrNum = 1 + instrBankOffset + i;
 			hexOut(video, bmp, 424, 5 + (i * 11), PAL_FORGRND, instrNum, 2);
-			textOut(video, bmp, 447, 5 + (i * 11), PAL_FORGRND,
-				inst->replayer.song.instrName[instrNum]);
+			ft2_textbox_draw(video, bmp, TB_INST1 + i, inst);
 		}
 
 		/* Sample list */
@@ -115,12 +111,10 @@ void updateInstrumentSwitcher(struct ft2_instance_t *inst, struct ft2_video_t *v
 		}
 
 		/* Sample numbers and names */
-		ft2_instr_t *instr = inst->replayer.instr[curInstr];
 		for (int16_t i = 0; i < 5; i++) {
 			uint8_t smpNum = smpOffset + i;
 			hexOut(video, bmp, 424, 99 + (i * 11), PAL_FORGRND, smpNum, 2);
-			if (instr != NULL && smpNum < 16)
-				textOut(video, bmp, 447, 99 + (i * 11), PAL_FORGRND, instr->smp[smpNum].name);
+			ft2_textbox_draw(video, bmp, TB_SAMP1 + i, inst);
 		}
 	}
 }

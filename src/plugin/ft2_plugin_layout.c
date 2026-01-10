@@ -21,6 +21,7 @@
 #include "ft2_plugin_help.h"
 #include "ft2_plugin_nibbles.h"
 #include "ft2_plugin_diskop.h"
+#include "ft2_plugin_textbox.h"
 #include "ft2_plugin_ui.h"
 #include "ft2_instance.h"
 
@@ -252,7 +253,7 @@ void drawSongName(struct ft2_instance_t *inst, struct ft2_video_t *video,
 	if (inst->uiState.extendedPatternEditor) return;
 	drawFramework(video, 421, 155, 166, 18, FRAMEWORK_TYPE1);
 	drawFramework(video, 423, 157, 162, 14, FRAMEWORK_TYPE2);
-	textOut(video, bmp, 426, 159, PAL_FORGRND, inst->replayer.song.name);
+	ft2_textbox_draw(video, bmp, TB_SONG_NAME, inst);
 }
 
 /* ---------- Main screen sections ---------- */
