@@ -164,7 +164,7 @@ void ft2_widgets_mouse_up(ft2_widgets_t *widgets, int x, int y, struct ft2_insta
 	switch (m->lastUsedObjectType)
 	{
 		case OBJECT_PUSHBUTTON:  testPushButtonMouseRelease(widgets, inst, video, bmp, x, y, m->lastUsedObjectID, true); break;
-		case OBJECT_SCROLLBAR:   testScrollBarMouseRelease(widgets, video, m->lastUsedObjectID); break;
+		case OBJECT_SCROLLBAR:   testScrollBarMouseRelease(widgets, inst, video, m->lastUsedObjectID); break;
 		case OBJECT_CHECKBOX:    testCheckBoxMouseRelease(widgets, inst, video, bmp, x, y, m->lastUsedObjectID); break;
 		case OBJECT_RADIOBUTTON: testRadioButtonMouseRelease(widgets, inst, video, bmp, x, y, m->lastUsedObjectID); break;
 		default: break;

@@ -29,7 +29,6 @@
 #define RESONANCE_MIN 0.01
 
 enum { REMOVE_SAMPLE_MARK = 0, KEEP_SAMPLE_MARK = 1 };
-enum { FILTER_LOWPASS = 0, FILTER_HIGHPASS = 1 };
 
 /* 2nd-order IIR biquad filter state */
 typedef struct {
@@ -38,10 +37,7 @@ typedef struct {
 } resoFilter_t;
 
 #define UNDO_STATE(inst) (&FT2_SAMPLE_ED(inst)->undo)
-static bool normalization = false;
-static uint8_t lastFilterType = FILTER_LOWPASS;
-static int32_t lastLpCutoff = 2000, lastHpCutoff = 200, filterResonance = 0;
-static int32_t smpCycles = 1, lastWaveLength = 64, lastAmp = 75;
+#define SMPFX_STATE(inst) (&FT2_SAMPLE_ED(inst)->smpfx)
 
 /* ------------------------------------------------------------------------- */
 /*                           HELPERS                                         */
@@ -149,19 +145,32 @@ static ft2_sample_t *setupNewSample(ft2_instance_t *inst, uint32_t length)
 /*                         STATE ACCESSORS                                   */
 /* ------------------------------------------------------------------------- */
 
-void cbSfxNormalization(ft2_instance_t *inst) { (void)inst; normalization = !normalization; }
-bool getSfxNormalization(ft2_instance_t *inst) { (void)inst; return normalization; }
-int32_t getSfxCycles(ft2_instance_t *inst) { (void)inst; return smpCycles; }
-int32_t getSfxResonance(ft2_instance_t *inst) { (void)inst; return filterResonance; }
+void cbSfxNormalization(ft2_instance_t *inst) {
+	if (!inst || !inst->ui) return;
+	SMPFX_STATE(inst)->normalization = !SMPFX_STATE(inst)->normalization;
+}
+bool getSfxNormalization(ft2_instance_t *inst) {
+	return (inst && inst->ui) ? SMPFX_STATE(inst)->normalization : false;
+}
+int32_t getSfxCycles(ft2_instance_t *inst) {
+	return (inst && inst->ui) ? SMPFX_STATE(inst)->smpCycles : 1;
+}
+int32_t getSfxResonance(ft2_instance_t *inst) {
+	return (inst && inst->ui) ? SMPFX_STATE(inst)->filterResonance : 0;
+}
 
 void pbSfxCyclesUp(ft2_instance_t *inst)
 {
-	if (smpCycles < 256) { smpCycles++; inst->uiState.updateSampleEditor = true; }
+	if (!inst || !inst->ui) return;
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	if (fx->smpCycles < 256) { fx->smpCycles++; inst->uiState.updateSampleEditor = true; }
 }
 
 void pbSfxCyclesDown(ft2_instance_t *inst)
 {
-	if (smpCycles > 1) { smpCycles--; inst->uiState.updateSampleEditor = true; }
+	if (!inst || !inst->ui) return;
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	if (fx->smpCycles > 1) { fx->smpCycles--; inst->uiState.updateSampleEditor = true; }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -170,14 +179,16 @@ void pbSfxCyclesDown(ft2_instance_t *inst)
 
 static void generateTriangle(ft2_instance_t *inst)
 {
-	if (inst->editor.curInstr == 0 || lastWaveLength <= 1) return;
+	if (!inst || !inst->ui) return;
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	if (inst->editor.curInstr == 0 || fx->lastWaveLength <= 1) return;
 	fillSampleUndo(inst, REMOVE_SAMPLE_MARK);
 
-	int32_t newLength = lastWaveLength * smpCycles;
+	int32_t newLength = fx->lastWaveLength * fx->smpCycles;
 	ft2_sample_t *s = setupNewSample(inst, newLength);
 	if (!s) return;
 
-	const double delta = 4.0 / lastWaveLength;
+	const double delta = 4.0 / fx->lastWaveLength;
 	double phase = 0.0;
 	int16_t *ptr16 = (int16_t *)s->dataPtr;
 
@@ -196,14 +207,16 @@ static void generateTriangle(ft2_instance_t *inst)
 
 static void generateSaw(ft2_instance_t *inst)
 {
-	if (inst->editor.curInstr == 0 || lastWaveLength <= 1) return;
+	if (!inst || !inst->ui) return;
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	if (inst->editor.curInstr == 0 || fx->lastWaveLength <= 1) return;
 	fillSampleUndo(inst, REMOVE_SAMPLE_MARK);
 
-	int32_t newLength = lastWaveLength * smpCycles;
+	int32_t newLength = fx->lastWaveLength * fx->smpCycles;
 	ft2_sample_t *s = setupNewSample(inst, newLength);
 	if (!s) return;
 
-	uint64_t point64 = 0, delta64 = ((uint64_t)(INT16_MAX * 2) << 32ULL) / lastWaveLength;
+	uint64_t point64 = 0, delta64 = ((uint64_t)(INT16_MAX * 2) << 32ULL) / fx->lastWaveLength;
 	int16_t *ptr16 = (int16_t *)s->dataPtr;
 
 	for (int32_t i = 0; i < newLength; i++) { *ptr16++ = (int16_t)(point64 >> 32); point64 += delta64; }
@@ -216,14 +229,16 @@ static void generateSaw(ft2_instance_t *inst)
 
 static void generateSine(ft2_instance_t *inst)
 {
-	if (inst->editor.curInstr == 0 || lastWaveLength <= 1) return;
+	if (!inst || !inst->ui) return;
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	if (inst->editor.curInstr == 0 || fx->lastWaveLength <= 1) return;
 	fillSampleUndo(inst, REMOVE_SAMPLE_MARK);
 
-	int32_t newLength = lastWaveLength * smpCycles;
+	int32_t newLength = fx->lastWaveLength * fx->smpCycles;
 	ft2_sample_t *s = setupNewSample(inst, newLength);
 	if (!s) return;
 
-	const double dMul = (2.0 * M_PI) / lastWaveLength;
+	const double dMul = (2.0 * M_PI) / fx->lastWaveLength;
 	int16_t *ptr16 = (int16_t *)s->dataPtr;
 	for (int32_t i = 0; i < newLength; i++) *ptr16++ = (int16_t)(INT16_MAX * sin(i * dMul));
 
@@ -235,14 +250,16 @@ static void generateSine(ft2_instance_t *inst)
 
 static void generateSquare(ft2_instance_t *inst)
 {
-	if (inst->editor.curInstr == 0 || lastWaveLength <= 1) return;
+	if (!inst || !inst->ui) return;
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	if (inst->editor.curInstr == 0 || fx->lastWaveLength <= 1) return;
 	fillSampleUndo(inst, REMOVE_SAMPLE_MARK);
 
-	uint32_t newLength = lastWaveLength * smpCycles;
+	uint32_t newLength = fx->lastWaveLength * fx->smpCycles;
 	ft2_sample_t *s = setupNewSample(inst, newLength);
 	if (!s) return;
 
-	const uint32_t halfWaveLength = lastWaveLength / 2;
+	const uint32_t halfWaveLength = fx->lastWaveLength / 2;
 	int16_t currValue = INT16_MAX;
 	uint32_t counter = 0;
 	int16_t *ptr16 = (int16_t *)s->dataPtr;
@@ -268,8 +285,16 @@ void pbSfxSquare(ft2_instance_t *inst) { ft2_wave_panel_show(inst, WAVE_TYPE_SQU
 /*                           FILTERS                                         */
 /* ------------------------------------------------------------------------- */
 
-void pbSfxResoUp(ft2_instance_t *inst) { if (filterResonance < RESONANCE_RANGE) { filterResonance++; inst->uiState.updateSampleEditor = true; } }
-void pbSfxResoDown(ft2_instance_t *inst) { if (filterResonance > 0) { filterResonance--; inst->uiState.updateSampleEditor = true; } }
+void pbSfxResoUp(ft2_instance_t *inst) {
+	if (!inst || !inst->ui) return;
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	if (fx->filterResonance < RESONANCE_RANGE) { fx->filterResonance++; inst->uiState.updateSampleEditor = true; }
+}
+void pbSfxResoDown(ft2_instance_t *inst) {
+	if (!inst || !inst->ui) return;
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	if (fx->filterResonance > 0) { fx->filterResonance--; inst->uiState.updateSampleEditor = true; }
+}
 
 /* Calculates sample rate at C-4 from relativeNote and finetune */
 static double getSampleC4Rate(ft2_sample_t *s)
@@ -334,7 +359,8 @@ static bool applyResoFilter(ft2_instance_t *inst, ft2_sample_t *s, resoFilter_t 
 	const int32_t len = x2 - x1;
 	ft2_stop_sample_voices(inst, s);
 
-	if (!normalization)
+	bool doNormalize = (inst && inst->ui) ? SMPFX_STATE(inst)->normalization : false;
+	if (!doNormalize)
 	{
 		ft2_unfix_sample(s);
 		if (s->flags & SAMPLE_16BIT)
@@ -401,16 +427,17 @@ static bool applyResoFilter(ft2_instance_t *inst, ft2_sample_t *s, resoFilter_t 
 static void applyLowPassFilter(ft2_instance_t *inst, int32_t cutoff)
 {
 	ft2_sample_t *s = getSmpFxCurSample(inst);
-	if (!s || !s->dataPtr) return;
+	if (!s || !s->dataPtr || !inst->ui) return;
 
-	lastFilterType = FILTER_LOWPASS;
-	lastLpCutoff = cutoff;
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	fx->lastFilterType = FILTER_LOWPASS;
+	fx->lastLpCutoff = cutoff;
 
 	int32_t x1, x2;
 	getSmpFxRange(inst, s, &x1, &x2);
 
 	resoFilter_t f;
-	setupResoLpFilter(s, &f, cutoff, filterResonance, false);
+	setupResoLpFilter(s, &f, cutoff, fx->filterResonance, false);
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
 	applyResoFilter(inst, s, &f, x1, x2);
 	inst->uiState.updateSampleEditor = true;
@@ -419,16 +446,17 @@ static void applyLowPassFilter(ft2_instance_t *inst, int32_t cutoff)
 static void applyHighPassFilter(ft2_instance_t *inst, int32_t cutoff)
 {
 	ft2_sample_t *s = getSmpFxCurSample(inst);
-	if (!s || !s->dataPtr) return;
+	if (!s || !s->dataPtr || !inst->ui) return;
 
-	lastFilterType = FILTER_HIGHPASS;
-	lastHpCutoff = cutoff;
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	fx->lastFilterType = FILTER_HIGHPASS;
+	fx->lastHpCutoff = cutoff;
 
 	int32_t x1, x2;
 	getSmpFxRange(inst, s, &x1, &x2);
 
 	resoFilter_t f;
-	setupResoHpFilter(s, &f, cutoff, filterResonance, false);
+	setupResoHpFilter(s, &f, cutoff, fx->filterResonance, false);
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
 	applyResoFilter(inst, s, &f, x1, x2);
 	inst->uiState.updateSampleEditor = true;
@@ -599,7 +627,7 @@ void pbSfxAddTreble(ft2_instance_t *inst)
 void pbSfxSetAmp(ft2_instance_t *inst)
 {
 	ft2_sample_t *s = getSmpFxCurSample(inst);
-	if (!s || !s->dataPtr) return;
+	if (!s || !s->dataPtr || !inst->ui) return;
 
 	int32_t x1, x2;
 	getSmpFxRange(inst, s, &x1, &x2);
@@ -610,7 +638,7 @@ void pbSfxSetAmp(ft2_instance_t *inst)
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
 
-	const int32_t mul = (int32_t)round((1 << 22UL) * (lastAmp / 100.0));
+	const int32_t mul = (int32_t)round((1 << 22UL) * (SMPFX_STATE(inst)->lastAmp / 100.0));
 
 	if (s->flags & SAMPLE_16BIT)
 	{
@@ -690,7 +718,8 @@ void showSampleEffectsScreen(ft2_instance_t *inst)
 	widgets->pushButtonVisible[PB_SAMP_VOLUME] = widgets->pushButtonVisible[PB_SAMP_EFFECTS] = false;
 
 	/* Show effects widgets */
-	widgets->checkBoxChecked[CB_SAMPFX_NORM] = normalization;
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	widgets->checkBoxChecked[CB_SAMPFX_NORM] = fx->normalization;
 	widgets->checkBoxVisible[CB_SAMPFX_NORM] = true;
 
 	widgets->pushButtonVisible[PB_SAMPFX_CYCLES_UP] = widgets->pushButtonVisible[PB_SAMPFX_CYCLES_DOWN] = true;
@@ -748,7 +777,9 @@ void hideSampleEffectsScreen(ft2_instance_t *inst)
 
 void drawSampleEffectsScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (!inst || !video || !bmp) return;
+	if (!inst || !video || !bmp || !inst->ui) return;
+
+	smpfx_state_t *fx = SMPFX_STATE(inst);
 
 	drawFramework(video, 0, 346, 116, 54, FRAMEWORK_TYPE1);
 	drawFramework(video, 116, 346, 114, 54, FRAMEWORK_TYPE1);
@@ -757,14 +788,14 @@ void drawSampleEffectsScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2
 
 	textOutShadow(video, bmp, 4, 352, PAL_FORGRND, PAL_DSKTOP2, "Cycles:");
 	char str[16];
-	sprintf(str, "%03d", smpCycles);
+	sprintf(str, "%03d", fx->smpCycles);
 	textOut(video, bmp, 54, 352, PAL_FORGRND, str);
 
 	textOutShadow(video, bmp, 121, 352, PAL_FORGRND, PAL_DSKTOP2, "Reson.:");
-	if (filterResonance <= 0)
+	if (fx->filterResonance <= 0)
 		textOut(video, bmp, 172, 352, PAL_FORGRND, "off");
 	else
-		{ sprintf(str, "%02d", filterResonance); textOut(video, bmp, 175, 352, PAL_FORGRND, str); }
+		{ sprintf(str, "%02d", fx->filterResonance); textOut(video, bmp, 175, 352, PAL_FORGRND, str); }
 
 	textOutShadow(video, bmp, 135, 386, PAL_FORGRND, PAL_DSKTOP2, "Normalization");
 	textOutShadow(video, bmp, 235, 352, PAL_FORGRND, PAL_DSKTOP2, "Bass");

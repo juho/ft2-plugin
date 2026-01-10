@@ -752,7 +752,7 @@ void pbAbout(ft2_instance_t *inst)
 	{
 		ft2_video_t *video = &ui->video;
 		const ft2_bmp_t *bmp = ui->bmpLoaded ? &ui->bmp : NULL;
-		ft2_about_show(&ui->widgets, video, bmp);
+		ft2_about_show(inst, &ui->widgets, video, bmp);
 	}
 	
 	inst->uiState.aboutScreenShown = true;

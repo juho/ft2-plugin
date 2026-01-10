@@ -37,15 +37,16 @@ typedef struct {
 #define HELP_COLUMN 135         /* X start of help text area */
 #define HELP_WIDTH (596 - HELP_COLUMN)
 
-static uint8_t fHlp_Num;                    /* Current subject index */
-static int16_t textLine, fHlp_Line;         /* Parse line, scroll position */
+#define HELP_STATE(inst) (&FT2_UI(inst)->helpState)
+
+static int16_t textLine;                    /* Parse line counter */
 static int16_t subjLen[MAX_SUBJ];           /* Lines per subject */
 static int32_t helpBufferPos;               /* Parse position in helpData[] */
 static helpRec *subjPtrArr[MAX_SUBJ];       /* Parsed help records per subject */
 static bool helpInitialized = false;
 
 static void readHelp(void);
-static void writeHelp(ft2_video_t *video, const ft2_bmp_t *bmp);
+static void writeHelp(ft2_video_t *video, const ft2_bmp_t *bmp, uint8_t subjNum, int16_t scrollLine);
 
 /* ---------- Help data parser ---------- */
 
@@ -284,14 +285,14 @@ static void bigTextOutHalf(ft2_video_t *video, const ft2_bmp_t *bmp, uint16_t xP
 }
 
 /* Render visible help lines. Big font spans 2 rows; noLine draws bottom half of previous. */
-static void writeHelp(ft2_video_t *video, const ft2_bmp_t *bmp)
+static void writeHelp(ft2_video_t *video, const ft2_bmp_t *bmp, uint8_t subjNum, int16_t scrollLine)
 {
-	helpRec *ptr = subjPtrArr[fHlp_Num];
+	helpRec *ptr = subjPtrArr[subjNum];
 	if (ptr == NULL || video == NULL) return;
 
 	for (int16_t i = 0; i < HELP_LINES; i++) {
-		const int16_t k = i + fHlp_Line;
-		if (k >= subjLen[fHlp_Num]) break;
+		const int16_t k = i + scrollLine;
+		if (k >= subjLen[subjNum]) break;
 
 		clearRect(video, HELP_COLUMN, 5 + (i * 11), HELP_WIDTH, 11);
 
@@ -319,6 +320,7 @@ void drawHelpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (ui == NULL) return;
 	ft2_widgets_t *widgets = &ui->widgets;
+	help_state_t *hs = HELP_STATE(inst);
 
 	if (!helpInitialized) initFTHelp();
 
@@ -335,7 +337,7 @@ void drawHelpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 	/* Radio buttons for subject selection */
 	uncheckRadioButtonGroup(widgets, RB_GROUP_HELP);
 	uint16_t tmpID;
-	switch (fHlp_Num) {
+	switch (hs->currentSubject) {
 		default:
 		case 0: tmpID = RB_HELP_FEATURES;    break;
 		case 1: tmpID = RB_HELP_EFFECTS;     break;
@@ -347,8 +349,8 @@ void drawHelpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_HELP);
 
 	/* Scrollbar */
-	setScrollBarEnd(inst, widgets, video, SB_HELP_SCROLL, subjLen[fHlp_Num]);
-	setScrollBarPos(inst, widgets, video, SB_HELP_SCROLL, fHlp_Line, false);
+	setScrollBarEnd(inst, widgets, video, SB_HELP_SCROLL, subjLen[hs->currentSubject]);
+	setScrollBarPos(inst, widgets, video, SB_HELP_SCROLL, hs->scrollLine, false);
 	showScrollBar(widgets, video, SB_HELP_SCROLL);
 
 	/* Subject labels */
@@ -359,31 +361,43 @@ void drawHelpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 	textOutShadow(video, bmp, 21, 67, PAL_FORGRND, PAL_DSKTOP2, "How to use FT2");
 	textOutShadow(video, bmp, 21, 83, PAL_FORGRND, PAL_DSKTOP2, "Plugin");
 
-	writeHelp(video, bmp);
+	writeHelp(video, bmp, hs->currentSubject, hs->scrollLine);
 }
 
 /* ---------- Scroll functions ---------- */
 
 void helpScrollUp(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL) return;
+	if (inst == NULL || inst->ui == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-	if (fHlp_Line > 0) { scrollBarScrollUp(inst, widgets, video, SB_HELP_SCROLL, 1); writeHelp(video, bmp); }
+	ft2_widgets_t *widgets = &ui->widgets;
+	help_state_t *hs = HELP_STATE(inst);
+	if (hs->scrollLine > 0) {
+		scrollBarScrollUp(inst, widgets, video, SB_HELP_SCROLL, 1);
+		writeHelp(video, bmp, hs->currentSubject, hs->scrollLine);
+	}
 }
 
 void helpScrollDown(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL) return;
+	if (inst == NULL || inst->ui == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
-	if (fHlp_Line < subjLen[fHlp_Num]-1) { scrollBarScrollDown(inst, widgets, video, SB_HELP_SCROLL, 1); writeHelp(video, bmp); }
+	ft2_widgets_t *widgets = &ui->widgets;
+	help_state_t *hs = HELP_STATE(inst);
+	if (hs->scrollLine < subjLen[hs->currentSubject] - 1) {
+		scrollBarScrollDown(inst, widgets, video, SB_HELP_SCROLL, 1);
+		writeHelp(video, bmp, hs->currentSubject, hs->scrollLine);
+	}
 }
 
 void helpScrollSetPos(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp, uint32_t pos)
 {
-	(void)inst;
-	if (fHlp_Line != (int16_t)pos) { fHlp_Line = (int16_t)pos; writeHelp(video, bmp); }
+	if (inst == NULL || inst->ui == NULL) return;
+	help_state_t *hs = HELP_STATE(inst);
+	if (hs->scrollLine != (int16_t)pos) {
+		hs->scrollLine = (int16_t)pos;
+		writeHelp(video, bmp, hs->currentSubject, hs->scrollLine);
+	}
 }
 
 /* ---------- Visibility ---------- */
@@ -427,55 +441,67 @@ void exitHelpScreen(ft2_instance_t *inst)
 
 static void setHelpSubject(ft2_instance_t *inst, ft2_widgets_t *widgets, ft2_video_t *video, uint8_t Nr)
 {
-	fHlp_Num = Nr;
-	fHlp_Line = 0;
-	setScrollBarEnd(inst, widgets, video, SB_HELP_SCROLL, subjLen[fHlp_Num]);
+	if (inst == NULL || inst->ui == NULL) return;
+	help_state_t *hs = HELP_STATE(inst);
+	hs->currentSubject = Nr;
+	hs->scrollLine = 0;
+	setScrollBarEnd(inst, widgets, video, SB_HELP_SCROLL, subjLen[hs->currentSubject]);
 	setScrollBarPos(inst, widgets, video, SB_HELP_SCROLL, 0, false);
 }
 
 void rbHelpFeatures(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL) return;
+	if (inst == NULL || inst->ui == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
+	ft2_widgets_t *widgets = &ui->widgets;
+	help_state_t *hs = HELP_STATE(inst);
 	checkRadioButton(widgets, video, bmp, RB_HELP_FEATURES);
-	setHelpSubject(inst, widgets, video, 0); writeHelp(video, bmp);
+	setHelpSubject(inst, widgets, video, 0);
+	writeHelp(video, bmp, hs->currentSubject, hs->scrollLine);
 }
 
 void rbHelpEffects(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL) return;
+	if (inst == NULL || inst->ui == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
+	ft2_widgets_t *widgets = &ui->widgets;
+	help_state_t *hs = HELP_STATE(inst);
 	checkRadioButton(widgets, video, bmp, RB_HELP_EFFECTS);
-	setHelpSubject(inst, widgets, video, 1); writeHelp(video, bmp);
+	setHelpSubject(inst, widgets, video, 1);
+	writeHelp(video, bmp, hs->currentSubject, hs->scrollLine);
 }
 
 void rbHelpKeybindings(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL) return;
+	if (inst == NULL || inst->ui == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
+	ft2_widgets_t *widgets = &ui->widgets;
+	help_state_t *hs = HELP_STATE(inst);
 	checkRadioButton(widgets, video, bmp, RB_HELP_KEYBINDINGS);
-	setHelpSubject(inst, widgets, video, 2); writeHelp(video, bmp);
+	setHelpSubject(inst, widgets, video, 2);
+	writeHelp(video, bmp, hs->currentSubject, hs->scrollLine);
 }
 
 void rbHelpHowToUseFT2(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL) return;
+	if (inst == NULL || inst->ui == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
+	ft2_widgets_t *widgets = &ui->widgets;
+	help_state_t *hs = HELP_STATE(inst);
 	checkRadioButton(widgets, video, bmp, RB_HELP_HOWTO);
-	setHelpSubject(inst, widgets, video, 3); writeHelp(video, bmp);
+	setHelpSubject(inst, widgets, video, 3);
+	writeHelp(video, bmp, hs->currentSubject, hs->scrollLine);
 }
 
 void rbHelpPlugin(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (inst == NULL) return;
+	if (inst == NULL || inst->ui == NULL) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_widgets_t *widgets = (ui != NULL) ? &ui->widgets : NULL;
+	ft2_widgets_t *widgets = &ui->widgets;
+	help_state_t *hs = HELP_STATE(inst);
 	checkRadioButton(widgets, video, bmp, RB_HELP_PLUGIN);
-	setHelpSubject(inst, widgets, video, 4); writeHelp(video, bmp);
+	setHelpSubject(inst, widgets, video, 4);
+	writeHelp(video, bmp, hs->currentSubject, hs->scrollLine);
 }
 
 /* ---------- Initialization ---------- */
@@ -484,8 +510,6 @@ void initFTHelp(void)
 {
 	if (helpInitialized) return;
 	readHelp();
-	fHlp_Num = 0;
-	fHlp_Line = 0;
 	helpInitialized = true;
 }
 

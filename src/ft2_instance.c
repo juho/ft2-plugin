@@ -222,6 +222,7 @@ static void initDiskopState(ft2_instance_t *inst)
 	inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_XM;
 	inst->diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE] = FT2_SMP_SAVE_WAV;
 	inst->diskop.firstOpen = true;
+	inst->diskop.lastClickedEntry = -1;
 }
 
 /* --------------------------------------------------------------------- */

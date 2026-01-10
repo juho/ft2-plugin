@@ -27,8 +27,7 @@
 
 #define TRIM_STATE(inst) (&FT2_UI(inst)->trimState)
 
-/* Temporary storage for trim calculations */
-static char byteFormatBuffer[64];
+/* Static temp storage - trim operations are modal/atomic */
 static char tmpInstrName[129][23], tmpInstName[128][23];
 static uint8_t instrUsed[128], instrOrder[128], pattUsed[256], pattOrder[256];
 static int16_t oldPattLens[256], tmpPattLens[256];
@@ -37,7 +36,7 @@ static ft2_instr_t *tmpInstr[129], *tmpInst[128];
 
 static int64_t calculateXMSize(ft2_instance_t *inst);
 static int64_t calculateTrimSize(ft2_instance_t *inst);
-static const char *formatBytes(uint64_t bytes, bool roundUp);
+static const char *formatBytes(ft2_instance_t *inst, uint64_t bytes, bool roundUp);
 static void freeTmpInstruments(void);
 static bool setTmpInstruments(ft2_instance_t *inst);
 
@@ -45,10 +44,13 @@ static bool setTmpInstruments(ft2_instance_t *inst);
 /*                        BYTE FORMATTING                                    */
 /* ------------------------------------------------------------------------- */
 
-/* Formats byte count as human-readable string (B/kB/MB/GB) */
-static const char *formatBytes(uint64_t bytes, bool roundUp)
+/* Formats byte count as human-readable string (B/kB/MB/GB). Per-instance buffer. */
+static const char *formatBytes(ft2_instance_t *inst, uint64_t bytes, bool roundUp)
 {
-	if (bytes == 0) { strcpy(byteFormatBuffer, "0"); return byteFormatBuffer; }
+	ft2_trim_state_t *trim = TRIM_STATE(inst);
+	char *buf = trim->byteFormatBuffer;
+
+	if (bytes == 0) { strcpy(buf, "0"); return buf; }
 
 	bytes %= 1000ULL*1024*1024*999;
 	double dBytes;
@@ -56,25 +58,25 @@ static const char *formatBytes(uint64_t bytes, bool roundUp)
 	if (bytes >= 1024ULL*1024*1024*9)
 	{
 		dBytes = bytes / (1024.0*1024.0*1024.0);
-		(dBytes < 100) ? sprintf(byteFormatBuffer, "%.1fGB", dBytes)
-		               : sprintf(byteFormatBuffer, "%dGB", roundUp ? (int32_t)ceil(dBytes) : (int32_t)dBytes);
+		(dBytes < 100) ? sprintf(buf, "%.1fGB", dBytes)
+		               : sprintf(buf, "%dGB", roundUp ? (int32_t)ceil(dBytes) : (int32_t)dBytes);
 	}
 	else if (bytes >= 1024*1024*9)
 	{
 		dBytes = bytes / (1024.0*1024.0);
-		(dBytes < 100) ? sprintf(byteFormatBuffer, "%.1fMB", dBytes)
-		               : sprintf(byteFormatBuffer, "%dMB", roundUp ? (int32_t)ceil(dBytes) : (int32_t)dBytes);
+		(dBytes < 100) ? sprintf(buf, "%.1fMB", dBytes)
+		               : sprintf(buf, "%dMB", roundUp ? (int32_t)ceil(dBytes) : (int32_t)dBytes);
 	}
 	else if (bytes >= 1024*9)
 	{
 		dBytes = bytes / 1024.0;
-		(dBytes < 100) ? sprintf(byteFormatBuffer, "%.1fkB", dBytes)
-		               : sprintf(byteFormatBuffer, "%dkB", roundUp ? (int32_t)ceil(dBytes) : (int32_t)dBytes);
+		(dBytes < 100) ? sprintf(buf, "%.1fkB", dBytes)
+		               : sprintf(buf, "%dkB", roundUp ? (int32_t)ceil(dBytes) : (int32_t)dBytes);
 	}
 	else
-		sprintf(byteFormatBuffer, "%d", (int32_t)bytes);
+		sprintf(buf, "%d", (int32_t)bytes);
 
-	return byteFormatBuffer;
+	return buf;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -108,13 +110,13 @@ void drawTrimScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 	char sizeBuf[16];
 	const char *s;
 
-	s = (trim->xmSize64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(trim->xmSize64, true)), sizeBuf) : "Unknown";
+	s = (trim->xmSize64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(inst, trim->xmSize64, true)), sizeBuf) : "Unknown";
 	textOut(video, bmp, 287 - textWidth(s), 111, PAL_FORGRND, s);
 
-	s = (trim->xmAfterTrimSize64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(trim->xmAfterTrimSize64, true)), sizeBuf) : "Unknown";
+	s = (trim->xmAfterTrimSize64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(inst, trim->xmAfterTrimSize64, true)), sizeBuf) : "Unknown";
 	textOut(video, bmp, 287 - textWidth(s), 124, PAL_FORGRND, s);
 
-	s = (trim->spaceSaved64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(trim->spaceSaved64, false)), sizeBuf) : "Unknown";
+	s = (trim->spaceSaved64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(inst, trim->spaceSaved64, false)), sizeBuf) : "Unknown";
 	textOut(video, bmp, 287 - textWidth(s), 137, PAL_FORGRND, s);
 
 	/* Widgets */

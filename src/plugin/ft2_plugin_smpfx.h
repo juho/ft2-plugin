@@ -12,6 +12,18 @@ struct ft2_instance_t;
 struct ft2_video_t;
 struct ft2_bmp_t;
 
+/* Filter types */
+#define FILTER_LOWPASS  0
+#define FILTER_HIGHPASS 1
+
+/* Sample effects state (per-instance) */
+typedef struct smpfx_state_t {
+	bool normalization;
+	uint8_t lastFilterType;
+	int32_t lastLpCutoff, lastHpCutoff, filterResonance;
+	int32_t smpCycles, lastWaveLength, lastAmp;
+} smpfx_state_t;
+
 /* Undo */
 void clearSampleUndo(struct ft2_instance_t *inst);
 void fillSampleUndo(struct ft2_instance_t *inst, bool keepSampleMark);

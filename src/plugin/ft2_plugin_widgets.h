@@ -41,6 +41,7 @@ typedef struct widget_mouse_state_t {
 	uint8_t buttonCounter, mode;
 	int8_t xBias, yBias;
 	bool mouseOverTextBox;
+	int32_t scrollLastX, scrollLastY, scrollBias;
 } widget_mouse_state_t;
 
 /* Widget state container */

@@ -522,6 +522,10 @@ typedef struct ft2_diskop_state_t
 	int32_t dirPos;                  /* Scroll position */
 	int32_t selectedEntry;           /* -1 = none */
 
+	/* Double-click detection state */
+	int32_t lastClickedEntry;        /* Entry index of last click, -1 = none */
+	uint32_t lastClickTime;          /* Frame count of last click */
+
 	uint8_t itemType;                /* 0=Module, 1=Instr, 2=Sample, 3=Pattern, 4=Track */
 	uint8_t saveFormat[5];           /* Per-item save format */
 	bool showAllFiles;

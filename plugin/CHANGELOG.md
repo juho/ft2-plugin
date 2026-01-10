@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.52 (Jan 10, 2026)
+
+- Refactor: Better state tracking in sample editor, trim and about screen.
+
 ## 1.0.51 (Jan 10, 2026)
 
 - Fix: Saving of user-defined colours in config works properly.

@@ -228,6 +228,14 @@ void ft2_sample_ed_init(ft2_sample_editor_t *editor, ft2_video_t *video)
 	editor->oldSmpPosLine = -1;
 	editor->dPos2ScrMul = 1.0;
 	editor->dScr2SmpPosMul = 1.0;
+
+	/* Sample effects defaults */
+	editor->smpfx.lastFilterType = FILTER_LOWPASS;
+	editor->smpfx.lastLpCutoff = 2000;
+	editor->smpfx.lastHpCutoff = 200;
+	editor->smpfx.smpCycles = 1;
+	editor->smpfx.lastWaveLength = 64;
+	editor->smpfx.lastAmp = 75;
 }
 
 /*
@@ -1271,8 +1279,6 @@ void ft2_sample_ed_mouse_up(ft2_instance_t *inst)
 /*                       CLIPBOARD OPERATIONS                                */
 /* ------------------------------------------------------------------------- */
 
-static ft2_sample_t clipboardSampleInfo;
-
 static ft2_sample_t *getCurrentSampleWithInst(ft2_sample_editor_t *editor, ft2_instance_t *inst)
 {
 	if (!editor || !inst) return NULL;
@@ -1328,12 +1334,13 @@ void ft2_sample_ed_copy(ft2_instance_t *inst)
 
 	if (start == 0 && end == s->length)
 	{
-		clipboardSampleInfo = *s;
-		clip->infoPtr = &clipboardSampleInfo;
+		clip->sampleInfo = *s;
+		clip->hasInfo = true;
 		clip->didCopyWholeSample = true;
 	}
 	else
 	{
+		clip->hasInfo = false;
 		clip->didCopyWholeSample = false;
 	}
 }
@@ -1402,17 +1409,17 @@ static void pasteOverwrite(ft2_sample_editor_t *editor, ft2_sample_t *s, ft2_ins
 	memcpy(s->dataPtr, clip->data, (size_t)(clip->length * bytesPerSample));
 	
 	/* Restore sample info if we copied a whole sample */
-	if (clip->didCopyWholeSample && clip->infoPtr)
+	if (clip->didCopyWholeSample && clip->hasInfo)
 	{
-		memcpy(s->name, clip->infoPtr->name, 22);
-		s->length = clip->infoPtr->length;
-		s->loopStart = clip->infoPtr->loopStart;
-		s->loopLength = clip->infoPtr->loopLength;
-		s->volume = clip->infoPtr->volume;
-		s->panning = clip->infoPtr->panning;
-		s->finetune = clip->infoPtr->finetune;
-		s->relativeNote = clip->infoPtr->relativeNote;
-		s->flags = clip->infoPtr->flags;
+		memcpy(s->name, clip->sampleInfo.name, 22);
+		s->length = clip->sampleInfo.length;
+		s->loopStart = clip->sampleInfo.loopStart;
+		s->loopLength = clip->sampleInfo.loopLength;
+		s->volume = clip->sampleInfo.volume;
+		s->panning = clip->sampleInfo.panning;
+		s->finetune = clip->sampleInfo.finetune;
+		s->relativeNote = clip->sampleInfo.relativeNote;
+		s->flags = clip->sampleInfo.flags;
 	}
 	else
 	{
@@ -2306,7 +2313,7 @@ void clearCopyBuffer(ft2_instance_t *inst)
 	clip->length = 0;
 	clip->is16Bit = false;
 	clip->didCopyWholeSample = false;
-	clip->infoPtr = NULL;
+	clip->hasInfo = false;
 }
 
 /* ------------------------------------------------------------------------- */

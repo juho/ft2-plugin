@@ -22,6 +22,12 @@ struct ft2_instance_t;
 #define HELP_WINDOW_HEIGHT 164
 #define HELP_TEXT_BUFFER_W 472
 
+/* Help screen state */
+typedef struct help_state_t {
+	uint8_t currentSubject;   /* Current help subject index (0-4) */
+	int16_t scrollLine;       /* Current scroll position */
+} help_state_t;
+
 /* Scrolling */
 void helpScrollUp(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 void helpScrollDown(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);

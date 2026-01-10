@@ -41,7 +41,13 @@ pal16;
 
 extern pal16 pluginPalTable[12][16];  /* [preset][color] */
 extern uint8_t palContrast[12][2];    /* [preset][Desktop/Buttons] */
-extern uint8_t cfg_ColorNum;          /* Current editor entry (0-5) */
+
+/* Palette editor state */
+typedef struct palette_editor_state_t {
+	uint8_t colorNum;      /* Current entry (0-5): PatText, BlockMark, TextOnBlock, Mouse, Desktop, Buttons */
+	uint8_t red, green, blue, contrast;
+	bool colorErrorShown;  /* Prevents repeated error dialogs during drag */
+} palette_editor_state_t;
 
 /* Core functions */
 uint8_t palMax(int32_t c); /* Clamp to 0-63 */
@@ -51,7 +57,7 @@ void setPal16(struct ft2_video_t *video, pal16 *p, bool redrawScreen);
 void showPaletteEditor(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 void updatePaletteEditor(struct ft2_instance_t *inst, struct ft2_video_t *video);
 void drawCurrentPaletteColor(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
-void resetPaletteErrorFlag(void); /* Call on mouse up to re-enable error dialog */
+void resetPaletteErrorFlag(struct ft2_instance_t *inst);
 
 /* Scrollbar callbacks */
 void sbPalRPos(struct ft2_instance_t *inst, uint32_t pos);

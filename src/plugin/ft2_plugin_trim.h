@@ -21,6 +21,7 @@ typedef struct ft2_trim_state_t {
 	bool removePatt, removeInst, removeSamp;
 	bool removeChans, removeSmpDataAfterLoop, convSmpsTo8Bit;
 	int64_t xmSize64, xmAfterTrimSize64, spaceSaved64;
+	char byteFormatBuffer[64];
 } ft2_trim_state_t;
 
 /* Screen visibility */

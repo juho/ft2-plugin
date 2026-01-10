@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "ft2_plugin_smpfx.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,7 +16,8 @@ extern "C" {
 struct ft2_video_t;
 struct ft2_bmp_t;
 struct ft2_instance_t;
-struct ft2_sample_t;
+
+#include "../ft2_instance.h"
 
 /* Sample clipboard state (per-instance) */
 typedef struct smp_clipboard_t {
@@ -23,7 +25,8 @@ typedef struct smp_clipboard_t {
 	int32_t length;            /* Clipboard sample length */
 	bool is16Bit;              /* Clipboard sample bit depth */
 	bool didCopyWholeSample;   /* True if entire sample was copied */
-	struct ft2_sample_t *infoPtr; /* Pointer to sampleInfo for metadata */
+	bool hasInfo;              /* True if sampleInfo is valid */
+	ft2_sample_t sampleInfo;   /* Embedded sample metadata for whole-sample copies */
 } smp_clipboard_t;
 
 /* Sample undo buffer (per-instance, single-level) */
@@ -85,6 +88,9 @@ typedef struct ft2_sample_editor_t
 	
 	/* Undo buffer (per-instance) */
 	smp_undo_t undo;
+
+	/* Sample effects state (per-instance) */
+	smpfx_state_t smpfx;
 } ft2_sample_editor_t;
 
 /* Initialization */

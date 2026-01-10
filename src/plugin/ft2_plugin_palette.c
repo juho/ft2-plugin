@@ -23,9 +23,8 @@
 #include "ft2_plugin_ui.h"
 #include "../ft2_instance.h"
 
-/* Editable entries: 0=PatText, 1=BlockMark, 2=TextOnBlock, 3=Mouse, 4=Desktop, 5=Buttons */
-uint8_t cfg_ColorNum = 0;
-static uint8_t cfg_Red, cfg_Green, cfg_Blue, cfg_Contrast;
+/* Helper macro to access per-instance palette editor state */
+#define PAL_ED(inst) (&FT2_UI(inst)->paletteEditor)
 
 /* Maps editor entry index to palette index */
 static const uint8_t FTC_EditOrder[6] = { PAL_PATTEXT, PAL_BLCKMRK, PAL_BLCKTXT, PAL_MOUSEPT, PAL_DESKTOP, PAL_BUTTONS };
@@ -164,26 +163,28 @@ void setPal16(ft2_video_t *video, pal16 *p, bool redrawScreen)
 
 /* ---------- Editor state ---------- */
 
-static bool colorErrorShown = false; /* Prevents repeated dialogs during drag */
-
 static void showColorErrorMsg(ft2_instance_t *inst)
 {
-	if (colorErrorShown) return;
+	if (!inst || !inst->ui) return;
+	palette_editor_state_t *pal = PAL_ED(inst);
+	if (pal->colorErrorShown) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (ui) {
-		ft2_dialog_show_message(&ui->dialog, "System message", "Default colors cannot be modified.");
-		colorErrorShown = true;
-	}
+	ft2_dialog_show_message(&ui->dialog, "System message", "Default colors cannot be modified.");
+	pal->colorErrorShown = true;
 }
 
-void resetPaletteErrorFlag(void) { colorErrorShown = false; }
+void resetPaletteErrorFlag(ft2_instance_t *inst)
+{
+	if (inst && inst->ui) PAL_ED(inst)->colorErrorShown = false;
+}
 
 /* Draw hex value and color swatch in config header */
 void drawCurrentPaletteColor(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (!inst || !video || !bmp) return;
-	const uint8_t palIndex = FTC_EditOrder[cfg_ColorNum];
-	uint32_t color = RGB32(P6_TO_P8(cfg_Red), P6_TO_P8(cfg_Green), P6_TO_P8(cfg_Blue)) & 0xFFFFFF;
+	if (!inst || !video || !bmp || !inst->ui) return;
+	palette_editor_state_t *pal = PAL_ED(inst);
+	const uint8_t palIndex = FTC_EditOrder[pal->colorNum];
+	uint32_t color = RGB32(P6_TO_P8(pal->red), P6_TO_P8(pal->green), P6_TO_P8(pal->blue)) & 0xFFFFFF;
 
 	textOutShadow(video, bmp, 516, 3, PAL_FORGRND, PAL_DSKTOP2, "Palette:");
 	hexOutBg(video, bmp, 573, 3, PAL_FORGRND, PAL_DESKTOP, color, 6);
@@ -194,32 +195,33 @@ void drawCurrentPaletteColor(ft2_instance_t *inst, ft2_video_t *video, const ft2
 /* Sync sliders with current palette entry */
 void updatePaletteEditor(ft2_instance_t *inst, ft2_video_t *video)
 {
-	if (!inst) return;
+	if (!inst || !inst->ui) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	ft2_widgets_t *widgets = ui ? &ui->widgets : NULL;
+	ft2_widgets_t *widgets = &ui->widgets;
+	palette_editor_state_t *pal = PAL_ED(inst);
 
-	const uint8_t colorNum = FTC_EditOrder[cfg_ColorNum];
+	const uint8_t colorNum = FTC_EditOrder[pal->colorNum];
 	const uint8_t palNum = inst->config.palettePreset;
 
-	cfg_Red = pluginPalTable[palNum][colorNum].r;
-	cfg_Green = pluginPalTable[palNum][colorNum].g;
-	cfg_Blue = pluginPalTable[palNum][colorNum].b;
-	cfg_Contrast = (cfg_ColorNum >= 4) ? palContrast[palNum][cfg_ColorNum - 4] : 0;
+	pal->red = pluginPalTable[palNum][colorNum].r;
+	pal->green = pluginPalTable[palNum][colorNum].g;
+	pal->blue = pluginPalTable[palNum][colorNum].b;
+	pal->contrast = (pal->colorNum >= 4) ? palContrast[palNum][pal->colorNum - 4] : 0;
 
-	setScrollBarPos(inst, widgets, video, SB_PAL_R, cfg_Red, false);
-	setScrollBarPos(inst, widgets, video, SB_PAL_G, cfg_Green, false);
-	setScrollBarPos(inst, widgets, video, SB_PAL_B, cfg_Blue, false);
-	setScrollBarPos(inst, widgets, video, SB_PAL_CONTRAST, cfg_Contrast, false);
+	setScrollBarPos(inst, widgets, video, SB_PAL_R, pal->red, false);
+	setScrollBarPos(inst, widgets, video, SB_PAL_G, pal->green, false);
+	setScrollBarPos(inst, widgets, video, SB_PAL_B, pal->blue, false);
+	setScrollBarPos(inst, widgets, video, SB_PAL_CONTRAST, pal->contrast, false);
 }
 
 /* Called when RGB/contrast sliders are dragged. Only user-defined palette is editable. */
 static void paletteDragMoved(ft2_instance_t *inst)
 {
-	if (!inst) return;
+	if (!inst || !inst->ui) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (!ui) return;
 	ft2_video_t *video = &ui->video;
 	ft2_widgets_t *widgets = &ui->widgets;
+	palette_editor_state_t *pal = PAL_ED(inst);
 
 	if (inst->config.palettePreset != PAL_USER_DEFINED) {
 		updatePaletteEditor(inst, video);
@@ -227,33 +229,33 @@ static void paletteDragMoved(ft2_instance_t *inst)
 		return;
 	}
 
-	const uint8_t colorNum = FTC_EditOrder[cfg_ColorNum];
+	const uint8_t colorNum = FTC_EditOrder[pal->colorNum];
 	const uint8_t p = inst->config.palettePreset;
 
-	pluginPalTable[p][colorNum].r = cfg_Red;
-	pluginPalTable[p][colorNum].g = cfg_Green;
-	pluginPalTable[p][colorNum].b = cfg_Blue;
+	pluginPalTable[p][colorNum].r = pal->red;
+	pluginPalTable[p][colorNum].g = pal->green;
+	pluginPalTable[p][colorNum].b = pal->blue;
 
 	/* Desktop/Buttons derive 3 shades via contrast-scaled power curve */
-	if (cfg_ColorNum >= 4) {
-		int32_t contrast = (cfg_Contrast < 1) ? 1 : cfg_Contrast;
+	if (pal->colorNum >= 4) {
+		int32_t contrast = (pal->contrast < 1) ? 1 : pal->contrast;
 		double dContrast = contrast * (1.0 / 40.0);
 		for (int32_t i = 0; i < 3; i++) {
-			int32_t k = scaleOrder[i] + (cfg_ColorNum - 4) * 2;
+			int32_t k = scaleOrder[i] + (pal->colorNum - 4) * 2;
 			double dMul = palPow((i + 1) * 0.5, dContrast);
-			pluginPalTable[p][k].r = palMax((int32_t)(cfg_Red * dMul + 0.5));
-			pluginPalTable[p][k].g = palMax((int32_t)(cfg_Green * dMul + 0.5));
-			pluginPalTable[p][k].b = palMax((int32_t)(cfg_Blue * dMul + 0.5));
+			pluginPalTable[p][k].r = palMax((int32_t)(pal->red * dMul + 0.5));
+			pluginPalTable[p][k].g = palMax((int32_t)(pal->green * dMul + 0.5));
+			pluginPalTable[p][k].b = palMax((int32_t)(pal->blue * dMul + 0.5));
 		}
-		palContrast[p][cfg_ColorNum - 4] = cfg_Contrast;
+		palContrast[p][pal->colorNum - 4] = pal->contrast;
 	} else {
-		cfg_Contrast = 0;
-		setScrollBarPos(inst, widgets, video, SB_PAL_R, cfg_Red, false);
-		setScrollBarPos(inst, widgets, video, SB_PAL_G, cfg_Green, false);
-		setScrollBarPos(inst, widgets, video, SB_PAL_B, cfg_Blue, false);
+		pal->contrast = 0;
+		setScrollBarPos(inst, widgets, video, SB_PAL_R, pal->red, false);
+		setScrollBarPos(inst, widgets, video, SB_PAL_G, pal->green, false);
+		setScrollBarPos(inst, widgets, video, SB_PAL_B, pal->blue, false);
 	}
 
-	setScrollBarPos(inst, widgets, video, SB_PAL_CONTRAST, cfg_Contrast, false);
+	setScrollBarPos(inst, widgets, video, SB_PAL_CONTRAST, pal->contrast, false);
 	setPal16(video, pluginPalTable[inst->config.palettePreset], true);
 	drawCurrentPaletteColor(inst, video, &ui->bmp);
 
@@ -269,10 +271,26 @@ static void paletteDragMoved(ft2_instance_t *inst)
 
 /* ---------- Scrollbar callbacks ---------- */
 
-void sbPalRPos(ft2_instance_t *inst, uint32_t pos) { if (cfg_Red != (uint8_t)pos) { cfg_Red = (uint8_t)pos; paletteDragMoved(inst); } }
-void sbPalGPos(ft2_instance_t *inst, uint32_t pos) { if (cfg_Green != (uint8_t)pos) { cfg_Green = (uint8_t)pos; paletteDragMoved(inst); } }
-void sbPalBPos(ft2_instance_t *inst, uint32_t pos) { if (cfg_Blue != (uint8_t)pos) { cfg_Blue = (uint8_t)pos; paletteDragMoved(inst); } }
-void sbPalContrastPos(ft2_instance_t *inst, uint32_t pos) { if (cfg_Contrast != (uint8_t)pos) { cfg_Contrast = (uint8_t)pos; paletteDragMoved(inst); } }
+void sbPalRPos(ft2_instance_t *inst, uint32_t pos) {
+	if (!inst || !inst->ui) return;
+	palette_editor_state_t *pal = PAL_ED(inst);
+	if (pal->red != (uint8_t)pos) { pal->red = (uint8_t)pos; paletteDragMoved(inst); }
+}
+void sbPalGPos(ft2_instance_t *inst, uint32_t pos) {
+	if (!inst || !inst->ui) return;
+	palette_editor_state_t *pal = PAL_ED(inst);
+	if (pal->green != (uint8_t)pos) { pal->green = (uint8_t)pos; paletteDragMoved(inst); }
+}
+void sbPalBPos(ft2_instance_t *inst, uint32_t pos) {
+	if (!inst || !inst->ui) return;
+	palette_editor_state_t *pal = PAL_ED(inst);
+	if (pal->blue != (uint8_t)pos) { pal->blue = (uint8_t)pos; paletteDragMoved(inst); }
+}
+void sbPalContrastPos(ft2_instance_t *inst, uint32_t pos) {
+	if (!inst || !inst->ui) return;
+	palette_editor_state_t *pal = PAL_ED(inst);
+	if (pal->contrast != (uint8_t)pos) { pal->contrast = (uint8_t)pos; paletteDragMoved(inst); }
+}
 
 /* ---------- Pushbutton callbacks (RGB/Contrast +/-) ---------- */
 
@@ -297,10 +315,9 @@ void configPalContUp(ft2_instance_t *inst)   { PAL_BTN_HELPER(SB_PAL_CONTRAST, s
 /* ---------- Radio button callbacks - entry selection ---------- */
 
 #define PAL_ENTRY_CB(num, rb_id) \
-	if (!inst) return; \
+	if (!inst || !inst->ui) return; \
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui; \
-	if (!ui) return; \
-	cfg_ColorNum = num; \
+	PAL_ED(inst)->colorNum = num; \
 	checkRadioButtonNoRedraw(&ui->widgets, rb_id); \
 	updatePaletteEditor(inst, &ui->video)
 
@@ -376,7 +393,7 @@ void showPaletteEditor(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_PAL_PRESET);
 
 	/* Set radio button states */
-	checkRadioButtonNoRedraw(widgets, RB_CONFIG_PAL_PATTEXT + cfg_ColorNum);
+	checkRadioButtonNoRedraw(widgets, RB_CONFIG_PAL_PATTEXT + PAL_ED(inst)->colorNum);
 	
 	uint16_t presetRbId;
 	switch (inst->config.palettePreset) {

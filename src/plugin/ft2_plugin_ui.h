@@ -19,6 +19,9 @@
 #include "ft2_plugin_textbox.h"
 #include "ft2_plugin_modal_panels.h"
 #include "ft2_plugin_trim.h"
+#include "ft2_plugin_palette.h"
+#include "ft2_plugin_help.h"
+#include "ft2_plugin_about.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,6 +59,9 @@ typedef struct ft2_ui_t {
 	ft2_textbox_state_t textbox;
 	ft2_modal_state_t modalPanels;
 	ft2_trim_state_t trimState;
+	palette_editor_state_t paletteEditor;
+	help_state_t helpState;
+	about_state_t aboutState;
 	int16_t currInstr;
 	int16_t currSample;
 	int16_t currOctave;

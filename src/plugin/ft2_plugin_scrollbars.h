@@ -73,5 +73,5 @@ void scrollBarScrollRight(struct ft2_instance_t *inst, struct ft2_widgets_t *wid
 
 /* Mouse handling */
 int16_t testScrollBarMouseDown(struct ft2_widgets_t *widgets, struct ft2_instance_t *inst, struct ft2_video_t *video, int32_t mouseX, int32_t mouseY, bool sysReqShown);
-void testScrollBarMouseRelease(struct ft2_widgets_t *widgets, struct ft2_video_t *video, int16_t lastScrollBarID);
+void testScrollBarMouseRelease(struct ft2_widgets_t *widgets, struct ft2_instance_t *inst, struct ft2_video_t *video, int16_t lastScrollBarID);
 void handleScrollBarWhileMouseDown(struct ft2_widgets_t *widgets, struct ft2_instance_t *inst, struct ft2_video_t *video, int32_t mouseX, int32_t mouseY, int16_t scrollBarID);

@@ -18,8 +18,6 @@
 #define FIXED_THUMB_SIZE 15
 #define MIN_THUMB_SIZE 5
 
-static int32_t lastMouseX, lastMouseY, scrollBias;  /* Drag tracking */
-
 /* ------------------------------------------------------------------------- */
 /*                      SCROLLBAR DEFINITIONS                                */
 /* ------------------------------------------------------------------------- */
@@ -456,17 +454,17 @@ int16_t testScrollBarMouseDown(ft2_widgets_t *widgets, struct ft2_instance_t *in
 		if (mouseX < sb->x || mouseX >= sb->x + sb->w || mouseY < sb->y || mouseY >= sb->y + sb->h) continue;
 
 		state->state = SCROLLBAR_PRESSED;
-		lastMouseX = mouseX;
-		lastMouseY = mouseY;
+		widgets->mouse.scrollLastX = mouseX;
+		widgets->mouse.scrollLastY = mouseY;
 
 		if (sb->type == SCROLLBAR_HORIZONTAL)
 		{
 			if (mouseX >= state->thumbX && mouseX < state->thumbX + state->thumbW)
-				scrollBias = mouseX - state->thumbX;
+				widgets->mouse.scrollBias = mouseX - state->thumbX;
 			else
 			{
-				scrollBias = state->thumbW >> 1;
-				int32_t scrollPos = CLAMP(mouseX - scrollBias - sb->x, 0, (int32_t)sb->w);
+				widgets->mouse.scrollBias = state->thumbW >> 1;
+				int32_t scrollPos = CLAMP(mouseX - widgets->mouse.scrollBias - sb->x, 0, (int32_t)sb->w);
 				int32_t length = (sb->thumbType == SCROLLBAR_FIXED_THUMB_SIZE) ? sb->w - state->thumbW
 					: sb->w + ((state->end > 0 ? (int16_t)CLAMP((int32_t)((sb->w / (double)state->end) * state->page + 0.5), 1, sb->w) : 1) - state->thumbW);
 				if (length < 1) length = 1;
@@ -476,11 +474,11 @@ int16_t testScrollBarMouseDown(ft2_widgets_t *widgets, struct ft2_instance_t *in
 		else
 		{
 			if (mouseY >= state->thumbY && mouseY < state->thumbY + state->thumbH)
-				scrollBias = mouseY - state->thumbY;
+				widgets->mouse.scrollBias = mouseY - state->thumbY;
 			else
 			{
-				scrollBias = state->thumbH >> 1;
-				int32_t scrollPos = CLAMP(mouseY - scrollBias - sb->y, 0, (int32_t)sb->h);
+				widgets->mouse.scrollBias = state->thumbH >> 1;
+				int32_t scrollPos = CLAMP(mouseY - widgets->mouse.scrollBias - sb->y, 0, (int32_t)sb->h);
 				int16_t origThumb = (state->end > 0) ? (int16_t)CLAMP((int32_t)((sb->h / (double)state->end) * state->page + 0.5), 1, sb->h) : 1;
 				int32_t length = sb->h + (origThumb - state->thumbH);
 				if (length < 1) length = 1;
@@ -492,7 +490,7 @@ int16_t testScrollBarMouseDown(ft2_widgets_t *widgets, struct ft2_instance_t *in
 	return -1;
 }
 
-void testScrollBarMouseRelease(ft2_widgets_t *widgets, struct ft2_video_t *video, int16_t lastScrollBarID)
+void testScrollBarMouseRelease(ft2_widgets_t *widgets, struct ft2_instance_t *inst, struct ft2_video_t *video, int16_t lastScrollBarID)
 {
 	if (!widgets || lastScrollBarID < 0 || lastScrollBarID >= NUM_SCROLLBARS) return;
 
@@ -502,7 +500,7 @@ void testScrollBarMouseRelease(ft2_widgets_t *widgets, struct ft2_video_t *video
 		state->state = SCROLLBAR_UNPRESSED;
 		if (video) drawScrollBar(widgets, video, lastScrollBarID);
 	}
-	resetPaletteErrorFlag();
+	resetPaletteErrorFlag(inst);
 }
 
 /* Tracks thumb drag - only updates when mouse moves along relevant axis */
@@ -517,10 +515,10 @@ void handleScrollBarWhileMouseDown(ft2_widgets_t *widgets, struct ft2_instance_t
 
 	if (sb->type == SCROLLBAR_HORIZONTAL)
 	{
-		if (mouseX == lastMouseX) return;
-		lastMouseX = mouseX;
+		if (mouseX == widgets->mouse.scrollLastX) return;
+		widgets->mouse.scrollLastX = mouseX;
 
-		int32_t scrollPos = CLAMP(mouseX - scrollBias - sb->x, 0, (int32_t)sb->w);
+		int32_t scrollPos = CLAMP(mouseX - widgets->mouse.scrollBias - sb->x, 0, (int32_t)sb->w);
 		int32_t length = (sb->thumbType == SCROLLBAR_FIXED_THUMB_SIZE) ? sb->w - state->thumbW
 			: sb->w + ((state->end > 0 ? (int16_t)CLAMP((int32_t)((sb->w / (double)state->end) * state->page + 0.5), 1, sb->w) : 1) - state->thumbW);
 		if (length < 1) length = 1;
@@ -530,10 +528,10 @@ void handleScrollBarWhileMouseDown(ft2_widgets_t *widgets, struct ft2_instance_t
 	}
 	else
 	{
-		if (mouseY == lastMouseY) return;
-		lastMouseY = mouseY;
+		if (mouseY == widgets->mouse.scrollLastY) return;
+		widgets->mouse.scrollLastY = mouseY;
 
-		int32_t scrollPos = CLAMP(mouseY - scrollBias - sb->y, 0, (int32_t)sb->h);
+		int32_t scrollPos = CLAMP(mouseY - widgets->mouse.scrollBias - sb->y, 0, (int32_t)sb->h);
 		int16_t origThumb = (state->end > 0) ? (int16_t)CLAMP((int32_t)((sb->h / (double)state->end) * state->page + 0.5), 1, sb->h) : 1;
 		int32_t length = sb->h + (origThumb - state->thumbH);
 		if (length < 1) length = 1;

@@ -14,13 +14,11 @@
 #include "ft2_plugin_pushbuttons.h"
 #include "ft2_plugin_about.h"
 #include "ft2_plugin_ui.h"
+#include "../ft2_instance.h"
 
-/* Constants from original ft2_about.c */
-#define OLD_NUM_STARS 1000
-#define NUM_STARS 1500
+/* Constants */
 #define LOGO_ALPHA_PERCENTAGE 71
 #define STARSHINE_ALPHA_PERCENTAGE 33
-#define SINUS_PHASES 1024
 #define ABOUT_SCREEN_X 3
 #define ABOUT_SCREEN_Y 3
 #define ABOUT_SCREEN_W 626
@@ -36,41 +34,17 @@
  */
 #define SCALE_VBLANK_DELTA(x) ((int32_t)round((x) * (70.0 / 60.0)))
 
-/* Old starfield types (classic FT2) */
-typedef struct
-{
-	int16_t x, y, z;
-} oldVector_t;
-
-typedef struct
-{
-	uint16_t x, y, z;
-} oldRotate_t;
-
-typedef struct
-{
-	oldVector_t x, y, z;
-} oldMatrix_t;
-
-/* New starfield types */
-typedef struct
-{
-	float x, y, z;
-} vector_t;
-
-typedef struct
-{
-	vector_t x, y, z;
-} matrix_t;
+/* Helper macro to access per-instance about state */
+#define ABOUT_STATE(inst) (&FT2_UI(inst)->aboutState)
 
 /* Maps depth (0-23) to palette index for old starfield. Index selects PAL_FORGRND variants. */
 static const uint8_t starColConv[24] = { 2,2,2,2,2,2,2,2, 2,2,2,1,1,1,3,3, 3,3,3,3,3,3,3,3 };
 
 /* Text strings - must use Latin-1 escapes for FT2 bitmap font compatibility */
-static char *customText0 = "Original FT2 by Magnus \"Vogue\" H\224gdahl & Fredrik \"Mr.H\" Huss";
-static char *customText1 = "Clone by Olav \"8bitbubsy\" S\233rensen (16-bits.org)";
-static char *customText2 = "Plugin by Blamstrain/TPOLM (blamstrain.com)";
-static char *customText3 = "";
+static const char *customText0 = "Original FT2 by Magnus \"Vogue\" H\224gdahl & Fredrik \"Mr.H\" Huss";
+static const char *customText1 = "Clone by Olav \"8bitbubsy\" S\233rensen (16-bits.org)";
+static const char *customText2 = "Plugin by Blamstrain/TPOLM (blamstrain.com)";
+static const char *customText3 = "";
 static char customText4[256];
 
 /* Plugin version string - defined by CMake, fallback for IDE parsing */
@@ -78,30 +52,19 @@ static char customText4[256];
 #define FT2_PLUGIN_VERSION "0.0.0"
 #endif
 
-/* Static state */
-static int16_t customText0X, customText0Y, customText1Y, customText2Y, customText3Y;
-static int16_t customText4Y, customText1X, customText2X, customText3X, customText4X;
-static int16_t sin16[SINUS_PHASES], zSpeed;
-static int32_t lastStarScreenPos[OLD_NUM_STARS];
+/* Global lookup tables (computed once, read-only after) */
+static int16_t sin16[ABOUT_SINUS_PHASES];
+static bool tablesInitialized = false;
 static const uint16_t logoAlpha16 = (65535 * LOGO_ALPHA_PERCENTAGE) / 100;
 static const uint16_t starShineAlpha16 = (65535 * STARSHINE_ALPHA_PERCENTAGE) / 100;
-static uint32_t sinp1, sinp2;
-static oldVector_t oldStarPoints[OLD_NUM_STARS];
-static oldRotate_t oldStarRotation;
-static oldMatrix_t oldStarMatrix;
-static vector_t starPoints[NUM_STARS], starRotation;
-static matrix_t starMatrix;
-static bool initialized = false;
-static bool useNewAboutScreen = true;
 
-/* Linear congruential PRNG. Matches standalone ft2_random.c for reproducible star positions. */
-static uint32_t aboutRandSeed = 12345;
-static int32_t randoml(int32_t limit)
+/* Linear congruential PRNG. Uses per-instance seed. */
+static int32_t randoml(about_state_t *s, int32_t limit)
 {
 	if (limit <= 0) return 0;
-	aboutRandSeed *= 134775813;
-	aboutRandSeed++;
-	return (int32_t)(((int64_t)aboutRandSeed * limit) >> 32);
+	s->randSeed *= 134775813;
+	s->randSeed++;
+	return (int32_t)(((int64_t)s->randSeed * limit) >> 32);
 }
 
 /* Blend two 32-bit pixels */
@@ -150,55 +113,55 @@ static void blendPixelsXY(ft2_video_t *video, int32_t x, int32_t y,
 }
 
 /* Build 3x3 rotation matrix from Euler angles for old (classic FT2) starfield. */
-static void oldRotateStarfieldMatrix(void)
+static void oldRotateStarfieldMatrixInst(about_state_t *s)
 {
-	const int16_t sa = (int16_t)round(32767.0 * sin(oldStarRotation.x * (2.0 * PI / 65536.0)));
-	const int16_t ca = (int16_t)round(32767.0 * cos(oldStarRotation.x * (2.0 * PI / 65536.0)));
-	const int16_t sb = (int16_t)round(32767.0 * sin(oldStarRotation.y * (2.0 * PI / 65536.0)));
-	const int16_t cb = (int16_t)round(32767.0 * cos(oldStarRotation.y * (2.0 * PI / 65536.0)));
-	const int16_t sc = (int16_t)round(32767.0 * sin(oldStarRotation.z * (2.0 * PI / 65536.0)));
-	const int16_t cc = (int16_t)round(32767.0 * cos(oldStarRotation.z * (2.0 * PI / 65536.0)));
+	const int16_t sa = (int16_t)round(32767.0 * sin(s->oldStarRotation.x * (2.0 * PI / 65536.0)));
+	const int16_t ca = (int16_t)round(32767.0 * cos(s->oldStarRotation.x * (2.0 * PI / 65536.0)));
+	const int16_t sb = (int16_t)round(32767.0 * sin(s->oldStarRotation.y * (2.0 * PI / 65536.0)));
+	const int16_t cb = (int16_t)round(32767.0 * cos(s->oldStarRotation.y * (2.0 * PI / 65536.0)));
+	const int16_t sc = (int16_t)round(32767.0 * sin(s->oldStarRotation.z * (2.0 * PI / 65536.0)));
+	const int16_t cc = (int16_t)round(32767.0 * cos(s->oldStarRotation.z * (2.0 * PI / 65536.0)));
 
-	oldStarMatrix.x.x = ((ca * cc) >> 16) + (((sc * ((sa * sb) >> 16)) >> 16) << 1);
-	oldStarMatrix.y.x = (sa * cb) >> 16;
-	oldStarMatrix.z.x = (((cc * ((sa * sb) >> 16)) >> 16) << 1) - ((ca * sc) >> 16);
+	s->oldStarMatrix.x.x = ((ca * cc) >> 16) + (((sc * ((sa * sb) >> 16)) >> 16) << 1);
+	s->oldStarMatrix.y.x = (sa * cb) >> 16;
+	s->oldStarMatrix.z.x = (((cc * ((sa * sb) >> 16)) >> 16) << 1) - ((ca * sc) >> 16);
 
-	oldStarMatrix.x.y = (((sc * ((ca * sb) >> 16)) >> 16) << 1) - ((sa * cc) >> 16);
-	oldStarMatrix.y.y = (ca * cb) >> 16;
-	oldStarMatrix.z.y = ((sa * sc) >> 16) + (((cc * ((ca * sb) >> 16)) >> 16) << 1);
+	s->oldStarMatrix.x.y = (((sc * ((ca * sb) >> 16)) >> 16) << 1) - ((sa * cc) >> 16);
+	s->oldStarMatrix.y.y = (ca * cb) >> 16;
+	s->oldStarMatrix.z.y = ((sa * sc) >> 16) + (((cc * ((ca * sb) >> 16)) >> 16) << 1);
 
-	oldStarMatrix.x.z = (cb * sc) >> 16;
-	oldStarMatrix.y.z = 0 - (sb >> 1);
-	oldStarMatrix.z.z = (cb * cc) >> 16;
+	s->oldStarMatrix.x.z = (cb * sc) >> 16;
+	s->oldStarMatrix.y.z = 0 - (sb >> 1);
+	s->oldStarMatrix.z.z = (cb * cc) >> 16;
 }
 
 /* Render old (classic FT2) starfield: 1000 stars with integer math, pixel-erase. */
-static void oldStarfield(ft2_video_t *video)
+static void oldStarfieldInst(about_state_t *s, ft2_video_t *video)
 {
-	if (video == NULL || video->frameBuffer == NULL)
+	if (video == NULL || video->frameBuffer == NULL || !s)
 		return;
 
-	oldVector_t *star = oldStarPoints;
-	for (int32_t i = 0; i < OLD_NUM_STARS; i++, star++)
+	about_old_vector_t *star = s->oldStarPoints;
+	for (int32_t i = 0; i < ABOUT_OLD_NUM_STARS; i++, star++)
 	{
 		/* Erase last star pixel */
-		int32_t screenBufferPos = lastStarScreenPos[i];
+		int32_t screenBufferPos = s->lastStarScreenPos[i];
 		if (screenBufferPos >= 0 && screenBufferPos < SCREEN_W * SCREEN_H)
 		{
 			video->frameBuffer[screenBufferPos] = video->palette[PAL_BCKGRND];
-			lastStarScreenPos[i] = -1;
+			s->lastStarScreenPos[i] = -1;
 		}
 
-		star->z += zSpeed; /* int16_t overflow wraps stars to back of field */
+		star->z += s->zSpeed; /* int16_t overflow wraps stars to back of field */
 
-		int16_t z = (((oldStarMatrix.x.z * star->x) >> 16) + ((oldStarMatrix.y.z * star->y) >> 16) + ((oldStarMatrix.z.z * star->z) >> 16)) + 9000;
+		int16_t z = (((s->oldStarMatrix.x.z * star->x) >> 16) + ((s->oldStarMatrix.y.z * star->y) >> 16) + ((s->oldStarMatrix.z.z * star->z) >> 16)) + 9000;
 		if (z <= 100) continue;
 		
-		int32_t y = ((oldStarMatrix.x.y * star->x) >> 16) + ((oldStarMatrix.y.y * star->y) >> 16) + ((oldStarMatrix.z.y * star->z) >> 16);
+		int32_t y = ((s->oldStarMatrix.x.y * star->x) >> 16) + ((s->oldStarMatrix.y.y * star->y) >> 16) + ((s->oldStarMatrix.z.y * star->z) >> 16);
 		y = (int16_t)((y << 7) / z) + 84;
 		if ((uint16_t)y > 173-6) continue;
 
-		int32_t x = ((oldStarMatrix.x.x * star->x) >> 16) + ((oldStarMatrix.y.x * star->y) >> 16) + ((oldStarMatrix.z.x * star->z) >> 16);
+		int32_t x = ((s->oldStarMatrix.x.x * star->x) >> 16) + ((s->oldStarMatrix.y.x * star->y) >> 16) + ((s->oldStarMatrix.z.x * star->z) >> 16);
 		x = (int16_t)((((x >> 2) + x) << 7) / z) + (320-8);
 		if ((uint16_t)x >= 640-16)
 			continue;
@@ -213,7 +176,7 @@ static void oldStarfield(ft2_video_t *video)
 				if (col < 24)
 				{
 					video->frameBuffer[screenBufferPos] = video->palette[starColConv[col]];
-					lastStarScreenPos[i] = screenBufferPos;
+					s->lastStarScreenPos[i] = screenBufferPos;
 				}
 			}
 		}
@@ -221,58 +184,58 @@ static void oldStarfield(ft2_video_t *video)
 }
 
 /* Build 3x3 rotation matrix from Euler angles for new starfield (float precision). */
-static void rotateStarfieldMatrix(void)
+static void rotateStarfieldMatrixInst(about_state_t *s)
 {
 	const float F_2PI = (float)(2.0 * PI);
 
-	const float rx2p = starRotation.x * F_2PI;
+	const float rx2p = s->starRotation.x * F_2PI;
 	const float xsin = sinf(rx2p);
 	const float xcos = cosf(rx2p);
 
-	const float ry2p = starRotation.y * F_2PI;
+	const float ry2p = s->starRotation.y * F_2PI;
 	const float ysin = sinf(ry2p);
 	const float ycos = cosf(ry2p);
 
-	const float rz2p = starRotation.z * F_2PI;
+	const float rz2p = s->starRotation.z * F_2PI;
 	const float zsin = sinf(rz2p);
 	const float zcos = cosf(rz2p);
 
-	starMatrix.x.x = (xcos * zcos) + (zsin * xsin * ysin);
-	starMatrix.y.x = xsin * ycos;
-	starMatrix.z.x = (zcos * xsin * ysin) - (xcos * zsin);
+	s->starMatrix.x.x = (xcos * zcos) + (zsin * xsin * ysin);
+	s->starMatrix.y.x = xsin * ycos;
+	s->starMatrix.z.x = (zcos * xsin * ysin) - (xcos * zsin);
 
-	starMatrix.x.y = (zsin * xcos * ysin) - (xsin * zcos);
-	starMatrix.y.y = xcos * ycos;
-	starMatrix.z.y = (xsin * zsin) + (zcos * xcos * ysin);
+	s->starMatrix.x.y = (zsin * xcos * ysin) - (xsin * zcos);
+	s->starMatrix.y.y = xcos * ycos;
+	s->starMatrix.z.y = (xsin * zsin) + (zcos * xcos * ysin);
 
-	starMatrix.x.z = ycos * zsin;
-	starMatrix.y.z = 0.0f - ysin;
-	starMatrix.z.z = ycos * zcos;
+	s->starMatrix.x.z = ycos * zsin;
+	s->starMatrix.y.z = 0.0f - ysin;
+	s->starMatrix.z.z = ycos * zcos;
 }
 
 /* Render new starfield: 1500 stars with float math, anti-aliased glow effect. */
-static void starfield(ft2_video_t *video)
+static void starfieldInst(about_state_t *s, ft2_video_t *video)
 {
-	if (video == NULL || video->frameBuffer == NULL)
+	if (video == NULL || video->frameBuffer == NULL || !s)
 		return;
 
-	vector_t *star = starPoints;
-	for (int16_t i = 0; i < NUM_STARS; i++, star++)
+	about_vector_t *star = s->starPoints;
+	for (int16_t i = 0; i < ABOUT_NUM_STARS; i++, star++)
 	{
 		star->z += 0.0001f;
 		if (star->z >= 0.5f)
 			star->z -= 1.0f;
 
-		const float z = (starMatrix.x.z * star->x) + (starMatrix.y.z * star->y) + (starMatrix.z.z * star->z) + 0.5f;
+		const float z = (s->starMatrix.x.z * star->x) + (s->starMatrix.y.z * star->y) + (s->starMatrix.z.z * star->z) + 0.5f;
 		if (z <= 0.0f)
 			continue;
 
-		float y = (((starMatrix.x.y * star->x) + (starMatrix.y.y * star->y) + (starMatrix.z.y * star->z)) / z) * 400.0f;
+		float y = (((s->starMatrix.x.y * star->x) + (s->starMatrix.y.y * star->y) + (s->starMatrix.z.y * star->z)) / z) * 400.0f;
 		const int32_t outY = (ABOUT_SCREEN_Y + (ABOUT_SCREEN_H / 2)) + (int32_t)y;
 		if (outY < ABOUT_SCREEN_Y || outY >= ABOUT_SCREEN_Y + ABOUT_SCREEN_H)
 			continue;
 
-		float x = (((starMatrix.x.x * star->x) + (starMatrix.y.x * star->y) + (starMatrix.z.x * star->z)) / z) * 400.0f;
+		float x = (((s->starMatrix.x.x * star->x) + (s->starMatrix.y.x * star->y) + (s->starMatrix.z.x * star->z)) / z) * 400.0f;
 		const int32_t outX = (ABOUT_SCREEN_X + (ABOUT_SCREEN_W / 2)) + (int32_t)x;
 		if (outX < ABOUT_SCREEN_X || outX >= ABOUT_SCREEN_X + ABOUT_SCREEN_W)
 			continue;
@@ -315,58 +278,75 @@ static int32_t Sqr(int32_t x)
 	return x * x;
 }
 
+/* Initialize global lookup tables (call once at startup) */
 void ft2_about_init(void)
 {
-	if (initialized)
+	if (tablesInitialized)
 		return;
 
-	/* Initialize new star positions - matching original randoml usage */
-	vector_t *star = starPoints;
-	for (int32_t i = 0; i < NUM_STARS; i++, star++)
+	/* Pre-calc sinus table - matching original */
+	for (int32_t i = 0; i < ABOUT_SINUS_PHASES; i++)
+		sin16[i] = (int16_t)round(32767.0 * sin(i * PI * 2.0 / ABOUT_SINUS_PHASES));
+
+	/* Format version string */
+	sprintf(customText4, "v%s (%s)", FT2_PLUGIN_VERSION, __DATE__);
+
+	tablesInitialized = true;
+}
+
+/* Initialize per-instance about screen state */
+void ft2_about_init_state(about_state_t *state)
+{
+	if (!state) return;
+	memset(state, 0, sizeof(about_state_t));
+
+	state->randSeed = 12345;
+	state->useNewMode = true;
+
+	/* Initialize new star positions */
+	about_vector_t *star = state->starPoints;
+	for (int32_t i = 0; i < ABOUT_NUM_STARS; i++, star++)
 	{
-		star->x = (float)((randoml(INT32_MAX) - (INT32_MAX/2)) * (1.0 / INT32_MAX));
-		star->y = (float)((randoml(INT32_MAX) - (INT32_MAX/2)) * (1.0 / INT32_MAX));
-		star->z = (float)((randoml(INT32_MAX) - (INT32_MAX/2)) * (1.0 / INT32_MAX));
+		star->x = (float)((randoml(state, INT32_MAX) - (INT32_MAX/2)) * (1.0 / INT32_MAX));
+		star->y = (float)((randoml(state, INT32_MAX) - (INT32_MAX/2)) * (1.0 / INT32_MAX));
+		star->z = (float)((randoml(state, INT32_MAX) - (INT32_MAX/2)) * (1.0 / INT32_MAX));
 	}
 
 	/* Initialize sinus phases */
-	sinp1 = 0;
-	sinp2 = SINUS_PHASES / 4; /* Cosine offset */
-
-	/* Pre-calc sinus table - matching original */
-	for (int32_t i = 0; i < SINUS_PHASES; i++)
-		sin16[i] = (int16_t)round(32767.0 * sin(i * PI * 2.0 / SINUS_PHASES));
+	state->sinp1 = 0;
+	state->sinp2 = ABOUT_SINUS_PHASES / 4;
 
 	/* Build initial matrix */
-	rotateStarfieldMatrix();
+	rotateStarfieldMatrixInst(state);
 
-	/* Format version string - matching original style */
-	sprintf(customText4, "v%s (%s)", FT2_PLUGIN_VERSION, __DATE__);
+	/* Calculate text positions */
+	state->textPosX[0] = (SCREEN_W - textWidth(customText0)) / 2;
+	state->textPosY[0] = 157 - 28;
+	state->textPosX[1] = (SCREEN_W - textWidth(customText1)) / 2;
+	state->textPosY[1] = 157 - 16;
+	state->textPosX[2] = (SCREEN_W - textWidth(customText2)) / 2;
+	state->textPosY[2] = 157 - 4;
+	state->textPosX[4] = (SCREEN_W - 8) - textWidth(customText4);
+	state->textPosY[4] = 157 - 4;
 
-	/* Calculate text positions - using proper textWidth() for variable-width font */
-	/* Line 1: Original FT2 authors (centered) */
-	customText0X = (SCREEN_W - textWidth(customText0)) / 2;
-	customText0Y = 157 - 28;
-	/* Line 2: Clone by Olav (centered) */
-	customText1X = (SCREEN_W - textWidth(customText1)) / 2;
-	customText1Y = 157 - 16;
-	/* Line 3: Plugin by Blamstrain (centered) */
-	customText2X = (SCREEN_W - textWidth(customText2)) / 2;
-	customText2Y = 157 - 4;
-	/* Version (right-justified) */
-	customText4X = (SCREEN_W - 8) - textWidth(customText4);
-	customText4Y = 157 - 4;
+	/* Clear last positions */
+	for (int32_t i = 0; i < ABOUT_OLD_NUM_STARS; i++)
+		state->lastStarScreenPos[i] = -1;
 
-	initialized = true;
+	state->initialized = true;
 }
 
-void ft2_about_show(ft2_widgets_t *widgets, ft2_video_t *video, const ft2_bmp_t *bmp)
+void ft2_about_show(ft2_instance_t *inst, ft2_widgets_t *widgets, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (video == NULL)
+	if (video == NULL || !inst || !inst->ui)
 		return;
 
-	if (!initialized)
+	if (!tablesInitialized)
 		ft2_about_init();
+
+	about_state_t *st = ABOUT_STATE(inst);
+	if (!st->initialized)
+		ft2_about_init_state(st);
 
 	/* Draw framework */
 	drawFramework(video, 0, 0, 632, 173, FRAMEWORK_TYPE1);
@@ -379,44 +359,44 @@ void ft2_about_show(ft2_widgets_t *widgets, ft2_video_t *video, const ft2_bmp_t 
 		showPushButton(widgets, video, bmp, PB_EXIT_ABOUT);
 	}
 
-	if (!useNewAboutScreen)
+	if (!st->useNewMode)
 	{
 		/* Initialize old starfield with random pattern */
-		oldVector_t *s = oldStarPoints;
+		about_old_vector_t *s = st->oldStarPoints;
 
-		const int32_t type = randoml(4);
+		const int32_t type = randoml(st, 4);
 		switch (type)
 		{
 			case 0: /* Classic "space stars" */
 			{
-				zSpeed = 309;
-				for (int32_t i = 0; i < OLD_NUM_STARS; i++, s++)
+				st->zSpeed = 309;
+				for (int32_t i = 0; i < ABOUT_OLD_NUM_STARS; i++, s++)
 				{
-					s->z = (int16_t)randoml(0xFFFF) - 0x8000;
-					s->y = (int16_t)randoml(0xFFFF) - 0x8000;
-					s->x = (int16_t)randoml(0xFFFF) - 0x8000;
+					s->z = (int16_t)randoml(st, 0xFFFF) - 0x8000;
+					s->y = (int16_t)randoml(st, 0xFFFF) - 0x8000;
+					s->x = (int16_t)randoml(st, 0xFFFF) - 0x8000;
 				}
 			}
 			break;
 
 			case 1: /* Galaxy */
 			{
-				zSpeed = 0;
-				for (int32_t i = 0; i < OLD_NUM_STARS; i++, s++)
+				st->zSpeed = 0;
+				for (int32_t i = 0; i < ABOUT_OLD_NUM_STARS; i++, s++)
 				{
-					if (i < OLD_NUM_STARS/4)
+					if (i < ABOUT_OLD_NUM_STARS/4)
 					{
-						s->z = (int16_t)randoml(0xFFFF) - 0x8000;
-						s->y = (int16_t)randoml(0xFFFF) - 0x8000;
-						s->x = (int16_t)randoml(0xFFFF) - 0x8000;
+						s->z = (int16_t)randoml(st, 0xFFFF) - 0x8000;
+						s->y = (int16_t)randoml(st, 0xFFFF) - 0x8000;
+						s->x = (int16_t)randoml(st, 0xFFFF) - 0x8000;
 					}
 					else
 					{
-						int32_t r = randoml(30000);
-						int32_t n = randoml(5);
-						int32_t w = ((2 * randoml(2)) - 1) * Sqr(randoml(1000));
+						int32_t r = randoml(st, 30000);
+						int32_t n = randoml(st, 5);
+						int32_t w = ((2 * randoml(st, 2)) - 1) * Sqr(randoml(st, 1000));
 						double ww = (((PI * 2.0) / 5.0) * n) + (r * (1.0 / 12000.0)) + (w * (1.0 / 3000000.0));
-						int32_t h = ((Sqr(r) / 30000) * ((int32_t)randoml(10000) - 5000)) / 12000;
+						int32_t h = ((Sqr(r) / 30000) * ((int32_t)randoml(st, 10000) - 5000)) / 12000;
 
 						s->x = (int16_t)(r * cos(ww));
 						s->y = (int16_t)(r * sin(ww));
@@ -429,11 +409,11 @@ void ft2_about_show(ft2_widgets_t *widgets, ft2_video_t *video, const ft2_bmp_t 
 			case 2:
 			case 3: /* Spiral */
 			{
-				zSpeed = 0;
-				for (int32_t i = 0; i < OLD_NUM_STARS; i++, s++)
+				st->zSpeed = 0;
+				for (int32_t i = 0; i < ABOUT_OLD_NUM_STARS; i++, s++)
 				{
-					int32_t r = (int32_t)round(sqrt(randoml(500) * 500));
-					int32_t w = randoml(3000);
+					int32_t r = (int32_t)round(sqrt(randoml(st, 500) * 500));
+					int32_t w = randoml(st, 3000);
 					double ww = ((w * 8) + r) * (1.0 / 16.0);
 
 					const int16_t z =  (int16_t)round(32767.0 * cos(w  * (2.0 * PI / 1024.0)));
@@ -451,12 +431,12 @@ void ft2_about_show(ft2_widgets_t *widgets, ft2_video_t *video, const ft2_bmp_t 
 				break;
 		}
 
-		oldStarRotation.x = 0;
-		oldStarRotation.y = 748;
-		oldStarRotation.z = 200;
+		st->oldStarRotation.x = 0;
+		st->oldStarRotation.y = 748;
+		st->oldStarRotation.z = 200;
 
-		for (int32_t i = 0; i < OLD_NUM_STARS; i++)
-			lastStarScreenPos[i] = -1;
+		for (int32_t i = 0; i < ABOUT_OLD_NUM_STARS; i++)
+			st->lastStarScreenPos[i] = -1;
 
 		/* Blit the old FT2 logo */
 		if (bmp != NULL && bmp->ft2OldAboutLogo != NULL)
@@ -464,27 +444,31 @@ void ft2_about_show(ft2_widgets_t *widgets, ft2_video_t *video, const ft2_bmp_t 
 	}
 }
 
-void ft2_about_render_frame(ft2_video_t *video, const ft2_bmp_t *bmp)
+void ft2_about_render_frame(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	if (video == NULL)
+	if (video == NULL || !inst || !inst->ui)
 		return;
 
-	if (!initialized)
+	if (!tablesInitialized)
 		ft2_about_init();
 
-	if (useNewAboutScreen)
+	about_state_t *st = ABOUT_STATE(inst);
+	if (!st->initialized)
+		ft2_about_init_state(st);
+
+	if (st->useNewMode)
 	{
 		/* Clear the starfield area with black (like standalone) */
 		clearRect(video, ABOUT_SCREEN_X, ABOUT_SCREEN_Y, ABOUT_SCREEN_W, ABOUT_SCREEN_H);
 
 		/* Render 3D starfield */
-		starfield(video);
+		starfieldInst(st, video);
 
 		/* Update rotation */
-		starRotation.x -= 0.0003f;
-		starRotation.y -= 0.0002f;
-		starRotation.z += 0.0001f;
-		rotateStarfieldMatrix();
+		st->starRotation.x -= 0.0003f;
+		st->starRotation.y -= 0.0002f;
+		st->starRotation.z += 0.0001f;
+		rotateStarfieldMatrixInst(st);
 
 		/* Render waving FT2 logo */
 		if (bmp != NULL && bmp->ft2AboutLogo != NULL)
@@ -494,8 +478,8 @@ void ft2_about_render_frame(ft2_video_t *video, const ft2_bmp_t *bmp)
 			{
 				for (int32_t x = 0; x < ABOUT_SCREEN_W; x++)
 				{
-					int32_t srcX = (x - ((ABOUT_SCREEN_W - ABOUT_LOGO_W) / 2)) + (sin16[(sinp1 + x) & (SINUS_PHASES - 1)] >> 10);
-					int32_t srcY = (y - ((ABOUT_SCREEN_H - ABOUT_LOGO_H) / 2) + 20) + (sin16[(sinp2 + y + x + x) & (SINUS_PHASES - 1)] >> 11);
+					int32_t srcX = (x - ((ABOUT_SCREEN_W - ABOUT_LOGO_W) / 2)) + (sin16[(st->sinp1 + x) & (ABOUT_SINUS_PHASES - 1)] >> 10);
+					int32_t srcY = (y - ((ABOUT_SCREEN_H - ABOUT_LOGO_H) / 2) + 20) + (sin16[(st->sinp2 + y + x + x) & (ABOUT_SINUS_PHASES - 1)] >> 11);
 
 					if ((uint32_t)srcX < ABOUT_LOGO_W && (uint32_t)srcY < ABOUT_LOGO_H)
 					{
@@ -508,41 +492,42 @@ void ft2_about_render_frame(ft2_video_t *video, const ft2_bmp_t *bmp)
 		}
 
 		/* Update sinus phases */
-		sinp1 = (sinp1 + 2) & (SINUS_PHASES - 1);
-		sinp2 = (sinp2 + 3) & (SINUS_PHASES - 1);
+		st->sinp1 = (st->sinp1 + 2) & (ABOUT_SINUS_PHASES - 1);
+		st->sinp2 = (st->sinp2 + 3) & (ABOUT_SINUS_PHASES - 1);
 
 		/* Render static texts */
 		if (bmp != NULL)
 		{
-			textOut(video, bmp, customText0X, customText0Y, PAL_FORGRND, customText0);
-			textOut(video, bmp, customText1X, customText1Y, PAL_FORGRND, customText1);
-			textOut(video, bmp, customText2X, customText2Y, PAL_FORGRND, customText2);
-			textOut(video, bmp, customText4X, customText4Y, PAL_FORGRND, customText4);
+			textOut(video, bmp, st->textPosX[0], st->textPosY[0], PAL_FORGRND, customText0);
+			textOut(video, bmp, st->textPosX[1], st->textPosY[1], PAL_FORGRND, customText1);
+			textOut(video, bmp, st->textPosX[2], st->textPosY[2], PAL_FORGRND, customText2);
+			textOut(video, bmp, st->textPosX[4], st->textPosY[4], PAL_FORGRND, customText4);
 		}
 	}
 	else
 	{
 		/* Original FT2 about screen */
-		oldStarRotation.x += SCALE_VBLANK_DELTA(3 * 64);
-		oldStarRotation.y += SCALE_VBLANK_DELTA(2 * 64);
-		oldStarRotation.z -= SCALE_VBLANK_DELTA(1 * 64);
-		oldRotateStarfieldMatrix();
+		st->oldStarRotation.x += SCALE_VBLANK_DELTA(3 * 64);
+		st->oldStarRotation.y += SCALE_VBLANK_DELTA(2 * 64);
+		st->oldStarRotation.z -= SCALE_VBLANK_DELTA(1 * 64);
+		oldRotateStarfieldMatrixInst(st);
 
-		oldStarfield(video);
+		oldStarfieldInst(st, video);
 	}
 }
 
-void ft2_about_draw(ft2_video_t *video, const ft2_bmp_t *bmp)
+void ft2_about_draw(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
-	ft2_about_render_frame(video, bmp);
+	ft2_about_render_frame(inst, video, bmp);
 }
 
-void ft2_about_set_mode(bool newMode)
+void ft2_about_set_mode(ft2_instance_t *inst, bool newMode)
 {
-	useNewAboutScreen = newMode;
+	if (!inst || !inst->ui) return;
+	ABOUT_STATE(inst)->useNewMode = newMode;
 }
 
-bool ft2_about_get_mode(void)
+bool ft2_about_get_mode(ft2_instance_t *inst)
 {
-	return useNewAboutScreen;
+	return (inst && inst->ui) ? ABOUT_STATE(inst)->useNewMode : true;
 }

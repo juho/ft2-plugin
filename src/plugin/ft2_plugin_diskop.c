@@ -679,10 +679,6 @@ bool diskOpTestMouseDown(ft2_instance_t *inst, int32_t mouseX, int32_t mouseY)
 	return false;
 }
 
-/* Double-click detection state */
-static int32_t lastClickedEntry = -1;
-static uint32_t lastClickTime = 0;
-
 static void unsavedChangesLoadCallback(ft2_instance_t *inst, ft2_dialog_result_t result,
                                        const char *inputText, void *userData)
 {
@@ -707,9 +703,10 @@ void diskOpHandleItemClick(ft2_instance_t *inst, int32_t entryIndex)
 
 	ft2_diskop_entry_t *entry = &inst->diskop.entries[entryIndex];
 	uint32_t currentTime = inst->editor.framesPassed;
-	bool isDoubleClick = (entryIndex == lastClickedEntry && (currentTime - lastClickTime) < 30);
-	lastClickedEntry = entryIndex;
-	lastClickTime = currentTime;
+	bool isDoubleClick = (entryIndex == inst->diskop.lastClickedEntry && 
+	                      (currentTime - inst->diskop.lastClickTime) < 30);
+	inst->diskop.lastClickedEntry = entryIndex;
+	inst->diskop.lastClickTime = currentTime;
 
 	if (entry->isDir) {
 		inst->diskop.requestOpenEntry = entryIndex;

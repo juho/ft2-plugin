@@ -199,7 +199,7 @@ static void handleRedrawing(ft2_ui_t *ui, ft2_instance_t *inst)
 	{
 		if (inst->uiState.aboutScreenShown)
 		{
-			ft2_about_render_frame(video, bmp);
+			ft2_about_render_frame(inst, video, bmp);
 		}
 		else if (inst->uiState.nibblesShown)
 		{
