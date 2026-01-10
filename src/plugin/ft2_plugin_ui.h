@@ -16,6 +16,9 @@
 #include "ft2_plugin_instr_ed.h"
 #include "ft2_plugin_scopes.h"
 #include "ft2_plugin_dialog.h"
+#include "ft2_plugin_textbox.h"
+#include "ft2_plugin_modal_panels.h"
+#include "ft2_plugin_trim.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,6 +53,9 @@ typedef struct ft2_ui_t {
 	ft2_sample_editor_t sampleEditor;
 	ft2_instrument_editor_t instrEditor;
 	ft2_scopes_t scopes;
+	ft2_textbox_state_t textbox;
+	ft2_modal_state_t modalPanels;
+	ft2_trim_state_t trimState;
 	int16_t currInstr;
 	int16_t currSample;
 	int16_t currOctave;
@@ -86,7 +92,7 @@ void ft2_ui_mouse_wheel(ft2_ui_t *ui, void *inst, int x, int y, int delta);
 void ft2_ui_key_press(ft2_ui_t *ui, void *inst, int key, int modifiers);
 void ft2_ui_key_release(ft2_ui_t *ui, void *inst, int key, int modifiers);
 void ft2_ui_key_state_changed(ft2_ui_t *ui, bool isKeyDown);
-void ft2_ui_text_input(ft2_ui_t *ui, char c);
+void ft2_ui_text_input(ft2_ui_t *ui, void *inst, char c);
 
 #ifdef __cplusplus
 }

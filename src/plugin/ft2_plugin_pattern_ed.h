@@ -69,6 +69,20 @@ typedef struct cursor_t {
 	uint8_t object;  /* Cursor field (NOTE/INSTR/VOL/EFX) */
 } cursor_t;
 
+/* Forward declaration for block buffer */
+struct ft2_note_t;
+
+/* Block clipboard state */
+typedef struct {
+	bool blockCopied;
+	int32_t markXSize, markYSize;
+	struct ft2_note_t *blkCopyBuff;      /* Allocated: MAX_PATT_LEN * MAX_CHANNELS */
+	int32_t lastMouseX, lastMouseY;
+	int8_t lastChMark;
+	int16_t lastRowMark;
+	int16_t lastMarkX1, lastMarkX2, lastMarkY1, lastMarkY2;
+} patt_clipboard_t;
+
 /* Pattern editor state */
 typedef struct ft2_pattern_editor_t {
 	struct ft2_video_t *video;
@@ -93,6 +107,9 @@ typedef struct ft2_pattern_editor_t {
 
 	pattMark_t pattMark;
 	const uint8_t *font4Ptr, *font5Ptr;
+	
+	/* Block clipboard (per-instance) */
+	patt_clipboard_t clipboard;
 } ft2_pattern_editor_t;
 
 /* Transpose modes */

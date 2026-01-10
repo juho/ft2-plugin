@@ -269,7 +269,7 @@ void hideDiskOpScreen(ft2_instance_t *inst)
 		hideRadioButtonGroup(widgets, RB_GROUP_DISKOP_TRK_SAVEAS);
 	}
 
-	ft2_textbox_hide(TB_DISKOP_FILENAME);
+	ft2_textbox_hide(inst, TB_DISKOP_FILENAME);
 	inst->uiState.diskOpShown = false;
 	inst->uiState.scopesShown = true;
 }
@@ -352,7 +352,7 @@ void drawDiskOpScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 	showPushButton(widgets, video, bmp, PB_DISKOP_LIST_UP);
 	showPushButton(widgets, video, bmp, PB_DISKOP_LIST_DOWN);
 	showScrollBar(widgets, video, SB_DISKOP_LIST);
-	ft2_textbox_show(TB_DISKOP_FILENAME);
+	ft2_textbox_show(inst, TB_DISKOP_FILENAME);
 
 	/* Item type radio buttons */
 	if (inst->diskop.itemType > 4) inst->diskop.itemType = 0;

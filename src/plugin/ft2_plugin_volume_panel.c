@@ -2,6 +2,7 @@
 ** FT2 Plugin - Volume Adjustment Modal Panel
 ** Applies linear volume ramp (fade in/out) to sample data.
 ** Range -200% to +200%, supports selection or full sample.
+** Instance-aware: state is per-instance in ft2_modal_state_t.
 */
 
 #include <string.h>
@@ -16,13 +17,7 @@
 #include "ft2_plugin_ui.h"
 #include "../ft2_instance.h"
 
-typedef struct {
-	bool active;
-	ft2_instance_t *instance;
-	double startVol, endVol; /* -200 to +200 percent */
-} volume_panel_state_t;
-
-static volume_panel_state_t state = { .active = false, .instance = NULL, .startVol = 100.0, .endVol = 100.0 };
+#define VOL_STATE(inst) (&FT2_UI(inst)->modalPanels.volume)
 
 static void onApplyClick(ft2_instance_t *inst);
 static void onGetMaxScaleClick(ft2_instance_t *inst);
@@ -38,10 +33,9 @@ static void onEndVolUp(ft2_instance_t *inst);
 /*                             HELPERS                                       */
 /* ------------------------------------------------------------------------- */
 
-static ft2_sample_t *getCurrentSample(void)
+static ft2_sample_t *getCurrentSample(ft2_instance_t *inst)
 {
-	if (!state.instance) return NULL;
-	ft2_instance_t *inst = state.instance;
+	if (!inst) return NULL;
 	if (inst->editor.curInstr == 0 || inst->editor.curInstr > 128) return NULL;
 	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
 	return instr ? &instr->smp[inst->editor.curSmp] : NULL;
@@ -51,12 +45,11 @@ static ft2_sample_t *getCurrentSample(void)
 /*                          WIDGET SETUP                                     */
 /* ------------------------------------------------------------------------- */
 
-static void setupWidgets(void)
+static void setupWidgets(ft2_instance_t *inst)
 {
-	ft2_instance_t *inst = state.instance;
-	if (!inst) return;
-	ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (!widgets) return;
+	if (!inst || !inst->ui) return;
+	volume_panel_state_t *state = VOL_STATE(inst);
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
 
 	pushButton_t *p;
 	scrollBar_t *s;
@@ -104,7 +97,7 @@ static void setupWidgets(void)
 	widgets->scrollBarState[SB_RES_1].visible = true;
 	setScrollBarPageLength(inst, widgets, NULL, SB_RES_1, 1);
 	setScrollBarEnd(inst, widgets, NULL, SB_RES_1, 400);
-	setScrollBarPos(inst, widgets, NULL, SB_RES_1, (uint32_t)(state.startVol + 200), false);
+	setScrollBarPos(inst, widgets, NULL, SB_RES_1, (uint32_t)(state->startVol + 200), false);
 
 	/* End volume scrollbar */
 	s = &widgets->scrollBars[SB_RES_2]; memset(s, 0, sizeof(scrollBar_t));
@@ -112,14 +105,13 @@ static void setupWidgets(void)
 	widgets->scrollBarState[SB_RES_2].visible = true;
 	setScrollBarPageLength(inst, widgets, NULL, SB_RES_2, 1);
 	setScrollBarEnd(inst, widgets, NULL, SB_RES_2, 400);
-	setScrollBarPos(inst, widgets, NULL, SB_RES_2, (uint32_t)(state.endVol + 200), false);
+	setScrollBarPos(inst, widgets, NULL, SB_RES_2, (uint32_t)(state->endVol + 200), false);
 }
 
-static void hideWidgets(void)
+static void hideWidgets(ft2_instance_t *inst)
 {
-	ft2_instance_t *inst = state.instance;
-	ft2_widgets_t *widgets = (inst && inst->ui) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (!widgets) return;
+	if (!inst || !inst->ui) return;
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
 	for (int i = 0; i < 8; i++) hidePushButton(widgets, PB_RES_1 + i);
 	for (int i = 0; i < 3; i++) hideScrollBar(widgets, SB_RES_1 + i);
 }
@@ -128,21 +120,54 @@ static void hideWidgets(void)
 /*                          CALLBACKS                                        */
 /* ------------------------------------------------------------------------- */
 
-static void onApplyClick(ft2_instance_t *inst) { (void)inst; ft2_volume_panel_apply(); }
-static void onGetMaxScaleClick(ft2_instance_t *inst) { (void)inst; ft2_volume_panel_find_max_scale(); }
-static void onExitClick(ft2_instance_t *inst) { (void)inst; ft2_volume_panel_hide(); }
-static void onStartVolScrollbar(ft2_instance_t *inst, uint32_t pos) { (void)inst; state.startVol = (double)((int32_t)pos - 200); }
-static void onEndVolScrollbar(ft2_instance_t *inst, uint32_t pos) { (void)inst; state.endVol = (double)((int32_t)pos - 200); }
-static void onStartVolDown(ft2_instance_t *inst) { (void)inst; if (state.startVol > -200.0) state.startVol -= 1.0; }
-static void onStartVolUp(ft2_instance_t *inst) { (void)inst; if (state.startVol < 200.0) state.startVol += 1.0; }
-static void onEndVolDown(ft2_instance_t *inst) { (void)inst; if (state.endVol > -200.0) state.endVol -= 1.0; }
-static void onEndVolUp(ft2_instance_t *inst) { (void)inst; if (state.endVol < 200.0) state.endVol += 1.0; }
+static void onApplyClick(ft2_instance_t *inst) { ft2_volume_panel_apply(inst); }
+static void onGetMaxScaleClick(ft2_instance_t *inst) { ft2_volume_panel_find_max_scale(inst); }
+static void onExitClick(ft2_instance_t *inst) { ft2_volume_panel_hide(inst); }
+
+static void onStartVolScrollbar(ft2_instance_t *inst, uint32_t pos)
+{
+	if (!inst || !inst->ui) return;
+	VOL_STATE(inst)->startVol = (double)((int32_t)pos - 200);
+}
+
+static void onEndVolScrollbar(ft2_instance_t *inst, uint32_t pos)
+{
+	if (!inst || !inst->ui) return;
+	VOL_STATE(inst)->endVol = (double)((int32_t)pos - 200);
+}
+
+static void onStartVolDown(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return;
+	volume_panel_state_t *state = VOL_STATE(inst);
+	if (state->startVol > -200.0) state->startVol -= 1.0;
+}
+
+static void onStartVolUp(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return;
+	volume_panel_state_t *state = VOL_STATE(inst);
+	if (state->startVol < 200.0) state->startVol += 1.0;
+}
+
+static void onEndVolDown(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return;
+	volume_panel_state_t *state = VOL_STATE(inst);
+	if (state->endVol > -200.0) state->endVol -= 1.0;
+}
+
+static void onEndVolUp(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return;
+	volume_panel_state_t *state = VOL_STATE(inst);
+	if (state->endVol < 200.0) state->endVol += 1.0;
+}
 
 /* ------------------------------------------------------------------------- */
 /*                           DRAWING                                         */
 /* ------------------------------------------------------------------------- */
 
-/* Helper: draw signed volume value with variable-width formatting */
 static void drawVolValue(ft2_video_t *video, const ft2_bmp_t *bmp, int16_t x, int16_t y, int32_t vol)
 {
 	if (vol > 200)
@@ -172,11 +197,11 @@ static void drawVolValue(ft2_video_t *video, const ft2_bmp_t *bmp, int16_t x, in
 	}
 }
 
-static void drawFrame(ft2_video_t *video, const ft2_bmp_t *bmp)
+static void drawFrame(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
 	const int16_t x = 166, y = 230, w = 301, h = 52;
+	volume_panel_state_t *state = VOL_STATE(inst);
 
-	/* Background and borders */
 	fillRect(video, x + 1, y + 1, w - 2, h - 2, PAL_BUTTONS);
 	vLine(video, x, y, h - 1, PAL_BUTTON1);
 	hLine(video, x + 1, y, w - 2, PAL_BUTTON1);
@@ -187,25 +212,22 @@ static void drawFrame(ft2_video_t *video, const ft2_bmp_t *bmp)
 	vLine(video, x + w - 3, y + 2, h - 4, PAL_BUTTON1);
 	hLine(video, x + 2, y + h - 3, w - 4, PAL_BUTTON1);
 
-	/* Labels */
 	textOutShadow(video, bmp, 172, 236, PAL_FORGRND, PAL_BUTTON2, "Start volume");
 	textOutShadow(video, bmp, 172, 250, PAL_FORGRND, PAL_BUTTON2, "End volume");
 	charOutShadow(video, bmp, 282, 236, PAL_FORGRND, PAL_BUTTON2, '%');
 	charOutShadow(video, bmp, 282, 250, PAL_FORGRND, PAL_BUTTON2, '%');
 
-	/* Values */
-	drawVolValue(video, bmp, 253, 236, (int32_t)state.startVol);
-	drawVolValue(video, bmp, 253, 250, (int32_t)state.endVol);
+	drawVolValue(video, bmp, 253, 236, (int32_t)state->startVol);
+	drawVolValue(video, bmp, 253, 250, (int32_t)state->endVol);
 }
 
 /* ------------------------------------------------------------------------- */
 /*                      VOLUME APPLICATION                                   */
 /* ------------------------------------------------------------------------- */
 
-/* Get sample editor range or default to full sample */
 static bool getRange(ft2_instance_t *inst, ft2_sample_t *s, int32_t *outX1, int32_t *outX2)
 {
-	ft2_sample_editor_t *ed = (inst && inst->ui) ? FT2_SAMPLE_ED(inst) : NULL;
+	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
 	if (ed && ed->hasRange && ed->rangeStart < ed->rangeEnd)
 	{
 		*outX1 = (ed->rangeStart < 0) ? 0 : ed->rangeStart;
@@ -219,28 +241,24 @@ static bool getRange(ft2_instance_t *inst, ft2_sample_t *s, int32_t *outX1, int3
 	return (*outX2 > *outX1);
 }
 
-/*
-** Apply linear volume ramp from startVol to endVol across sample range.
-** Handles 8-bit and 16-bit samples with clipping.
-*/
-static void applyVolumeToSample(void)
+static void applyVolumeToSample(ft2_instance_t *inst)
 {
-	if (!state.instance) return;
-	ft2_instance_t *inst = state.instance;
-	ft2_sample_t *s = getCurrentSample();
+	if (!inst || !inst->ui) return;
+	volume_panel_state_t *state = VOL_STATE(inst);
+	ft2_sample_t *s = getCurrentSample(inst);
 	if (!s || !s->dataPtr || !s->length) return;
 
 	int32_t x1, x2;
 	if (!getRange(inst, s, &x1, &x2)) return;
 	const int32_t len = x2 - x1;
-	if (state.startVol == 100.0 && state.endVol == 100.0) return;
+	if (state->startVol == 100.0 && state->endVol == 100.0) return;
 
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
 
-	const bool ramp = (state.startVol != state.endVol);
-	const double dVolDelta = ramp ? ((state.endVol - state.startVol) / 100.0) / len : 0.0;
-	double dVol = state.startVol / 100.0;
+	const bool ramp = (state->startVol != state->endVol);
+	const double dVolDelta = ramp ? ((state->endVol - state->startVol) / 100.0) / len : 0.0;
+	double dVol = state->startVol / 100.0;
 
 	if (s->flags & FT2_SAMPLE_16BIT)
 	{
@@ -265,14 +283,13 @@ static void applyVolumeToSample(void)
 	inst->uiState.updateSampleEditor = true;
 }
 
-/* Find maximum amplification that won't clip (normalize calculation) */
-static double calculateMaxScale(void)
+static double calculateMaxScale(ft2_instance_t *inst)
 {
-	ft2_sample_t *s = getCurrentSample();
+	ft2_sample_t *s = getCurrentSample(inst);
 	if (!s || !s->dataPtr || !s->length) return 100.0;
 
 	int32_t x1, x2;
-	if (!getRange(state.instance, s, &x1, &x2)) return 100.0;
+	if (!getRange(inst, s, &x1, &x2)) return 100.0;
 	uint32_t len = x2 - x1;
 
 	ft2_unfix_sample(s);
@@ -311,45 +328,46 @@ static double calculateMaxScale(void)
 
 void ft2_volume_panel_show(ft2_instance_t *inst)
 {
-	if (!inst) return;
-	ft2_sample_t *s = NULL;
-	if (inst->editor.curInstr != 0 && inst->editor.curInstr <= 128)
-	{
-		ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
-		if (instr) s = &instr->smp[inst->editor.curSmp];
-	}
+	if (!inst || !inst->ui) return;
+	ft2_sample_t *s = getCurrentSample(inst);
 	if (!s || !s->dataPtr || !s->length) return;
 
-	state.active = true;
-	state.instance = inst;
-	state.startVol = state.endVol = 100.0;
-	setupWidgets();
-	ft2_modal_panel_set_active(MODAL_PANEL_VOLUME);
+	volume_panel_state_t *state = VOL_STATE(inst);
+	state->active = true;
+	state->startVol = state->endVol = 100.0;
+	setupWidgets(inst);
+	ft2_modal_panel_set_active(inst, MODAL_PANEL_VOLUME);
 }
 
-void ft2_volume_panel_hide(void)
+void ft2_volume_panel_hide(ft2_instance_t *inst)
 {
-	if (!state.active) return;
-	hideWidgets();
-	state.active = false;
-	if (state.instance) state.instance->uiState.updateSampleEditor = true;
-	state.instance = NULL;
-	ft2_modal_panel_set_inactive(MODAL_PANEL_VOLUME);
+	if (!inst || !inst->ui) return;
+	volume_panel_state_t *state = VOL_STATE(inst);
+	if (!state->active) return;
+	
+	hideWidgets(inst);
+	state->active = false;
+	inst->uiState.updateSampleEditor = true;
+	ft2_modal_panel_set_inactive(inst, MODAL_PANEL_VOLUME);
 }
 
-bool ft2_volume_panel_is_active(void) { return state.active; }
-
-void ft2_volume_panel_draw(ft2_video_t *video, const ft2_bmp_t *bmp)
+bool ft2_volume_panel_is_active(ft2_instance_t *inst)
 {
-	if (!state.active || !video) return;
-	drawFrame(video, bmp);
+	if (!inst || !inst->ui) return false;
+	return VOL_STATE(inst)->active;
+}
 
-	ft2_widgets_t *widgets = (state.instance && state.instance->ui) ?
-		&((ft2_ui_t *)state.instance->ui)->widgets : NULL;
-	if (!widgets) return;
+void ft2_volume_panel_draw(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+{
+	if (!inst || !inst->ui || !video) return;
+	volume_panel_state_t *state = VOL_STATE(inst);
+	if (!state->active) return;
+	
+	drawFrame(inst, video, bmp);
 
-	setScrollBarPos(state.instance, widgets, video, SB_RES_1, (uint32_t)(state.startVol + 200), false);
-	setScrollBarPos(state.instance, widgets, video, SB_RES_2, (uint32_t)(state.endVol + 200), false);
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
+	setScrollBarPos(inst, widgets, video, SB_RES_1, (uint32_t)(state->startVol + 200), false);
+	setScrollBarPos(inst, widgets, video, SB_RES_2, (uint32_t)(state->endVol + 200), false);
 
 	for (int i = 0; i < 8; i++)
 		if (widgets->pushButtonVisible[PB_RES_1 + i])
@@ -359,21 +377,19 @@ void ft2_volume_panel_draw(ft2_video_t *video, const ft2_bmp_t *bmp)
 			drawScrollBar(widgets, video, SB_RES_1 + i);
 }
 
-void ft2_volume_panel_apply(void)
+void ft2_volume_panel_apply(ft2_instance_t *inst)
 {
-	if (!state.active) return;
-	applyVolumeToSample();
-	ft2_volume_panel_hide();
+	if (!inst || !inst->ui) return;
+	if (!VOL_STATE(inst)->active) return;
+	applyVolumeToSample(inst);
+	ft2_volume_panel_hide(inst);
 }
 
-void ft2_volume_panel_find_max_scale(void)
+void ft2_volume_panel_find_max_scale(ft2_instance_t *inst)
 {
-	if (!state.active) return;
-	double maxScale = calculateMaxScale();
-	state.startVol = state.endVol = maxScale;
+	if (!inst || !inst->ui) return;
+	if (!VOL_STATE(inst)->active) return;
+	volume_panel_state_t *state = VOL_STATE(inst);
+	double maxScale = calculateMaxScale(inst);
+	state->startVol = state->endVol = maxScale;
 }
-
-double ft2_volume_panel_get_start_vol(void) { return state.startVol; }
-void ft2_volume_panel_set_start_vol(double vol) { state.startVol = vol; }
-double ft2_volume_panel_get_end_vol(void) { return state.endVol; }
-void ft2_volume_panel_set_end_vol(double vol) { state.endVol = vol; }

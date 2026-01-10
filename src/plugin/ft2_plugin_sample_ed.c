@@ -1271,10 +1271,6 @@ void ft2_sample_ed_mouse_up(ft2_instance_t *inst)
 /*                       CLIPBOARD OPERATIONS                                */
 /* ------------------------------------------------------------------------- */
 
-static int8_t *sampleClipboard = NULL;
-int32_t clipboardLength = 0;
-static bool clipboardIs16Bit = false;
-static bool clipboardDidCopyWholeSample = false;
 static ft2_sample_t clipboardSampleInfo;
 
 static ft2_sample_t *getCurrentSampleWithInst(ft2_sample_editor_t *editor, ft2_instance_t *inst)
@@ -1303,6 +1299,7 @@ void ft2_sample_ed_copy(ft2_instance_t *inst)
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
 	if (!s || !s->dataPtr || s->length <= 0) return;
 
+	smp_clipboard_t *clip = &editor->clipboard;
 	int32_t start, end;
 	if (!editor->hasRange || editor->rangeEnd == 0)
 	{
@@ -1319,57 +1316,60 @@ void ft2_sample_ed_copy(ft2_instance_t *inst)
 	int32_t len = end - start;
 	if (len <= 0) return;
 
-	if (sampleClipboard) { free(sampleClipboard); sampleClipboard = NULL; }
+	if (clip->data) { free(clip->data); clip->data = NULL; }
 
 	int32_t bytesPerSample = (s->flags & SAMPLE_16BIT) ? 2 : 1;
-	clipboardLength = len;
-	clipboardIs16Bit = (s->flags & SAMPLE_16BIT) != 0;
+	clip->length = len;
+	clip->is16Bit = (s->flags & SAMPLE_16BIT) != 0;
 
-	sampleClipboard = (int8_t *)malloc((size_t)(len * bytesPerSample));
-	if (sampleClipboard)
-		memcpy(sampleClipboard, s->dataPtr + (start * bytesPerSample), (size_t)(len * bytesPerSample));
+	clip->data = (int8_t *)malloc((size_t)(len * bytesPerSample));
+	if (clip->data)
+		memcpy(clip->data, s->dataPtr + (start * bytesPerSample), (size_t)(len * bytesPerSample));
 
 	if (start == 0 && end == s->length)
 	{
 		clipboardSampleInfo = *s;
-		clipboardDidCopyWholeSample = true;
+		clip->infoPtr = &clipboardSampleInfo;
+		clip->didCopyWholeSample = true;
 	}
 	else
 	{
-		clipboardDidCopyWholeSample = false;
+		clip->didCopyWholeSample = false;
 	}
 }
 
 /* Pastes clipboard data with automatic bit-depth conversion */
-static void pasteCopiedData(int8_t *dataPtr, int32_t offset, int32_t length, bool destIs16Bit)
+static void pasteCopiedData(smp_clipboard_t *clip, int8_t *dataPtr, int32_t offset, int32_t length, bool destIs16Bit)
 {
+	if (!clip || !clip->data) return;
+	
 	if (destIs16Bit)
 	{
-		if (clipboardIs16Bit)
+		if (clip->is16Bit)
 		{
 			/* Both 16-bit: direct copy */
-			memcpy(&dataPtr[offset << 1], sampleClipboard, (size_t)(length * sizeof(int16_t)));
+			memcpy(&dataPtr[offset << 1], clip->data, (size_t)(length * sizeof(int16_t)));
 		}
 		else
 		{
 			/* Convert 8-bit to 16-bit */
 			int16_t *ptr16 = (int16_t *)dataPtr + offset;
 			for (int32_t i = 0; i < length; i++)
-				ptr16[i] = sampleClipboard[i] << 8;
+				ptr16[i] = clip->data[i] << 8;
 		}
 	}
 	else
 	{
-		if (!clipboardIs16Bit)
+		if (!clip->is16Bit)
 		{
 			/* Both 8-bit: direct copy */
-			memcpy(&dataPtr[offset], sampleClipboard, (size_t)(length * sizeof(int8_t)));
+			memcpy(&dataPtr[offset], clip->data, (size_t)(length * sizeof(int8_t)));
 		}
 		else
 		{
 			/* Convert 16-bit to 8-bit */
 			int8_t *ptr8 = &dataPtr[offset];
-			int16_t *ptr16 = (int16_t *)sampleClipboard;
+			int16_t *ptr16 = (int16_t *)clip->data;
 			for (int32_t i = 0; i < length; i++)
 				ptr8[i] = ptr16[i] >> 8;
 		}
@@ -1379,7 +1379,8 @@ static void pasteCopiedData(int8_t *dataPtr, int32_t offset, int32_t length, boo
 /* Replaces entire sample with clipboard content */
 static void pasteOverwrite(ft2_sample_editor_t *editor, ft2_sample_t *s, ft2_instance_t *inst)
 {
-	int32_t bytesPerSample = clipboardIs16Bit ? 2 : 1;
+	smp_clipboard_t *clip = &editor->clipboard;
+	int32_t bytesPerSample = clip->is16Bit ? 2 : 1;
 	
 	/* Free old sample data */
 	if (s->origDataPtr != NULL)
@@ -1390,7 +1391,7 @@ static void pasteOverwrite(ft2_sample_editor_t *editor, ft2_sample_t *s, ft2_ins
 	}
 	
 	/* Allocate new buffer with extra space for interpolation */
-	size_t allocSize = (size_t)(clipboardLength * bytesPerSample) + 256;
+	size_t allocSize = (size_t)(clip->length * bytesPerSample) + 256;
 	s->origDataPtr = (int8_t *)malloc(allocSize);
 	if (s->origDataPtr == NULL)
 		return;
@@ -1398,32 +1399,32 @@ static void pasteOverwrite(ft2_sample_editor_t *editor, ft2_sample_t *s, ft2_ins
 	memset(s->origDataPtr, 0, allocSize);
 	s->dataPtr = s->origDataPtr + 128;
 	
-	memcpy(s->dataPtr, sampleClipboard, (size_t)(clipboardLength * bytesPerSample));
+	memcpy(s->dataPtr, clip->data, (size_t)(clip->length * bytesPerSample));
 	
 	/* Restore sample info if we copied a whole sample */
-	if (clipboardDidCopyWholeSample)
+	if (clip->didCopyWholeSample && clip->infoPtr)
 	{
-		memcpy(s->name, clipboardSampleInfo.name, 22);
-		s->length = clipboardSampleInfo.length;
-		s->loopStart = clipboardSampleInfo.loopStart;
-		s->loopLength = clipboardSampleInfo.loopLength;
-		s->volume = clipboardSampleInfo.volume;
-		s->panning = clipboardSampleInfo.panning;
-		s->finetune = clipboardSampleInfo.finetune;
-		s->relativeNote = clipboardSampleInfo.relativeNote;
-		s->flags = clipboardSampleInfo.flags;
+		memcpy(s->name, clip->infoPtr->name, 22);
+		s->length = clip->infoPtr->length;
+		s->loopStart = clip->infoPtr->loopStart;
+		s->loopLength = clip->infoPtr->loopLength;
+		s->volume = clip->infoPtr->volume;
+		s->panning = clip->infoPtr->panning;
+		s->finetune = clip->infoPtr->finetune;
+		s->relativeNote = clip->infoPtr->relativeNote;
+		s->flags = clip->infoPtr->flags;
 	}
 	else
 	{
 		s->name[0] = '\0';
-		s->length = clipboardLength;
+		s->length = clip->length;
 		s->loopStart = 0;
 		s->loopLength = 0;
 		s->volume = 64;
 		s->panning = 128;
 		s->finetune = 0;
 		s->relativeNote = 0;
-		s->flags = clipboardIs16Bit ? SAMPLE_16BIT : 0;
+		s->flags = clip->is16Bit ? SAMPLE_16BIT : 0;
 	}
 	
 	/* Set range to pasted area (the whole sample in overwrite case) */
@@ -1440,7 +1441,8 @@ static void pasteOverwrite(ft2_sample_editor_t *editor, ft2_sample_t *s, ft2_ins
 void ft2_sample_ed_paste(ft2_instance_t *inst)
 {
 	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
-	if (!editor || !sampleClipboard || clipboardLength <= 0) return;
+	smp_clipboard_t *clip = &editor->clipboard;
+	if (!editor || !clip->data || clip->length <= 0) return;
 
 	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
 	if (!s || !s->dataPtr || s->length <= 0 || editor->rangeEnd == 0)
@@ -1464,7 +1466,7 @@ void ft2_sample_ed_paste(ft2_instance_t *inst)
 	bool destIs16Bit = (s->flags & SAMPLE_16BIT) != 0;
 	
 	/* Calculate new length */
-	int32_t newLength = s->length + clipboardLength - (rx2 - rx1);
+	int32_t newLength = s->length + clip->length - (rx2 - rx1);
 	if (newLength <= 0)
 		return;
 	
@@ -1491,12 +1493,12 @@ void ft2_sample_ed_paste(ft2_instance_t *inst)
 		memcpy(newDataPtr, s->dataPtr, (size_t)(rx1 * bytesPerSample));
 	
 	/* Paste clipboard data at rx1 position */
-	pasteCopiedData(newDataPtr, rx1, clipboardLength, destIs16Bit);
+	pasteCopiedData(clip, newDataPtr, rx1, clip->length, destIs16Bit);
 	
 	/* Copy right part of original sample (after selection) */
 	if (rx2 < s->length)
 	{
-		memmove(&newDataPtr[(rx1 + clipboardLength) * bytesPerSample],
+		memmove(&newDataPtr[(rx1 + clip->length) * bytesPerSample],
 		        &s->dataPtr[rx2 * bytesPerSample],
 		        (size_t)((s->length - rx2) * bytesPerSample));
 	}
@@ -1507,9 +1509,9 @@ void ft2_sample_ed_paste(ft2_instance_t *inst)
 	s->dataPtr = newDataPtr;
 	
 	/* Adjust loop points if necessary */
-	if (rx2 - rx1 != clipboardLength)
+	if (rx2 - rx1 != clip->length)
 	{
-		int32_t loopAdjust = clipboardLength - (rx2 - rx1);
+		int32_t loopAdjust = clip->length - (rx2 - rx1);
 		
 		if (s->loopStart > rx2)
 		{
@@ -1546,7 +1548,7 @@ void ft2_sample_ed_paste(ft2_instance_t *inst)
 	
 	/* Set new range to pasted area (so pressing paste again replaces it, not whole sample) */
 	editor->rangeStart = rx1;
-	editor->rangeEnd = rx1 + clipboardLength;
+	editor->rangeEnd = rx1 + clip->length;
 	editor->hasRange = true;
 	
 	ft2_sample_ed_show_all(inst);
@@ -2098,8 +2100,7 @@ void drawSampleEditorExt(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp
 	}
 
 	/* Draw copy buffer size */
-	extern int32_t clipboardLength;
-	hexOutBg(video, bmp, 99, 124, PAL_FORGRND, PAL_DESKTOP, clipboardLength, 8);
+	hexOutBg(video, bmp, 99, 124, PAL_FORGRND, PAL_DESKTOP, editor->clipboard.length, 8);
 
 	/* Draw source/dest instrument and sample numbers */
 	hexOutBg(video, bmp, 225, 96, PAL_FORGRND, PAL_DESKTOP, inst->editor.srcInstr, 2);
@@ -2299,10 +2300,13 @@ void clearInstr(ft2_instance_t *inst)
 
 void clearCopyBuffer(ft2_instance_t *inst)
 {
-	(void)inst;
-	if (sampleClipboard) { free(sampleClipboard); sampleClipboard = NULL; }
-	clipboardLength = 0;
-	clipboardIs16Bit = false;
+	if (!inst || !inst->ui) return;
+	smp_clipboard_t *clip = &FT2_SAMPLE_ED(inst)->clipboard;
+	if (clip->data) { free(clip->data); clip->data = NULL; }
+	clip->length = 0;
+	clip->is16Bit = false;
+	clip->didCopyWholeSample = false;
+	clip->infoPtr = NULL;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2708,7 +2712,7 @@ void sampCrop(ft2_instance_t *inst)
 	/* Update length before realloc */
 	s->length = newLength;
 
-	/* Realloc to new size (this now uses origDataPtr correctly) */
+	/* Realloc to new size */
 	if (!reallocateSmpData(s, newLength, is16Bit))
 	{
 		ft2_fix_sample(s);

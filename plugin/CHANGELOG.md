@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.50 (Jan 10, 2026)
+
+- Refactor: State tracking in widgets.
+
 ## 1.0.49 (Jan 10, 2026)
 
 - Fix: Better textbox drawing.

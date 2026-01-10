@@ -163,18 +163,6 @@ static const uint8_t hex2Dec[256] = {
 	0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0
 };
 
-/* ============ BLOCK BUFFER ============ */
-
-static bool blockCopied = false;
-static int32_t markXSize = 0, markYSize = 0;
-static ft2_note_t blkCopyBuff[MAX_PATT_LEN * MAX_CHANNELS];
-
-/* Mouse marking state */
-static int32_t lastMouseX = 0, lastMouseY = 0;
-static int8_t lastChMark = 0;
-static int16_t lastRowMark = 0;
-static int16_t lastMarkX1 = -1, lastMarkX2 = -1, lastMarkY1 = -1, lastMarkY2 = -1;
-
 /* ============ DRAWING PRIMITIVES ============ */
 
 /* Draw pattern font character (font3=small, font4=med, font5=big, font7=tiny) */
@@ -525,6 +513,13 @@ void ft2_pattern_ed_init(ft2_pattern_editor_t *editor, ft2_video_t *video)
 	editor->ptnLineLight = true;
 	editor->ptnChnNumbers = true;
 	editor->ptnFrmWrk = true;
+	
+	/* Allocate pattern block clipboard buffer */
+	editor->clipboard.blkCopyBuff = (ft2_note_t *)calloc(MAX_PATT_LEN * MAX_CHANNELS, sizeof(ft2_note_t));
+	editor->clipboard.lastMarkX1 = -1;
+	editor->clipboard.lastMarkX2 = -1;
+	editor->clipboard.lastMarkY1 = -1;
+	editor->clipboard.lastMarkY2 = -1;
 }
 
 /* Set font pointers based on selected font style (0-3) */
@@ -1401,19 +1396,20 @@ void cutBlock(ft2_instance_t *inst)
 	ft2_note_t *p = inst->replayer.pattern[curPattern];
 	if (!p || markY1 < 0 || markX1 < 0) return;
 
+	patt_clipboard_t *clip = &FT2_PATTERN_ED(inst)->clipboard;
 	for (int32_t x = markX1; x <= markX2; x++) {
 		for (int32_t y = markY1; y < markY2; y++) {
 			ft2_note_t *n = &p[(y * FT2_MAX_CHANNELS) + x];
-			if (inst->config.ptnCutToBuffer)
-				copyNoteWithMask(inst, n, &blkCopyBuff[((y - markY1) * MAX_CHANNELS) + (x - markX1)]);
+			if (inst->config.ptnCutToBuffer && clip->blkCopyBuff)
+				copyNoteWithMask(inst, n, &clip->blkCopyBuff[((y - markY1) * MAX_CHANNELS) + (x - markX1)]);
 			memset(n, 0, sizeof(ft2_note_t));
 		}
 	}
 	killPatternIfUnused(inst, curPattern);
 	if (inst->config.ptnCutToBuffer) {
-		markXSize = markX2 - markX1;
-		markYSize = markY2 - markY1;
-		blockCopied = true;
+		clip->markXSize = markX2 - markX1;
+		clip->markYSize = markY2 - markY1;
+		clip->blockCopied = true;
 	}
 	inst->uiState.updatePatternEditor = true;
 }
@@ -1438,21 +1434,25 @@ void copyBlock(ft2_instance_t *inst)
 	ft2_note_t *p = inst->replayer.pattern[curPattern];
 	if (!p || markY1 < 0 || markX1 < 0) return;
 
+	patt_clipboard_t *clip = &FT2_PATTERN_ED(inst)->clipboard;
+	if (!clip->blkCopyBuff) return;
+	
 	for (int32_t x = markX1; x <= markX2; x++)
 		for (int32_t y = markY1; y < markY2; y++)
-			copyNoteWithMask(inst, &p[(y * FT2_MAX_CHANNELS) + x], &blkCopyBuff[((y - markY1) * MAX_CHANNELS) + (x - markX1)]);
+			copyNoteWithMask(inst, &p[(y * FT2_MAX_CHANNELS) + x], &clip->blkCopyBuff[((y - markY1) * MAX_CHANNELS) + (x - markX1)]);
 
-	markXSize = markX2 - markX1;
-	markYSize = markY2 - markY1;
-	blockCopied = true;
+	clip->markXSize = markX2 - markX1;
+	clip->markYSize = markY2 - markY1;
+	clip->blockCopied = true;
 }
 
 void pasteBlock(ft2_instance_t *inst)
 {
 	if (!inst) return;
 
+	patt_clipboard_t *clip = &FT2_PATTERN_ED(inst)->clipboard;
 	uint16_t curPattern = inst->editor.editPattern;
-	if (!blockCopied || !allocatePattern(inst, curPattern)) return;
+	if (!clip->blockCopied || !clip->blkCopyBuff || !allocatePattern(inst, curPattern)) return;
 
 	int32_t chStart = inst->cursor.ch, rowStart = inst->replayer.song.row;
 	const int16_t numRows = inst->replayer.patternNumRows[curPattern];
@@ -1461,7 +1461,7 @@ void pasteBlock(ft2_instance_t *inst)
 	if (chStart >= numCh) chStart = numCh - 1;
 	if (rowStart >= numRows) rowStart = numRows - 1;
 
-	int32_t markedChannels = markXSize + 1, markedRows = markYSize;
+	int32_t markedChannels = clip->markXSize + 1, markedRows = clip->markYSize;
 	if (chStart + markedChannels > numCh) markedChannels = numCh - chStart;
 	if (rowStart + markedRows > numRows) markedRows = numRows - rowStart;
 
@@ -1469,7 +1469,7 @@ void pasteBlock(ft2_instance_t *inst)
 		ft2_note_t *p = inst->replayer.pattern[curPattern];
 		for (int32_t x = chStart; x < chStart + markedChannels; x++)
 			for (int32_t y = rowStart; y < rowStart + markedRows; y++)
-				pasteNoteWithMask(inst, &blkCopyBuff[((y - rowStart) * MAX_CHANNELS) + (x - chStart)], &p[(y * FT2_MAX_CHANNELS) + x]);
+				pasteNoteWithMask(inst, &clip->blkCopyBuff[((y - rowStart) * MAX_CHANNELS) + (x - chStart)], &p[(y * FT2_MAX_CHANNELS) + x]);
 	}
 	killPatternIfUnused(inst, curPattern);
 	inst->uiState.updatePatternEditor = true;
@@ -1517,21 +1517,22 @@ static int16_t mouseYToRow(ft2_instance_t *inst, int32_t mouseY)
 void handlePatternDataMouseDown(ft2_instance_t *inst, int32_t mouseX, int32_t mouseY, bool mouseButtonHeld, bool rightButton)
 {
 	if (!inst) return;
+	patt_clipboard_t *clip = &FT2_PATTERN_ED(inst)->clipboard;
 
 	/* Right-click clears marking (plugin extension, not in original FT2) */
 	if (rightButton) { clearPattMark(inst); inst->uiState.updatePatternEditor = true; return; }
 
 	if (!mouseButtonHeld) {
 		/* First click - start marking */
-		lastMouseX = mouseX; lastMouseY = mouseY;
-		lastChMark = mouseXToCh(inst, mouseX);
-		lastRowMark = mouseYToRow(inst, mouseY);
-		inst->editor.pattMark.markX1 = inst->editor.pattMark.markX2 = lastChMark;
-		inst->editor.pattMark.markY1 = lastRowMark;
-		inst->editor.pattMark.markY2 = lastRowMark + 1;
+		clip->lastMouseX = mouseX; clip->lastMouseY = mouseY;
+		clip->lastChMark = mouseXToCh(inst, mouseX);
+		clip->lastRowMark = mouseYToRow(inst, mouseY);
+		inst->editor.pattMark.markX1 = inst->editor.pattMark.markX2 = clip->lastChMark;
+		inst->editor.pattMark.markY1 = clip->lastRowMark;
+		inst->editor.pattMark.markY2 = clip->lastRowMark + 1;
 		checkMarkLimits(inst);
-		lastMarkX1 = inst->editor.pattMark.markX1; lastMarkX2 = inst->editor.pattMark.markX2;
-		lastMarkY1 = inst->editor.pattMark.markY1; lastMarkY2 = inst->editor.pattMark.markY2;
+		clip->lastMarkX1 = inst->editor.pattMark.markX1; clip->lastMarkX2 = inst->editor.pattMark.markX2;
+		clip->lastMarkY1 = inst->editor.pattMark.markY1; clip->lastMarkY2 = inst->editor.pattMark.markY2;
 		inst->uiState.updatePatternEditor = true;
 		return;
 	}
@@ -1544,29 +1545,29 @@ void handlePatternDataMouseDown(ft2_instance_t *inst, int32_t mouseX, int32_t mo
 	}
 
 	/* Mark channels */
-	if (forceMarking || lastMouseX != mouseX)
+	if (forceMarking || clip->lastMouseX != mouseX)
 	{
-		lastMouseX = mouseX;
+		clip->lastMouseX = mouseX;
 
 		int8_t chTmp = mouseXToCh(inst, mouseX);
-		if (chTmp < lastChMark)
+		if (chTmp < clip->lastChMark)
 		{
 			inst->editor.pattMark.markX1 = chTmp;
-			inst->editor.pattMark.markX2 = lastChMark;
+			inst->editor.pattMark.markX2 = clip->lastChMark;
 		}
 		else
 		{
 			inst->editor.pattMark.markX2 = chTmp;
-			inst->editor.pattMark.markX1 = lastChMark;
+			inst->editor.pattMark.markX1 = clip->lastChMark;
 		}
 
-		if (lastMarkX1 != inst->editor.pattMark.markX1 || lastMarkX2 != inst->editor.pattMark.markX2)
+		if (clip->lastMarkX1 != inst->editor.pattMark.markX1 || clip->lastMarkX2 != inst->editor.pattMark.markX2)
 		{
 			checkMarkLimits(inst);
 			inst->uiState.updatePatternEditor = true;
 
-			lastMarkX1 = inst->editor.pattMark.markX1;
-			lastMarkX2 = inst->editor.pattMark.markX2;
+			clip->lastMarkX1 = inst->editor.pattMark.markX1;
+			clip->lastMarkX2 = inst->editor.pattMark.markX2;
 		}
 	}
 
@@ -1607,29 +1608,29 @@ void handlePatternDataMouseDown(ft2_instance_t *inst, int32_t mouseX, int32_t mo
 	}
 
 	/* Mark rows */
-	if (forceMarking || lastMouseY != mouseY)
+	if (forceMarking || clip->lastMouseY != mouseY)
 	{
-		lastMouseY = mouseY;
+		clip->lastMouseY = mouseY;
 
 		const int16_t rowTmp = mouseYToRow(inst, mouseY);
-		if (rowTmp < lastRowMark)
+		if (rowTmp < clip->lastRowMark)
 		{
 			inst->editor.pattMark.markY1 = rowTmp;
-			inst->editor.pattMark.markY2 = lastRowMark + 1;
+			inst->editor.pattMark.markY2 = clip->lastRowMark + 1;
 		}
 		else
 		{
 			inst->editor.pattMark.markY2 = rowTmp + 1;
-			inst->editor.pattMark.markY1 = lastRowMark;
+			inst->editor.pattMark.markY1 = clip->lastRowMark;
 		}
 
-		if (lastMarkY1 != inst->editor.pattMark.markY1 || lastMarkY2 != inst->editor.pattMark.markY2)
+		if (clip->lastMarkY1 != inst->editor.pattMark.markY1 || clip->lastMarkY2 != inst->editor.pattMark.markY2)
 		{
 			checkMarkLimits(inst);
 			inst->uiState.updatePatternEditor = true;
 
-			lastMarkY1 = inst->editor.pattMark.markY1;
-			lastMarkY2 = inst->editor.pattMark.markY2;
+			clip->lastMarkY1 = inst->editor.pattMark.markY1;
+			clip->lastMarkY2 = inst->editor.pattMark.markY2;
 		}
 	}
 }
@@ -1740,8 +1741,8 @@ void updatePatternEditorGUI(ft2_instance_t *inst)
 		/* Instrument textboxes: two columns in extended mode */
 		static const uint16_t instExtY[4] = { 5, 16, 27, 38 };
 		for (int i = 0; i < 4; i++) {
-			ft2_textbox_set_position(TB_INST1 + i, 406, instExtY[i], 99);
-			ft2_textbox_set_position(TB_INST1 + 4 + i, 529, instExtY[i], 99);
+			ft2_textbox_set_position(inst, TB_INST1 + i, 406, instExtY[i], 99);
+			ft2_textbox_set_position(inst, TB_INST1 + 4 + i, 529, instExtY[i], 99);
 		}
 	} else {
 		/* Normal mode */
@@ -1772,7 +1773,7 @@ void updatePatternEditorGUI(ft2_instance_t *inst)
 		/* Instrument textboxes: single column in normal mode */
 		static const uint16_t instNormY[8] = { 5, 16, 27, 38, 49, 60, 71, 82 };
 		for (int i = 0; i < 8; i++)
-			ft2_textbox_set_position(TB_INST1 + i, 446, instNormY[i], 140);
+			ft2_textbox_set_position(inst, TB_INST1 + i, 446, instNormY[i], 140);
 	}
 }
 

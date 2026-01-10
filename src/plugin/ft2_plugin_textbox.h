@@ -40,45 +40,53 @@ typedef struct textBox_t {
 	int32_t bufOffset;      /* Horizontal scroll offset */
 } textBox_t;
 
+/* Per-instance textbox state (replaces former global variables) */
+typedef struct ft2_textbox_state_t {
+	textBox_t textBoxes[NUM_TEXTBOXES];
+	int16_t activeTextBox;
+	bool textEditActive;
+	int16_t textBoxNeedsRedraw;
+} ft2_textbox_state_t;
+
 /* Initialization */
-void ft2_textbox_init(void);
+void ft2_textbox_init(ft2_textbox_state_t *state);
 void ft2_textbox_update_pointers(struct ft2_instance_t *inst);
-void ft2_textbox_free(void);
+void ft2_textbox_free(ft2_textbox_state_t *state);
 
 /* Mouse input */
-int16_t ft2_textbox_test_mouse_down(int32_t x, int32_t y, bool rightButton);
-void ft2_textbox_mouse_drag(int32_t x, int32_t y);
+int16_t ft2_textbox_test_mouse_down(struct ft2_instance_t *inst, int32_t x, int32_t y, bool rightButton);
+void ft2_textbox_mouse_drag(struct ft2_instance_t *inst, int32_t x, int32_t y);
 
 /* Keyboard input */
-void ft2_textbox_input_char(char c);
-void ft2_textbox_handle_key(int32_t keyCode, int32_t modifiers);
+void ft2_textbox_input_char(struct ft2_instance_t *inst, char c);
+void ft2_textbox_handle_key(struct ft2_instance_t *inst, int32_t keyCode, int32_t modifiers);
 
 /* State control */
-void ft2_textbox_exit_editing(void);
-bool ft2_textbox_is_editing(void);
-int16_t ft2_textbox_get_active(void);
-int16_t ft2_textbox_get_needs_redraw(void);
+void ft2_textbox_exit_editing(struct ft2_instance_t *inst);
+bool ft2_textbox_is_editing(struct ft2_instance_t *inst);
+int16_t ft2_textbox_get_active(struct ft2_instance_t *inst);
+int16_t ft2_textbox_get_needs_redraw(struct ft2_instance_t *inst);
 
 /* Visibility */
-void ft2_textbox_show(uint16_t textBoxID);
-void ft2_textbox_hide(uint16_t textBoxID);
+void ft2_textbox_show(struct ft2_instance_t *inst, uint16_t textBoxID);
+void ft2_textbox_hide(struct ft2_instance_t *inst, uint16_t textBoxID);
 
 /* Position (for dynamic repositioning in extended/normal mode) */
-void ft2_textbox_set_position(uint16_t textBoxID, uint16_t x, uint16_t y, uint16_t w);
+void ft2_textbox_set_position(struct ft2_instance_t *inst, uint16_t textBoxID, uint16_t x, uint16_t y, uint16_t w);
 
 /* Drawing */
-void ft2_textbox_draw(struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t textBoxID, const struct ft2_instance_t *inst);
-void ft2_textbox_draw_with_cursor(struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t textBoxID, bool showCursor, const struct ft2_instance_t *inst);
+void ft2_textbox_draw(struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t textBoxID, struct ft2_instance_t *inst);
+void ft2_textbox_draw_with_cursor(struct ft2_video_t *video, const struct ft2_bmp_t *bmp, uint16_t textBoxID, bool showCursor, struct ft2_instance_t *inst);
 
 /* Utilities */
-bool ft2_textbox_is_marked(void);
-int16_t ft2_textbox_get_cursor_x(uint16_t textBoxID);
-void ft2_textbox_set_cursor_end(uint16_t textBoxID);
+bool ft2_textbox_is_marked(struct ft2_instance_t *inst);
+int16_t ft2_textbox_get_cursor_x(struct ft2_instance_t *inst, uint16_t textBoxID);
+void ft2_textbox_set_cursor_end(struct ft2_instance_t *inst, uint16_t textBoxID);
 
 /* Dialog textbox */
-void ft2_textbox_configure_dialog(uint16_t x, uint16_t y, uint16_t w, uint16_t h, char *textPtr, uint16_t maxChars);
-void ft2_textbox_activate_dialog(void);
-void ft2_textbox_deactivate_dialog(void);
+void ft2_textbox_configure_dialog(struct ft2_instance_t *inst, uint16_t x, uint16_t y, uint16_t w, uint16_t h, char *textPtr, uint16_t maxChars);
+void ft2_textbox_activate_dialog(struct ft2_instance_t *inst);
+void ft2_textbox_deactivate_dialog(struct ft2_instance_t *inst);
 
 #ifdef __cplusplus
 }

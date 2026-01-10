@@ -116,7 +116,7 @@ void hideTopRightMainScreen(ft2_instance_t *inst)
 
 	hideInstrumentSwitcher(inst);
 	inst->uiState.instrSwitcherShown = false;
-	ft2_textbox_hide(TB_SONG_NAME);
+	ft2_textbox_hide(inst, TB_SONG_NAME);
 }
 
 /* Hide all top-screen elements: main sides + overlays */

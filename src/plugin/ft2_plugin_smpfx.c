@@ -37,16 +37,7 @@ typedef struct {
 	double inTmp[2], outTmp[2]; /* Delay line */
 } resoFilter_t;
 
-/* Single-level undo buffer */
-typedef struct {
-	bool filled, keepSampleMark;
-	uint8_t flags, undoInstr, undoSmp;
-	uint32_t length, loopStart, loopLength;
-	int8_t *smpData8;
-	int16_t *smpData16;
-} sampleUndo_t;
-
-static sampleUndo_t sampleUndo;
+#define UNDO_STATE(inst) (&FT2_SAMPLE_ED(inst)->undo)
 static bool normalization = false;
 static uint8_t lastFilterType = FILTER_LOWPASS;
 static int32_t lastLpCutoff = 2000, lastHpCutoff = 200, filterResonance = 0;
@@ -88,16 +79,19 @@ static void getSmpFxRange(ft2_instance_t *inst, ft2_sample_t *s, int32_t *x1, in
 
 void clearSampleUndo(ft2_instance_t *inst)
 {
-	(void)inst;
-	if (sampleUndo.smpData8) { free(sampleUndo.smpData8); sampleUndo.smpData8 = NULL; }
-	if (sampleUndo.smpData16) { free(sampleUndo.smpData16); sampleUndo.smpData16 = NULL; }
-	sampleUndo.filled = false;
-	sampleUndo.keepSampleMark = false;
+	if (!inst || !inst->ui) return;
+	smp_undo_t *undo = UNDO_STATE(inst);
+	if (undo->smpData8) { free(undo->smpData8); undo->smpData8 = NULL; }
+	if (undo->smpData16) { free(undo->smpData16); undo->smpData16 = NULL; }
+	undo->filled = false;
+	undo->keepSampleMark = false;
 }
 
 void fillSampleUndo(ft2_instance_t *inst, bool keepSampleMark)
 {
-	sampleUndo.filled = false;
+	if (!inst || !inst->ui) return;
+	smp_undo_t *undo = UNDO_STATE(inst);
+	undo->filled = false;
 
 	ft2_sample_t *s = getSmpFxCurSample(inst);
 	if (!s || s->length == 0 || !s->dataPtr) return;
@@ -105,23 +99,23 @@ void fillSampleUndo(ft2_instance_t *inst, bool keepSampleMark)
 	ft2_unfix_sample(s);
 	clearSampleUndo(inst);
 
-	sampleUndo.undoInstr = inst->editor.curInstr;
-	sampleUndo.undoSmp = inst->editor.curSmp;
-	sampleUndo.flags = s->flags;
-	sampleUndo.length = s->length;
-	sampleUndo.loopStart = s->loopStart;
-	sampleUndo.loopLength = s->loopLength;
-	sampleUndo.keepSampleMark = keepSampleMark;
+	undo->undoInstr = inst->editor.curInstr;
+	undo->undoSmp = inst->editor.curSmp;
+	undo->flags = s->flags;
+	undo->length = s->length;
+	undo->loopStart = s->loopStart;
+	undo->loopLength = s->loopLength;
+	undo->keepSampleMark = keepSampleMark;
 
 	if (s->flags & SAMPLE_16BIT)
 	{
-		sampleUndo.smpData16 = (int16_t *)malloc(s->length * sizeof(int16_t));
-		if (sampleUndo.smpData16) { memcpy(sampleUndo.smpData16, s->dataPtr, s->length * sizeof(int16_t)); sampleUndo.filled = true; }
+		undo->smpData16 = (int16_t *)malloc(s->length * sizeof(int16_t));
+		if (undo->smpData16) { memcpy(undo->smpData16, s->dataPtr, s->length * sizeof(int16_t)); undo->filled = true; }
 	}
 	else
 	{
-		sampleUndo.smpData8 = (int8_t *)malloc(s->length * sizeof(int8_t));
-		if (sampleUndo.smpData8) { memcpy(sampleUndo.smpData8, s->dataPtr, s->length * sizeof(int8_t)); sampleUndo.filled = true; }
+		undo->smpData8 = (int8_t *)malloc(s->length * sizeof(int8_t));
+		if (undo->smpData8) { memcpy(undo->smpData8, s->dataPtr, s->length * sizeof(int8_t)); undo->filled = true; }
 	}
 
 	ft2_fix_sample(s);
@@ -643,7 +637,9 @@ void pbSfxSetAmp(ft2_instance_t *inst)
 
 void pbSfxUndo(ft2_instance_t *inst)
 {
-	if (!sampleUndo.filled || sampleUndo.undoInstr != inst->editor.curInstr || sampleUndo.undoSmp != inst->editor.curSmp)
+	if (!inst || !inst->ui) return;
+	smp_undo_t *undo = UNDO_STATE(inst);
+	if (!undo->filled || undo->undoInstr != inst->editor.curInstr || undo->undoSmp != inst->editor.curSmp)
 		return;
 
 	ft2_sample_t *s = getSmpFxCurSample(inst);
@@ -652,20 +648,20 @@ void pbSfxUndo(ft2_instance_t *inst)
 	ft2_stop_sample_voices(inst, s);
 	freeSmpData(inst, inst->editor.curInstr, inst->editor.curSmp);
 
-	s->flags = sampleUndo.flags;
-	s->length = sampleUndo.length;
-	s->loopStart = sampleUndo.loopStart;
-	s->loopLength = sampleUndo.loopLength;
+	s->flags = undo->flags;
+	s->length = undo->length;
+	s->loopStart = undo->loopStart;
+	s->loopLength = undo->loopLength;
 
 	if (allocateSmpData(inst, inst->editor.curInstr, inst->editor.curSmp, s->length, !!(s->flags & SAMPLE_16BIT)))
 	{
-		memcpy(s->dataPtr, (s->flags & SAMPLE_16BIT) ? (void *)sampleUndo.smpData16 : (void *)sampleUndo.smpData8,
+		memcpy(s->dataPtr, (s->flags & SAMPLE_16BIT) ? (void *)undo->smpData16 : (void *)undo->smpData8,
 		       s->length * ((s->flags & SAMPLE_16BIT) ? sizeof(int16_t) : sizeof(int8_t)));
 		ft2_fix_sample(s);
 	}
 
-	sampleUndo.keepSampleMark = false;
-	sampleUndo.filled = false;
+	undo->keepSampleMark = false;
+	undo->filled = false;
 	inst->uiState.updateSampleEditor = true;
 }
 

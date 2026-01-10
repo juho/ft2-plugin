@@ -30,11 +30,25 @@ typedef struct ft2_scrollbar_state_t {
 	uint16_t thumbX, thumbY, thumbW, thumbH;
 } ft2_scrollbar_state_t;
 
+/* Widget mouse tracking state */
+typedef struct widget_mouse_state_t {
+	int32_t x, y, lastX, lastY, absX, absY, rawX, rawY;
+	bool leftButtonPressed, rightButtonPressed, leftButtonReleased, rightButtonReleased;
+	bool rightClickTrackedObject;
+	int16_t lastUsedObjectID;
+	int8_t lastUsedObjectType;
+	bool firstTimePressingButton;
+	uint8_t buttonCounter, mode;
+	int8_t xBias, yBias;
+	bool mouseOverTextBox;
+} widget_mouse_state_t;
+
 /* Widget state container */
 typedef struct ft2_widgets_t {
 	int mouseX, mouseY;
 	bool mouseDown;
 	int activeButton;
+	widget_mouse_state_t mouse;
 
 	pushButton_t pushButtons[NUM_PUSHBUTTONS];
 	scrollBar_t scrollBars[NUM_SCROLLBARS];
@@ -77,19 +91,19 @@ void ft2_widgets_handle_held_down(ft2_widgets_t *widgets, struct ft2_instance_t 
 void ft2_widgets_key_press(ft2_widgets_t *widgets, int key);
 
 /* Mouse state accessors */
-int32_t getWidgetMouseX(void);
-int32_t getWidgetMouseY(void);
-int32_t getWidgetMouseLastX(void);
-int32_t getWidgetMouseLastY(void);
-bool isWidgetMouseDown(void);
-bool isWidgetMouseRightDown(void);
-bool isMouseLeftButtonReleased(void);
-bool isMouseRightButtonReleased(void);
-int16_t getLastUsedWidget(void);
-int8_t getLastUsedWidgetType(void);
-void setLastUsedWidget(int16_t id, int8_t type);
-uint8_t getMouseMode(void);
-void setMouseMode(uint8_t mode);
+int32_t getWidgetMouseX(ft2_widgets_t *w);
+int32_t getWidgetMouseY(ft2_widgets_t *w);
+int32_t getWidgetMouseLastX(ft2_widgets_t *w);
+int32_t getWidgetMouseLastY(ft2_widgets_t *w);
+bool isWidgetMouseDown(ft2_widgets_t *w);
+bool isWidgetMouseRightDown(ft2_widgets_t *w);
+bool isMouseLeftButtonReleased(ft2_widgets_t *w);
+bool isMouseRightButtonReleased(ft2_widgets_t *w);
+int16_t getLastUsedWidget(ft2_widgets_t *w);
+int8_t getLastUsedWidgetType(ft2_widgets_t *w);
+void setLastUsedWidget(ft2_widgets_t *w, int16_t id, int8_t type);
+uint8_t getMouseMode(ft2_widgets_t *w);
+void setMouseMode(ft2_widgets_t *w, uint8_t mode);
 
 #ifdef __cplusplus
 }

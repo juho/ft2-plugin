@@ -15,6 +15,25 @@ extern "C" {
 struct ft2_video_t;
 struct ft2_bmp_t;
 struct ft2_instance_t;
+struct ft2_sample_t;
+
+/* Sample clipboard state (per-instance) */
+typedef struct smp_clipboard_t {
+	int8_t *data;              /* Clipboard sample data */
+	int32_t length;            /* Clipboard sample length */
+	bool is16Bit;              /* Clipboard sample bit depth */
+	bool didCopyWholeSample;   /* True if entire sample was copied */
+	struct ft2_sample_t *infoPtr; /* Pointer to sampleInfo for metadata */
+} smp_clipboard_t;
+
+/* Sample undo buffer (per-instance, single-level) */
+typedef struct smp_undo_t {
+	bool filled, keepSampleMark;
+	uint8_t flags, undoInstr, undoSmp;
+	uint32_t length, loopStart, loopLength;
+	int8_t *smpData8;
+	int16_t *smpData16;
+} smp_undo_t;
 
 /* Display area constants (match original FT2) */
 #define SAMPLE_AREA_HEIGHT 154
@@ -60,6 +79,12 @@ typedef struct ft2_sample_editor_t
 
 	int32_t lastDrawX;        /* Last draw position (draw mode) */
 	int32_t lastDrawY;        /* Last draw value (draw mode) */
+
+	/* Clipboard (per-instance) */
+	smp_clipboard_t clipboard;
+	
+	/* Undo buffer (per-instance) */
+	smp_undo_t undo;
 } ft2_sample_editor_t;
 
 /* Initialization */

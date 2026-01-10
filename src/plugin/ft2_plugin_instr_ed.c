@@ -89,7 +89,8 @@ void setOrStoreVolEnvPreset(ft2_instance_t *inst, uint8_t num)
 
 	ft2_plugin_config_t *cfg = &inst->config;
 
-	if (isMouseRightButtonReleased()) {
+	ft2_widgets_t *w = &FT2_UI(inst)->widgets;
+	if (isMouseRightButtonReleased(w)) {
 		cfg->stdFadeout[num] = ins->fadeout;
 		cfg->stdVolEnvSustain[num] = ins->volEnvSustain;
 		cfg->stdVolEnvLoopStart[num] = ins->volEnvLoopStart;
@@ -102,7 +103,7 @@ void setOrStoreVolEnvPreset(ft2_instance_t *inst, uint8_t num)
 		cfg->stdVibType[num] = ins->autoVibType;
 		
 		memcpy(cfg->stdEnvPoints[num][0], ins->volEnvPoints, sizeof(int16_t) * 12 * 2);
-	} else if (isMouseLeftButtonReleased()) {
+	} else if (isMouseLeftButtonReleased(w)) {
 		setStdVolEnvelope(inst, num);
 		inst->uiState.updateInstEditor = true;
 	}
@@ -116,7 +117,8 @@ void setOrStorePanEnvPreset(ft2_instance_t *inst, uint8_t num)
 
 	ft2_plugin_config_t *cfg = &inst->config;
 
-	if (isMouseRightButtonReleased()) {
+	ft2_widgets_t *w = &FT2_UI(inst)->widgets;
+	if (isMouseRightButtonReleased(w)) {
 		cfg->stdFadeout[num] = ins->fadeout;
 		cfg->stdPanEnvSustain[num] = ins->panEnvSustain;
 		cfg->stdPanEnvLoopStart[num] = ins->panEnvLoopStart;
@@ -129,7 +131,7 @@ void setOrStorePanEnvPreset(ft2_instance_t *inst, uint8_t num)
 		cfg->stdVibType[num] = ins->autoVibType;
 		
 		memcpy(cfg->stdEnvPoints[num][1], ins->panEnvPoints, sizeof(int16_t) * 12 * 2);
-	} else if (isMouseLeftButtonReleased()) {
+	} else if (isMouseLeftButtonReleased(w)) {
 		setStdPanEnvelope(inst, num);
 		inst->uiState.updateInstEditor = true;
 	}

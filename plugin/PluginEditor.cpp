@@ -1073,7 +1073,7 @@ bool FT2PluginEditor::keyPressed(const juce::KeyPress& key)
     juce::juce_wchar textChar = key.getTextCharacter();
     if (textChar >= 32 && textChar <= 126)
     {
-        ft2_ui_text_input(ui, static_cast<char>(textChar));
+        ft2_ui_text_input(ui, audioProcessor.getInstance(), static_cast<char>(textChar));
     }
     
     ft2_ui_key_press(ui, audioProcessor.getInstance(), ft2Key, modifiers);

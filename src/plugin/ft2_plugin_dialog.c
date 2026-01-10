@@ -77,9 +77,9 @@ static void calculateDialogSize(ft2_dialog_t *dlg)
 	if (dlg->type == DIALOG_INPUT || dlg->type == DIALOG_INPUT_PREVIEW) {
 		int inputX = (SCREEN_W - INPUT_BOX_W) / 2;
 		int inputY = dlg->y + 24;
-		ft2_textbox_configure_dialog((uint16_t)inputX, (uint16_t)inputY,
+		ft2_textbox_configure_dialog(dlg->instance, (uint16_t)inputX, (uint16_t)inputY,
 		                             INPUT_BOX_W, 12, dlg->inputBuffer, (uint16_t)dlg->inputMaxLen);
-		ft2_textbox_activate_dialog();
+		ft2_textbox_activate_dialog(dlg->instance);
 	}
 }
 
@@ -300,7 +300,7 @@ static bool pointInButton(int x, int y, int bx, int by)
 static void closeDialogWithResult(ft2_dialog_t *dlg, ft2_dialog_result_t result)
 {
 	if (dlg->type == DIALOG_INPUT || dlg->type == DIALOG_INPUT_PREVIEW)
-		ft2_textbox_deactivate_dialog();
+		ft2_textbox_deactivate_dialog(dlg->instance);
 
 	dlg->result = result;
 	dlg->active = false;
@@ -404,7 +404,7 @@ bool ft2_dialog_key_down(ft2_dialog_t *dlg, int keycode)
 		if (keycode == FT2_KEY_BACKSPACE || keycode == FT2_KEY_DELETE ||
 		    keycode == FT2_KEY_LEFT || keycode == FT2_KEY_RIGHT ||
 		    keycode == FT2_KEY_HOME || keycode == FT2_KEY_END) {
-			ft2_textbox_handle_key(keycode, 0);
+			ft2_textbox_handle_key(dlg->instance, keycode, 0);
 			return true;
 		}
 	}
@@ -416,7 +416,7 @@ bool ft2_dialog_char_input(ft2_dialog_t *dlg, char c)
 {
 	if (dlg == NULL || !dlg->active) return false;
 	if (dlg->type != DIALOG_INPUT && dlg->type != DIALOG_INPUT_PREVIEW) return false;
-	ft2_textbox_input_char(c);
+	ft2_textbox_input_char(dlg->instance, c);
 	return true;
 }
 

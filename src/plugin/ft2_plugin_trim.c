@@ -25,12 +25,7 @@
 #include "ft2_plugin_replayer.h"
 #include "../ft2_instance.h"
 
-/* Trim option flags */
-static bool removePatt = true, removeInst = true, removeSamp = true;
-static bool removeChans = true, removeSmpDataAfterLoop = true, convSmpsTo8Bit = false;
-
-/* Calculated XM sizes */
-static int64_t xmSize64 = -1, xmAfterTrimSize64 = -1, spaceSaved64 = -1;
+#define TRIM_STATE(inst) (&FT2_UI(inst)->trimState)
 
 /* Temporary storage for trim calculations */
 static char byteFormatBuffer[64];
@@ -92,6 +87,7 @@ void drawTrimScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (!ui) return;
 	ft2_widgets_t *widgets = &ui->widgets;
+	ft2_trim_state_t *trim = TRIM_STATE(inst);
 
 	drawFramework(video, 0,   92, 136, 81, FRAMEWORK_TYPE1);
 	drawFramework(video, 136, 92, 155, 81, FRAMEWORK_TYPE1);
@@ -112,13 +108,13 @@ void drawTrimScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *b
 	char sizeBuf[16];
 	const char *s;
 
-	s = (xmSize64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(xmSize64, true)), sizeBuf) : "Unknown";
+	s = (trim->xmSize64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(trim->xmSize64, true)), sizeBuf) : "Unknown";
 	textOut(video, bmp, 287 - textWidth(s), 111, PAL_FORGRND, s);
 
-	s = (xmAfterTrimSize64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(xmAfterTrimSize64, true)), sizeBuf) : "Unknown";
+	s = (trim->xmAfterTrimSize64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(trim->xmAfterTrimSize64, true)), sizeBuf) : "Unknown";
 	textOut(video, bmp, 287 - textWidth(s), 124, PAL_FORGRND, s);
 
-	s = (spaceSaved64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(spaceSaved64, false)), sizeBuf) : "Unknown";
+	s = (trim->spaceSaved64 > -1) ? (sprintf(sizeBuf, "%s", formatBytes(trim->spaceSaved64, false)), sizeBuf) : "Unknown";
 	textOut(video, bmp, 287 - textWidth(s), 137, PAL_FORGRND, s);
 
 	/* Widgets */
@@ -183,13 +179,15 @@ void toggleTrimScreen(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 
 void setInitialTrimFlags(ft2_instance_t *inst)
 {
-	removePatt = removeInst = removeSamp = removeChans = removeSmpDataAfterLoop = true;
-	convSmpsTo8Bit = false;
-
-	if (!inst) return;
+	if (!inst || !inst->ui) return;
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (!ui) return;
+	ft2_trim_state_t *trim = TRIM_STATE(inst);
 	ft2_widgets_t *widgets = &ui->widgets;
+
+	trim->removePatt = trim->removeInst = trim->removeSamp = true;
+	trim->removeChans = trim->removeSmpDataAfterLoop = true;
+	trim->convSmpsTo8Bit = false;
+	trim->xmSize64 = trim->xmAfterTrimSize64 = trim->spaceSaved64 = -1;
 
 	widgets->checkBoxChecked[CB_TRIM_PATT] = widgets->checkBoxChecked[CB_TRIM_INST] = true;
 	widgets->checkBoxChecked[CB_TRIM_SAMP] = widgets->checkBoxChecked[CB_TRIM_CHAN] = true;
@@ -199,11 +197,13 @@ void setInitialTrimFlags(ft2_instance_t *inst)
 
 void resetTrimSizes(ft2_instance_t *inst)
 {
-	xmSize64 = xmAfterTrimSize64 = spaceSaved64 = -1;
-	if (inst && inst->uiState.trimScreenShown)
+	if (!inst || !inst->ui) return;
+	ft2_trim_state_t *trim = TRIM_STATE(inst);
+	trim->xmSize64 = trim->xmAfterTrimSize64 = trim->spaceSaved64 = -1;
+	if (inst->uiState.trimScreenShown)
 	{
 		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-		if (ui) drawTrimScreen(inst, &ui->video, &ui->bmp);
+		drawTrimScreen(inst, &ui->video, &ui->bmp);
 	}
 }
 
@@ -211,12 +211,12 @@ void resetTrimSizes(ft2_instance_t *inst)
 /*                       CHECKBOX CALLBACKS                                  */
 /* ------------------------------------------------------------------------- */
 
-void cbTrimUnusedPatt(ft2_instance_t *inst) { (void)inst; removePatt ^= 1; }
-void cbTrimUnusedInst(ft2_instance_t *inst) { (void)inst; removeInst ^= 1; }
-void cbTrimUnusedSamp(ft2_instance_t *inst) { (void)inst; removeSamp ^= 1; }
-void cbTrimUnusedChans(ft2_instance_t *inst) { (void)inst; removeChans ^= 1; }
-void cbTrimUnusedSmpData(ft2_instance_t *inst) { (void)inst; removeSmpDataAfterLoop ^= 1; }
-void cbTrimSmpsTo8Bit(ft2_instance_t *inst) { (void)inst; convSmpsTo8Bit ^= 1; }
+void cbTrimUnusedPatt(ft2_instance_t *inst) { if (inst && inst->ui) TRIM_STATE(inst)->removePatt ^= 1; }
+void cbTrimUnusedInst(ft2_instance_t *inst) { if (inst && inst->ui) TRIM_STATE(inst)->removeInst ^= 1; }
+void cbTrimUnusedSamp(ft2_instance_t *inst) { if (inst && inst->ui) TRIM_STATE(inst)->removeSamp ^= 1; }
+void cbTrimUnusedChans(ft2_instance_t *inst) { if (inst && inst->ui) TRIM_STATE(inst)->removeChans ^= 1; }
+void cbTrimUnusedSmpData(ft2_instance_t *inst) { if (inst && inst->ui) TRIM_STATE(inst)->removeSmpDataAfterLoop ^= 1; }
+void cbTrimSmpsTo8Bit(ft2_instance_t *inst) { if (inst && inst->ui) TRIM_STATE(inst)->convSmpsTo8Bit ^= 1; }
 
 /* ------------------------------------------------------------------------- */
 /*                            HELPERS                                        */
@@ -394,7 +394,8 @@ static void convertSamplesTo8bit(ft2_instance_t *inst, bool testWipeSize, int16_
 /* Calculates bytes saved by applying all enabled trim options */
 static int64_t calculateTrimSize(ft2_instance_t *inst)
 {
-	if (!inst) return 0;
+	if (!inst || !inst->ui) return 0;
+	ft2_trim_state_t *trim = TRIM_STATE(inst);
 
 	int32_t numChannels = inst->replayer.song.numChannels;
 	int32_t pattDataLen = 0, newPattDataLen = 0;
@@ -411,7 +412,7 @@ static int64_t calculateTrimSize(ft2_instance_t *inst)
 		return 0;
 	}
 
-	if (removeInst || removeSamp || removeSmpDataAfterLoop || convSmpsTo8Bit)
+	if (trim->removeInst || trim->removeSamp || trim->removeSmpDataAfterLoop || trim->convSmpsTo8Bit)
 		oldInstrSize64 = getTempInsAndSmpSize(inst);
 
 	int16_t ap = 256;
@@ -420,11 +421,11 @@ static int64_t calculateTrimSize(ft2_instance_t *inst)
 	int16_t ai = 128;
 	while (ai > 0 && getUsedTempSamples(ai) == 0 && !tmpInstrName[ai][0]) ai--;
 
-	if (removeSamp) wipeSamplesUnused(inst, true, ai);
-	if (removeSmpDataAfterLoop) wipeSmpDataAfterLoop(inst, true, ai);
-	if (convSmpsTo8Bit) convertSamplesTo8bit(inst, true, ai);
+	if (trim->removeSamp) wipeSamplesUnused(inst, true, ai);
+	if (trim->removeSmpDataAfterLoop) wipeSmpDataAfterLoop(inst, true, ai);
+	if (trim->convSmpsTo8Bit) convertSamplesTo8bit(inst, true, ai);
 
-	if (removeChans || removePatt)
+	if (trim->removeChans || trim->removePatt)
 	{
 		for (int16_t i = 0; i < ap; i++)
 		{
@@ -434,7 +435,7 @@ static int64_t calculateTrimSize(ft2_instance_t *inst)
 		}
 	}
 
-	if (removeChans)
+	if (trim->removeChans)
 	{
 		int16_t highestChan = -1;
 		for (int16_t i = 0; i < ap; i++)
@@ -460,9 +461,9 @@ static int64_t calculateTrimSize(ft2_instance_t *inst)
 		}
 	}
 
-	if (removePatt) wipePattsUnused(inst, true, &ap);
+	if (trim->removePatt) wipePattsUnused(inst, true, &ap);
 
-	if (removeChans || removePatt)
+	if (trim->removeChans || trim->removePatt)
 	{
 		for (int16_t i = 0; i < ap; i++)
 		{
@@ -473,9 +474,9 @@ static int64_t calculateTrimSize(ft2_instance_t *inst)
 		if (pattDataLen > newPattDataLen) bytes64 += (pattDataLen - newPattDataLen);
 	}
 
-	if (removeInst) wipeInstrUnused(inst, true, &ai, ap, numChannels);
+	if (trim->removeInst) wipeInstrUnused(inst, true, &ai, ap, numChannels);
 
-	if (removeInst || removeSamp || removeSmpDataAfterLoop || convSmpsTo8Bit)
+	if (trim->removeInst || trim->removeSamp || trim->removeSmpDataAfterLoop || trim->convSmpsTo8Bit)
 	{
 		int64_t newInstrSize64 = getTempInsAndSmpSize(inst);
 		if (oldInstrSize64 > newInstrSize64) bytes64 += (oldInstrSize64 - newInstrSize64);
@@ -780,17 +781,18 @@ static void convertSamplesTo8bit(ft2_instance_t *inst, bool testWipeSize, int16_
 
 void pbTrimCalc(ft2_instance_t *inst)
 {
-	if (!inst) return;
+	if (!inst || !inst->ui) return;
+	ft2_trim_state_t *trim = TRIM_STATE(inst);
 
-	xmSize64 = calculateXMSize(inst);
-	spaceSaved64 = calculateTrimSize(inst);
-	xmAfterTrimSize64 = xmSize64 - spaceSaved64;
-	if (xmAfterTrimSize64 < 0) xmAfterTrimSize64 = 0;
+	trim->xmSize64 = calculateXMSize(inst);
+	trim->spaceSaved64 = calculateTrimSize(inst);
+	trim->xmAfterTrimSize64 = trim->xmSize64 - trim->spaceSaved64;
+	if (trim->xmAfterTrimSize64 < 0) trim->xmAfterTrimSize64 = 0;
 
 	if (inst->uiState.trimScreenShown)
 	{
 		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-		if (ui) drawTrimScreen(inst, &ui->video, &ui->bmp);
+		drawTrimScreen(inst, &ui->video, &ui->bmp);
 	}
 }
 
@@ -798,7 +800,8 @@ static void doTrimConfirmed(ft2_instance_t *inst, ft2_dialog_result_t result,
                             const char *inputText, void *userData)
 {
 	(void)inputText; (void)userData;
-	if (!inst || result != DIALOG_RESULT_YES) return;
+	if (!inst || !inst->ui || result != DIALOG_RESULT_YES) return;
+	ft2_trim_state_t *trim = TRIM_STATE(inst);
 
 	int16_t ap = 256;
 	while (ap > 0 && patternEmpty(inst, ap - 1)) ap--;
@@ -815,11 +818,11 @@ static void doTrimConfirmed(ft2_instance_t *inst, ft2_dialog_result_t result,
 
 	ft2_stop_all_voices(inst);
 
-	if (removeSamp) wipeSamplesUnused(inst, false, ai);
-	if (removeSmpDataAfterLoop) wipeSmpDataAfterLoop(inst, false, ai);
-	if (convSmpsTo8Bit) convertSamplesTo8bit(inst, false, ai);
+	if (trim->removeSamp) wipeSamplesUnused(inst, false, ai);
+	if (trim->removeSmpDataAfterLoop) wipeSmpDataAfterLoop(inst, false, ai);
+	if (trim->convSmpsTo8Bit) convertSamplesTo8bit(inst, false, ai);
 
-	if (removeChans)
+	if (trim->removeChans)
 	{
 		int16_t highestChan = -1;
 		for (int32_t i = 0; i < ap; i++)
@@ -859,8 +862,8 @@ static void doTrimConfirmed(ft2_instance_t *inst, ft2_dialog_result_t result,
 		}
 	}
 
-	if (removePatt) wipePattsUnused(inst, false, &ap);
-	if (removeInst) wipeInstrUnused(inst, false, &ai, ap, inst->replayer.song.numChannels);
+	if (trim->removePatt) wipePattsUnused(inst, false, &ap);
+	if (trim->removeInst) wipeInstrUnused(inst, false, &ai, ap, inst->replayer.song.numChannels);
 
 	freeTmpInstruments();
 	ft2_song_mark_modified(inst);
@@ -873,13 +876,13 @@ static void doTrimConfirmed(ft2_instance_t *inst, ft2_dialog_result_t result,
 
 void pbTrimDoTrim(ft2_instance_t *inst)
 {
-	if (!inst) return;
-	if (!removePatt && !removeInst && !removeSamp && !removeChans && !removeSmpDataAfterLoop && !convSmpsTo8Bit)
+	if (!inst || !inst->ui) return;
+	ft2_trim_state_t *trim = TRIM_STATE(inst);
+	if (!trim->removePatt && !trim->removeInst && !trim->removeSamp && 
+	    !trim->removeChans && !trim->removeSmpDataAfterLoop && !trim->convSmpsTo8Bit)
 		return;
 
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-	if (!ui) return;
-
 	ft2_dialog_show_yesno_cb(&ui->dialog, "System request",
 		"Are you sure you want to trim the song? Making a backup of the song first is recommended.",
 		inst, doTrimConfirmed, NULL);

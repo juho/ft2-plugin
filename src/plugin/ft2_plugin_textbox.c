@@ -1,6 +1,7 @@
 /*
 ** FT2 Plugin - Textbox Input System
 ** Port of ft2_textboxes.c: text editing for instrument/sample names, song name, etc.
+** Instance-aware: each plugin instance has its own textbox state.
 */
 
 #include <stdint.h>
@@ -10,12 +11,12 @@
 #include "ft2_plugin_textbox.h"
 #include "ft2_plugin_video.h"
 #include "ft2_plugin_bmp.h"
+#include "ft2_plugin_ui.h"
 #include "ft2_instance.h"
 
-static textBox_t textBoxes[NUM_TEXTBOXES];
-static int16_t activeTextBox = -1;
-static bool textEditActive = false;
-static int16_t textBoxNeedsRedraw = -1;
+/* Access textbox state from instance */
+#define TB_STATE(inst) (&FT2_UI(inst)->textbox)
+#define TB_BOXES(inst) (TB_STATE(inst)->textBoxes)
 
 /* ------------------------------------------------------------------------- */
 /*                          TEXT RENDERING                                   */
@@ -97,15 +98,20 @@ static void allocTextBoxRenderBuf(textBox_t *t)
 /*                         INITIALIZATION                                    */
 /* ------------------------------------------------------------------------- */
 
-void ft2_textbox_init(void)
+void ft2_textbox_init(ft2_textbox_state_t *state)
 {
-	memset(textBoxes, 0, sizeof(textBoxes));
+	if (!state) return;
+
+	memset(state, 0, sizeof(ft2_textbox_state_t));
+	state->activeTextBox = -1;
+	state->textEditActive = false;
+	state->textBoxNeedsRedraw = -1;
 
 	/* Instrument name textboxes (8 visible, right-click to edit) */
 	static const uint16_t instY[8] = { 5, 16, 27, 38, 49, 60, 71, 82 };
 	for (int i = 0; i < 8; i++)
 	{
-		textBox_t *t = &textBoxes[TB_INST1 + i];
+		textBox_t *t = &state->textBoxes[TB_INST1 + i];
 		t->x = 446; t->y = instY[i]; t->w = 140; t->h = 10;
 		t->tx = 1; t->ty = 0; t->maxChars = 22;
 		t->rightMouseButton = true; t->visible = true;
@@ -116,7 +122,7 @@ void ft2_textbox_init(void)
 	static const uint16_t sampY[5] = { 99, 110, 121, 132, 143 };
 	for (int i = 0; i < 5; i++)
 	{
-		textBox_t *t = &textBoxes[TB_SAMP1 + i];
+		textBox_t *t = &state->textBoxes[TB_SAMP1 + i];
 		t->x = 446; t->y = sampY[i]; t->w = 116; t->h = 10;
 		t->tx = 1; t->ty = 0; t->maxChars = 22;
 		t->rightMouseButton = true; t->visible = true;
@@ -125,7 +131,7 @@ void ft2_textbox_init(void)
 
 	/* Song name textbox (left-click to edit) */
 	{
-		textBox_t *t = &textBoxes[TB_SONG_NAME];
+		textBox_t *t = &state->textBoxes[TB_SONG_NAME];
 		t->x = 424; t->y = 158; t->w = 160; t->h = 12;
 		t->tx = 2; t->ty = 1; t->maxChars = 20;
 		t->rightMouseButton = false; t->visible = true;
@@ -134,7 +140,7 @@ void ft2_textbox_init(void)
 
 	/* Disk op filename textbox */
 	{
-		textBox_t *t = &textBoxes[TB_DISKOP_FILENAME];
+		textBox_t *t = &state->textBoxes[TB_DISKOP_FILENAME];
 		t->x = 31; t->y = 158; t->w = 134; t->h = 12;
 		t->tx = 2; t->ty = 1; t->maxChars = 255;
 		t->rightMouseButton = false; t->visible = false;
@@ -143,26 +149,24 @@ void ft2_textbox_init(void)
 
 	/* Dialog input textbox (configured dynamically) */
 	{
-		textBox_t *t = &textBoxes[TB_DIALOG_INPUT];
+		textBox_t *t = &state->textBoxes[TB_DIALOG_INPUT];
 		t->x = 0; t->y = 0; t->w = 250; t->h = 12;
 		t->tx = 2; t->ty = 1; t->maxChars = 255;
 		t->rightMouseButton = false; t->visible = false; t->textPtr = NULL;
 		allocTextBoxRenderBuf(t);
 	}
-
-	activeTextBox = -1;
-	textEditActive = false;
 }
 
 void ft2_textbox_update_pointers(ft2_instance_t *inst)
 {
-	if (!inst) return;
+	if (!inst || !inst->ui) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
 
 	/* Instrument name pointers (instrName is 1-indexed) */
 	for (int i = 0; i < 8; i++)
 	{
 		uint8_t instrIdx = inst->editor.instrBankOffset + i + 1;
-		textBoxes[TB_INST1 + i].textPtr = (instrIdx <= FT2_MAX_INST) ? inst->replayer.song.instrName[instrIdx] : NULL;
+		state->textBoxes[TB_INST1 + i].textPtr = (instrIdx <= FT2_MAX_INST) ? inst->replayer.song.instrName[instrIdx] : NULL;
 	}
 
 	/* Sample name pointers */
@@ -170,11 +174,11 @@ void ft2_textbox_update_pointers(ft2_instance_t *inst)
 	for (int i = 0; i < 5; i++)
 	{
 		uint8_t smpIdx = inst->editor.sampleBankOffset + i;
-		textBoxes[TB_SAMP1 + i].textPtr = (curInstr && smpIdx < 16) ? curInstr->smp[smpIdx].name : NULL;
+		state->textBoxes[TB_SAMP1 + i].textPtr = (curInstr && smpIdx < 16) ? curInstr->smp[smpIdx].name : NULL;
 	}
 
-	textBoxes[TB_SONG_NAME].textPtr = inst->replayer.song.name;
-	textBoxes[TB_DISKOP_FILENAME].textPtr = inst->diskop.filename;
+	state->textBoxes[TB_SONG_NAME].textPtr = inst->replayer.song.name;
+	state->textBoxes[TB_DISKOP_FILENAME].textPtr = inst->diskop.filename;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -209,27 +213,30 @@ static void moveTextCursorToMouseX(textBox_t *t, int32_t mouseX)
 	}
 }
 
-int16_t ft2_textbox_test_mouse_down(int32_t x, int32_t y, bool rightButton)
+int16_t ft2_textbox_test_mouse_down(ft2_instance_t *inst, int32_t x, int32_t y, bool rightButton)
 {
+	if (!inst || !inst->ui) return -1;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+
 	for (int i = 0; i < NUM_TEXTBOXES; i++)
 	{
-		textBox_t *t = &textBoxes[i];
+		textBox_t *t = &state->textBoxes[i];
 		if (!t->visible || !t->textPtr) continue;
 		if (x < t->x || x >= t->x + t->w || y < t->y || y >= t->y + t->h) continue;
 
 		/* Right-click textboxes require right button */
 		if (!rightButton && t->rightMouseButton) continue;
 
-		if (textEditActive && i != activeTextBox) ft2_textbox_exit_editing();
+		if (state->textEditActive && i != state->activeTextBox) ft2_textbox_exit_editing(inst);
 
-		activeTextBox = (int16_t)i;
-		textEditActive = true;
+		state->activeTextBox = (int16_t)i;
+		state->textEditActive = true;
 		t->active = true;
 		moveTextCursorToMouseX(t, x);
 		return (int16_t)i;
 	}
 
-	if (textEditActive) ft2_textbox_exit_editing();
+	if (state->textEditActive) ft2_textbox_exit_editing(inst);
 	return -1;
 }
 
@@ -237,11 +244,14 @@ int16_t ft2_textbox_test_mouse_down(int32_t x, int32_t y, bool rightButton)
 /*                       KEYBOARD INPUT                                      */
 /* ------------------------------------------------------------------------- */
 
-void ft2_textbox_input_char(char c)
+void ft2_textbox_input_char(ft2_instance_t *inst, char c)
 {
-	if (!textEditActive || activeTextBox < 0 || activeTextBox >= NUM_TEXTBOXES) return;
+	if (!inst || !inst->ui) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
 
-	textBox_t *t = &textBoxes[activeTextBox];
+	if (!state->textEditActive || state->activeTextBox < 0 || state->activeTextBox >= NUM_TEXTBOXES) return;
+
+	textBox_t *t = &state->textBoxes[state->activeTextBox];
 	if (!t->textPtr) return;
 
 	int16_t len = getTextLength(t);
@@ -264,11 +274,14 @@ void ft2_textbox_input_char(char c)
 	if (cursorPosToX(t) >= t->renderW) scrollTextBufferRight(t, (uint16_t)getTextLength(t));
 }
 
-void ft2_textbox_handle_key(int32_t keyCode, int32_t modifiers)
+void ft2_textbox_handle_key(ft2_instance_t *inst, int32_t keyCode, int32_t modifiers)
 {
-	if (!textEditActive || activeTextBox < 0 || activeTextBox >= NUM_TEXTBOXES) return;
+	if (!inst || !inst->ui) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
 
-	textBox_t *t = &textBoxes[activeTextBox];
+	if (!state->textEditActive || state->activeTextBox < 0 || state->activeTextBox >= NUM_TEXTBOXES) return;
+
+	textBox_t *t = &state->textBoxes[state->activeTextBox];
 	if (!t->textPtr) return;
 
 	int16_t len = getTextLength(t);
@@ -317,7 +330,7 @@ void ft2_textbox_handle_key(int32_t keyCode, int32_t modifiers)
 
 		case '\r': /* Enter */
 		case 27:   /* Escape */
-			ft2_textbox_exit_editing();
+			ft2_textbox_exit_editing(inst);
 			break;
 
 		default: break;
@@ -328,29 +341,44 @@ void ft2_textbox_handle_key(int32_t keyCode, int32_t modifiers)
 /*                          STATE CONTROL                                    */
 /* ------------------------------------------------------------------------- */
 
-void ft2_textbox_exit_editing(void)
+void ft2_textbox_exit_editing(ft2_instance_t *inst)
 {
-	if (activeTextBox >= 0 && activeTextBox < NUM_TEXTBOXES)
+	if (!inst || !inst->ui) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+
+	if (state->activeTextBox >= 0 && state->activeTextBox < NUM_TEXTBOXES)
 	{
-		textBoxes[activeTextBox].active = false;
-		textBoxes[activeTextBox].bufOffset = 0;
-		textBoxNeedsRedraw = activeTextBox;
+		state->textBoxes[state->activeTextBox].active = false;
+		state->textBoxes[state->activeTextBox].bufOffset = 0;
+		state->textBoxNeedsRedraw = state->activeTextBox;
 	}
-	activeTextBox = -1;
-	textEditActive = false;
+	state->activeTextBox = -1;
+	state->textEditActive = false;
 }
 
-int16_t ft2_textbox_get_needs_redraw(void)
+int16_t ft2_textbox_get_needs_redraw(ft2_instance_t *inst)
 {
-	int16_t result = textBoxNeedsRedraw;
-	textBoxNeedsRedraw = -1;
+	if (!inst || !inst->ui) return -1;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+
+	int16_t result = state->textBoxNeedsRedraw;
+	state->textBoxNeedsRedraw = -1;
 	return result;
 }
 
-bool ft2_textbox_is_editing(void) { return textEditActive; }
-int16_t ft2_textbox_get_active(void) { return activeTextBox; }
+bool ft2_textbox_is_editing(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return false;
+	return TB_STATE(inst)->textEditActive;
+}
 
-void ft2_textbox_draw(ft2_video_t *video, const ft2_bmp_t *bmp, uint16_t textBoxID, const ft2_instance_t *inst)
+int16_t ft2_textbox_get_active(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return -1;
+	return TB_STATE(inst)->activeTextBox;
+}
+
+void ft2_textbox_draw(ft2_video_t *video, const ft2_bmp_t *bmp, uint16_t textBoxID, ft2_instance_t *inst)
 {
 	ft2_textbox_draw_with_cursor(video, bmp, textBoxID, false, inst);
 }
@@ -381,11 +409,12 @@ static uint8_t getTextBoxBackgroundPal(uint16_t textBoxID, const ft2_instance_t 
 
 void ft2_textbox_draw_with_cursor(ft2_video_t *video, const ft2_bmp_t *bmp, 
                                   uint16_t textBoxID, bool showCursor, 
-                                  const ft2_instance_t *inst)
+                                  ft2_instance_t *inst)
 {
-	if (textBoxID >= NUM_TEXTBOXES || !video) return;
+	if (!inst || !inst->ui || textBoxID >= NUM_TEXTBOXES || !video) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
 
-	textBox_t *t = &textBoxes[textBoxID];
+	textBox_t *t = &state->textBoxes[textBoxID];
 	if (!t->visible || !t->renderBuf) return;
 
 	uint8_t bgPal = getTextBoxBackgroundPal(textBoxID, inst);
@@ -415,22 +444,25 @@ void ft2_textbox_draw_with_cursor(ft2_video_t *video, const ft2_bmp_t *bmp,
 /*                         VISIBILITY                                        */
 /* ------------------------------------------------------------------------- */
 
-void ft2_textbox_show(uint16_t textBoxID)
+void ft2_textbox_show(ft2_instance_t *inst, uint16_t textBoxID)
 {
-	if (textBoxID < NUM_TEXTBOXES) textBoxes[textBoxID].visible = true;
+	if (!inst || !inst->ui || textBoxID >= NUM_TEXTBOXES) return;
+	TB_STATE(inst)->textBoxes[textBoxID].visible = true;
 }
 
-void ft2_textbox_hide(uint16_t textBoxID)
+void ft2_textbox_hide(ft2_instance_t *inst, uint16_t textBoxID)
 {
-	if (textBoxID >= NUM_TEXTBOXES) return;
-	textBoxes[textBoxID].visible = false;
-	if (activeTextBox == (int16_t)textBoxID) ft2_textbox_exit_editing();
+	if (!inst || !inst->ui || textBoxID >= NUM_TEXTBOXES) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+
+	state->textBoxes[textBoxID].visible = false;
+	if (state->activeTextBox == (int16_t)textBoxID) ft2_textbox_exit_editing(inst);
 }
 
-void ft2_textbox_set_position(uint16_t textBoxID, uint16_t x, uint16_t y, uint16_t w)
+void ft2_textbox_set_position(ft2_instance_t *inst, uint16_t textBoxID, uint16_t x, uint16_t y, uint16_t w)
 {
-	if (textBoxID >= NUM_TEXTBOXES) return;
-	textBox_t *t = &textBoxes[textBoxID];
+	if (!inst || !inst->ui || textBoxID >= NUM_TEXTBOXES) return;
+	textBox_t *t = &TB_STATE(inst)->textBoxes[textBoxID];
 
 	t->x = x;
 	t->y = y;
@@ -446,26 +478,33 @@ void ft2_textbox_set_position(uint16_t textBoxID, uint16_t x, uint16_t y, uint16
 /*                          UTILITIES                                        */
 /* ------------------------------------------------------------------------- */
 
-bool ft2_textbox_is_marked(void) { return false; /* Selection not implemented */ }
-
-int16_t ft2_textbox_get_cursor_x(uint16_t textBoxID)
+bool ft2_textbox_is_marked(ft2_instance_t *inst)
 {
-	if (textBoxID >= NUM_TEXTBOXES) return 0;
-	textBox_t *t = &textBoxes[textBoxID];
+	(void)inst;
+	return false; /* Selection not implemented */
+}
+
+int16_t ft2_textbox_get_cursor_x(ft2_instance_t *inst, uint16_t textBoxID)
+{
+	if (!inst || !inst->ui || textBoxID >= NUM_TEXTBOXES) return 0;
+	textBox_t *t = &TB_STATE(inst)->textBoxes[textBoxID];
 	return t->x + 1 + (t->cursorPos * FONT1_CHAR_W);
 }
 
-void ft2_textbox_set_cursor_end(uint16_t textBoxID)
+void ft2_textbox_set_cursor_end(ft2_instance_t *inst, uint16_t textBoxID)
 {
-	if (textBoxID >= NUM_TEXTBOXES) return;
-	textBox_t *t = &textBoxes[textBoxID];
+	if (!inst || !inst->ui || textBoxID >= NUM_TEXTBOXES) return;
+	textBox_t *t = &TB_STATE(inst)->textBoxes[textBoxID];
 	if (t->textPtr) t->cursorPos = (int16_t)strlen(t->textPtr);
 }
 
-void ft2_textbox_mouse_drag(int32_t x, int32_t y)
+void ft2_textbox_mouse_drag(ft2_instance_t *inst, int32_t x, int32_t y)
 {
-	if (!textEditActive || activeTextBox < 0 || activeTextBox >= NUM_TEXTBOXES) return;
-	textBox_t *t = &textBoxes[activeTextBox];
+	if (!inst || !inst->ui) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+
+	if (!state->textEditActive || state->activeTextBox < 0 || state->activeTextBox >= NUM_TEXTBOXES) return;
+	textBox_t *t = &state->textBoxes[state->activeTextBox];
 	if (!t->textPtr) return;
 	(void)y;
 	moveTextCursorToMouseX(t, x);
@@ -475,10 +514,11 @@ void ft2_textbox_mouse_drag(int32_t x, int32_t y)
 /*                       DIALOG TEXTBOX                                      */
 /* ------------------------------------------------------------------------- */
 
-void ft2_textbox_configure_dialog(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+void ft2_textbox_configure_dialog(ft2_instance_t *inst, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                                   char *textPtr, uint16_t maxChars)
 {
-	textBox_t *t = &textBoxes[TB_DIALOG_INPUT];
+	if (!inst || !inst->ui) return;
+	textBox_t *t = &TB_STATE(inst)->textBoxes[TB_DIALOG_INPUT];
 	bool needRealloc = (maxChars != t->maxChars);
 
 	t->x = x; t->y = y; t->w = w; t->h = h;
@@ -497,24 +537,29 @@ void ft2_textbox_configure_dialog(uint16_t x, uint16_t y, uint16_t w, uint16_t h
 		t->renderW = t->w - (t->tx * 2);
 }
 
-void ft2_textbox_activate_dialog(void)
+void ft2_textbox_activate_dialog(ft2_instance_t *inst)
 {
-	textBox_t *t = &textBoxes[TB_DIALOG_INPUT];
+	if (!inst || !inst->ui) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+	textBox_t *t = &state->textBoxes[TB_DIALOG_INPUT];
 	if (!t->textPtr) return;
 
-	if (textEditActive && activeTextBox >= 0 && activeTextBox != TB_DIALOG_INPUT)
-		ft2_textbox_exit_editing();
+	if (state->textEditActive && state->activeTextBox >= 0 && state->activeTextBox != TB_DIALOG_INPUT)
+		ft2_textbox_exit_editing(inst);
 
-	activeTextBox = TB_DIALOG_INPUT;
-	textEditActive = true;
+	state->activeTextBox = TB_DIALOG_INPUT;
+	state->textEditActive = true;
 	t->active = true;
 	t->cursorPos = (int16_t)strlen(t->textPtr);
 }
 
-void ft2_textbox_deactivate_dialog(void)
+void ft2_textbox_deactivate_dialog(ft2_instance_t *inst)
 {
-	textBox_t *t = &textBoxes[TB_DIALOG_INPUT];
-	if (activeTextBox == TB_DIALOG_INPUT) { activeTextBox = -1; textEditActive = false; }
+	if (!inst || !inst->ui) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+	textBox_t *t = &state->textBoxes[TB_DIALOG_INPUT];
+
+	if (state->activeTextBox == TB_DIALOG_INPUT) { state->activeTextBox = -1; state->textEditActive = false; }
 	t->active = false; t->visible = false; t->textPtr = NULL;
 }
 
@@ -522,9 +567,10 @@ void ft2_textbox_deactivate_dialog(void)
 /*                           CLEANUP                                         */
 /* ------------------------------------------------------------------------- */
 
-void ft2_textbox_free(void)
+void ft2_textbox_free(ft2_textbox_state_t *state)
 {
-	for (int i = 0; i < NUM_TEXTBOXES; i++)
-		if (textBoxes[i].renderBuf) { free(textBoxes[i].renderBuf); textBoxes[i].renderBuf = NULL; }
-}
+	if (!state) return;
 
+	for (int i = 0; i < NUM_TEXTBOXES; i++)
+		if (state->textBoxes[i].renderBuf) { free(state->textBoxes[i].renderBuf); state->textBoxes[i].renderBuf = NULL; }
+}

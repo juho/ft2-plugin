@@ -17,6 +17,12 @@ extern "C" {
 
 struct ft2_instance_t;
 
+typedef struct ft2_trim_state_t {
+	bool removePatt, removeInst, removeSamp;
+	bool removeChans, removeSmpDataAfterLoop, convSmpsTo8Bit;
+	int64_t xmSize64, xmAfterTrimSize64, spaceSaved64;
+} ft2_trim_state_t;
+
 /* Screen visibility */
 void drawTrimScreen(struct ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp);
 void showTrimScreen(struct ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp);

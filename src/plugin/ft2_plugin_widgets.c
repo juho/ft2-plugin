@@ -28,19 +28,6 @@ enum {
 };
 #define OBJECT_ID_NONE -1
 
-/* Mouse state (matches FT2 mouse_t structure) */
-static struct {
-	int32_t x, y, lastX, lastY, absX, absY, rawX, rawY;
-	bool leftButtonPressed, rightButtonPressed, leftButtonReleased, rightButtonReleased;
-	bool rightClickTrackedObject;
-	int16_t lastUsedObjectID;
-	int8_t lastUsedObjectType;
-	bool firstTimePressingButton;
-	uint8_t buttonCounter, mode;
-	int8_t xBias, yBias;
-	bool mouseOverTextBox;
-} mouse = {0};
-
 enum { MOUSE_MODE_NORMAL = 0, MOUSE_MODE_DELETE, MOUSE_MODE_RENAME };
 
 /* ------------------------------------------------------------------------- */
@@ -78,10 +65,10 @@ void ft2_widgets_init(ft2_widgets_t *widgets)
 	initCallbacks(widgets);
 	initFTHelp();
 
-	/* Reset mouse state */
-	memset(&mouse, 0, sizeof(mouse));
-	mouse.lastUsedObjectID = OBJECT_ID_NONE;
-	mouse.lastUsedObjectType = OBJECT_NONE;
+	/* Reset mouse state (per-instance) */
+	memset(&widgets->mouse, 0, sizeof(widgets->mouse));
+	widgets->mouse.lastUsedObjectID = OBJECT_ID_NONE;
+	widgets->mouse.lastUsedObjectType = OBJECT_NONE;
 
 	widgets->mouseX = widgets->mouseY = 0;
 	widgets->mouseDown = false;
@@ -114,123 +101,135 @@ void ft2_widgets_mouse_down(ft2_widgets_t *widgets, struct ft2_instance_t *inst,
 	struct ft2_video_t *video, int x, int y, bool sysReqShown)
 {
 	if (!widgets) return;
+	widget_mouse_state_t *m = &widgets->mouse;
 
-	mouse.x = x; mouse.y = y;
-	mouse.leftButtonPressed = true;
-	mouse.leftButtonReleased = mouse.rightButtonReleased = false;
+	m->x = x; m->y = y;
+	m->leftButtonPressed = true;
+	m->leftButtonReleased = m->rightButtonReleased = false;
 
-	if (mouse.lastUsedObjectType != OBJECT_NONE) return;
+	if (m->lastUsedObjectType != OBJECT_NONE) return;
 
-	mouse.lastUsedObjectID = OBJECT_ID_NONE;
-	mouse.lastUsedObjectType = OBJECT_NONE;
-	mouse.firstTimePressingButton = true;
-	mouse.buttonCounter = 0;
+	m->lastUsedObjectID = OBJECT_ID_NONE;
+	m->lastUsedObjectType = OBJECT_NONE;
+	m->firstTimePressingButton = true;
+	m->buttonCounter = 0;
 
 	int16_t id;
 	if ((id = testPushButtonMouseDown(widgets, inst, x, y, sysReqShown)) >= 0)
-		{ mouse.lastUsedObjectID = id; mouse.lastUsedObjectType = OBJECT_PUSHBUTTON; return; }
+		{ m->lastUsedObjectID = id; m->lastUsedObjectType = OBJECT_PUSHBUTTON; return; }
 	if ((id = testScrollBarMouseDown(widgets, inst, video, x, y, sysReqShown)) >= 0)
-		{ mouse.lastUsedObjectID = id; mouse.lastUsedObjectType = OBJECT_SCROLLBAR; return; }
+		{ m->lastUsedObjectID = id; m->lastUsedObjectType = OBJECT_SCROLLBAR; return; }
 	if (sysReqShown) return;
 	if ((id = testCheckBoxMouseDown(widgets, x, y, false)) >= 0)
-		{ mouse.lastUsedObjectID = id; mouse.lastUsedObjectType = OBJECT_CHECKBOX; return; }
+		{ m->lastUsedObjectID = id; m->lastUsedObjectType = OBJECT_CHECKBOX; return; }
 	if ((id = testRadioButtonMouseDown(widgets, x, y, false)) >= 0)
-		{ mouse.lastUsedObjectID = id; mouse.lastUsedObjectType = OBJECT_RADIOBUTTON; return; }
+		{ m->lastUsedObjectID = id; m->lastUsedObjectType = OBJECT_RADIOBUTTON; return; }
 	testInstrSwitcherMouseDown(inst, x, y);
 }
 
 void ft2_widgets_mouse_down_right(ft2_widgets_t *widgets, int x, int y, struct ft2_instance_t *inst)
 {
-	mouse.x = x; mouse.y = y;
-	mouse.rightButtonPressed = true;
-	mouse.leftButtonReleased = mouse.rightButtonReleased = false;
+	if (!widgets) return;
+	widget_mouse_state_t *m = &widgets->mouse;
 
-	if (mouse.lastUsedObjectType != OBJECT_NONE || !widgets) return;
+	m->x = x; m->y = y;
+	m->rightButtonPressed = true;
+	m->leftButtonReleased = m->rightButtonReleased = false;
+
+	if (m->lastUsedObjectType != OBJECT_NONE) return;
 
 	/* Right-click only tests pushbuttons (for predef envelope save) */
 	int16_t pbID = testPushButtonMouseDown(widgets, inst, x, y, false);
 	if (pbID >= 0)
 	{
-		mouse.lastUsedObjectID = pbID;
-		mouse.lastUsedObjectType = OBJECT_PUSHBUTTON;
-		mouse.rightClickTrackedObject = true;
+		m->lastUsedObjectID = pbID;
+		m->lastUsedObjectType = OBJECT_PUSHBUTTON;
+		m->rightClickTrackedObject = true;
 	}
 }
 
 void ft2_widgets_mouse_up(ft2_widgets_t *widgets, int x, int y, struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp)
 {
 	if (!widgets) return;
+	widget_mouse_state_t *m = &widgets->mouse;
 
-	mouse.x = x; mouse.y = y;
-	mouse.leftButtonPressed = false;
-	mouse.leftButtonReleased = true;
-	mouse.firstTimePressingButton = false;
-	mouse.buttonCounter = 0;
+	m->x = x; m->y = y;
+	m->leftButtonPressed = false;
+	m->leftButtonReleased = true;
+	m->firstTimePressingButton = false;
+	m->buttonCounter = 0;
 
-	if (mouse.rightButtonPressed) return;
+	if (m->rightButtonPressed) return;
 
-	switch (mouse.lastUsedObjectType)
+	switch (m->lastUsedObjectType)
 	{
-		case OBJECT_PUSHBUTTON:  testPushButtonMouseRelease(widgets, inst, video, bmp, x, y, mouse.lastUsedObjectID, true); break;
-		case OBJECT_SCROLLBAR:   testScrollBarMouseRelease(widgets, video, mouse.lastUsedObjectID); break;
-		case OBJECT_CHECKBOX:    testCheckBoxMouseRelease(widgets, inst, video, bmp, x, y, mouse.lastUsedObjectID); break;
-		case OBJECT_RADIOBUTTON: testRadioButtonMouseRelease(widgets, inst, video, bmp, x, y, mouse.lastUsedObjectID); break;
+		case OBJECT_PUSHBUTTON:  testPushButtonMouseRelease(widgets, inst, video, bmp, x, y, m->lastUsedObjectID, true); break;
+		case OBJECT_SCROLLBAR:   testScrollBarMouseRelease(widgets, video, m->lastUsedObjectID); break;
+		case OBJECT_CHECKBOX:    testCheckBoxMouseRelease(widgets, inst, video, bmp, x, y, m->lastUsedObjectID); break;
+		case OBJECT_RADIOBUTTON: testRadioButtonMouseRelease(widgets, inst, video, bmp, x, y, m->lastUsedObjectID); break;
 		default: break;
 	}
 
-	if (mouse.mode != MOUSE_MODE_NORMAL) mouse.mode = MOUSE_MODE_NORMAL;
+	if (m->mode != MOUSE_MODE_NORMAL) m->mode = MOUSE_MODE_NORMAL;
 
-	mouse.lastX = mouse.lastY = 0;
-	mouse.lastUsedObjectID = OBJECT_ID_NONE;
-	mouse.lastUsedObjectType = OBJECT_NONE;
+	m->lastX = m->lastY = 0;
+	m->lastUsedObjectID = OBJECT_ID_NONE;
+	m->lastUsedObjectType = OBJECT_NONE;
 }
 
 void ft2_widgets_mouse_up_right(ft2_widgets_t *widgets, int x, int y, struct ft2_instance_t *inst,
 	struct ft2_video_t *video, const struct ft2_bmp_t *bmp)
 {
-	mouse.x = x; mouse.y = y;
-	mouse.rightButtonPressed = false;
-	mouse.rightButtonReleased = true;
+	if (!widgets) return;
+	widget_mouse_state_t *m = &widgets->mouse;
 
-	if (mouse.leftButtonPressed) return;
+	m->x = x; m->y = y;
+	m->rightButtonPressed = false;
+	m->rightButtonReleased = true;
 
-	if (mouse.rightClickTrackedObject && mouse.lastUsedObjectType == OBJECT_PUSHBUTTON)
+	if (m->leftButtonPressed) return;
+
+	if (m->rightClickTrackedObject && m->lastUsedObjectType == OBJECT_PUSHBUTTON)
 	{
-		testPushButtonMouseRelease(widgets, inst, video, bmp, x, y, mouse.lastUsedObjectID, true);
-		mouse.lastUsedObjectID = OBJECT_ID_NONE;
-		mouse.lastUsedObjectType = OBJECT_NONE;
-		mouse.rightClickTrackedObject = false;
+		testPushButtonMouseRelease(widgets, inst, video, bmp, x, y, m->lastUsedObjectID, true);
+		m->lastUsedObjectID = OBJECT_ID_NONE;
+		m->lastUsedObjectType = OBJECT_NONE;
+		m->rightClickTrackedObject = false;
 	}
 }
 
 void ft2_widgets_mouse_move(ft2_widgets_t *widgets, int x, int y)
 {
-	(void)widgets;
-	mouse.lastX = mouse.x; mouse.lastY = mouse.y;
-	mouse.x = x; mouse.y = y;
+	if (!widgets) return;
+	widget_mouse_state_t *m = &widgets->mouse;
+	m->lastX = m->x; m->lastY = m->y;
+	m->x = x; m->y = y;
 }
 
 /* Handle continuous hold behavior (repeat for arrows, drag for scrollbars) */
 void ft2_widgets_handle_held_down(ft2_widgets_t *widgets, struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp)
 {
-	if (!widgets || mouse.lastUsedObjectType == OBJECT_NONE) return;
-	if (!mouse.leftButtonPressed && !mouse.rightButtonPressed) return;
-	if (mouse.lastUsedObjectID == OBJECT_ID_NONE) return;
+	if (!widgets) return;
+	widget_mouse_state_t *m = &widgets->mouse;
 
-	switch (mouse.lastUsedObjectType)
+	if (m->lastUsedObjectType == OBJECT_NONE) return;
+	if (!m->leftButtonPressed && !m->rightButtonPressed) return;
+	if (m->lastUsedObjectID == OBJECT_ID_NONE) return;
+
+	switch (m->lastUsedObjectType)
 	{
 		case OBJECT_PUSHBUTTON:
-			handlePushButtonWhileMouseDown(widgets, inst, video, bmp, mouse.x, mouse.y, mouse.lastUsedObjectID,
-				&mouse.firstTimePressingButton, &mouse.buttonCounter);
+			handlePushButtonWhileMouseDown(widgets, inst, video, bmp, m->x, m->y, m->lastUsedObjectID,
+				&m->firstTimePressingButton, &m->buttonCounter);
 			break;
 		case OBJECT_SCROLLBAR:
-			handleScrollBarWhileMouseDown(widgets, inst, video, mouse.x, mouse.y, mouse.lastUsedObjectID);
+			handleScrollBarWhileMouseDown(widgets, inst, video, m->x, m->y, m->lastUsedObjectID);
 			break;
 		case OBJECT_CHECKBOX:
-			handleCheckBoxesWhileMouseDown(widgets, video, bmp, mouse.x, mouse.y, mouse.lastX, mouse.lastY, mouse.lastUsedObjectID);
+			handleCheckBoxesWhileMouseDown(widgets, video, bmp, m->x, m->y, m->lastX, m->lastY, m->lastUsedObjectID);
 			break;
 		case OBJECT_RADIOBUTTON:
-			handleRadioButtonsWhileMouseDown(widgets, video, bmp, mouse.x, mouse.y, mouse.lastX, mouse.lastY, mouse.lastUsedObjectID);
+			handleRadioButtonsWhileMouseDown(widgets, video, bmp, m->x, m->y, m->lastX, m->lastY, m->lastUsedObjectID);
 			break;
 		default: break;
 	}
@@ -242,16 +241,16 @@ void ft2_widgets_key_press(ft2_widgets_t *widgets, int key) { (void)widgets; (vo
 /*                      MOUSE STATE ACCESSORS                                */
 /* ------------------------------------------------------------------------- */
 
-int32_t getWidgetMouseX(void)      { return mouse.x; }
-int32_t getWidgetMouseY(void)      { return mouse.y; }
-int32_t getWidgetMouseLastX(void)  { return mouse.lastX; }
-int32_t getWidgetMouseLastY(void)  { return mouse.lastY; }
-bool isWidgetMouseDown(void)       { return mouse.leftButtonPressed; }
-bool isWidgetMouseRightDown(void)  { return mouse.rightButtonPressed; }
-bool isMouseLeftButtonReleased(void)  { return mouse.leftButtonReleased; }
-bool isMouseRightButtonReleased(void) { return mouse.rightButtonReleased; }
-int16_t getLastUsedWidget(void)    { return mouse.lastUsedObjectID; }
-int8_t getLastUsedWidgetType(void) { return mouse.lastUsedObjectType; }
-void setLastUsedWidget(int16_t id, int8_t type) { mouse.lastUsedObjectID = id; mouse.lastUsedObjectType = type; }
-uint8_t getMouseMode(void)         { return mouse.mode; }
-void setMouseMode(uint8_t mode)    { mouse.mode = mode; }
+int32_t getWidgetMouseX(ft2_widgets_t *w)      { return w ? w->mouse.x : 0; }
+int32_t getWidgetMouseY(ft2_widgets_t *w)      { return w ? w->mouse.y : 0; }
+int32_t getWidgetMouseLastX(ft2_widgets_t *w)  { return w ? w->mouse.lastX : 0; }
+int32_t getWidgetMouseLastY(ft2_widgets_t *w)  { return w ? w->mouse.lastY : 0; }
+bool isWidgetMouseDown(ft2_widgets_t *w)       { return w ? w->mouse.leftButtonPressed : false; }
+bool isWidgetMouseRightDown(ft2_widgets_t *w)  { return w ? w->mouse.rightButtonPressed : false; }
+bool isMouseLeftButtonReleased(ft2_widgets_t *w)  { return w ? w->mouse.leftButtonReleased : false; }
+bool isMouseRightButtonReleased(ft2_widgets_t *w) { return w ? w->mouse.rightButtonReleased : false; }
+int16_t getLastUsedWidget(ft2_widgets_t *w)    { return w ? w->mouse.lastUsedObjectID : -1; }
+int8_t getLastUsedWidgetType(ft2_widgets_t *w) { return w ? w->mouse.lastUsedObjectType : OBJECT_NONE; }
+void setLastUsedWidget(ft2_widgets_t *w, int16_t id, int8_t type) { if (w) { w->mouse.lastUsedObjectID = id; w->mouse.lastUsedObjectType = type; } }
+uint8_t getMouseMode(ft2_widgets_t *w)         { return w ? w->mouse.mode : 0; }
+void setMouseMode(ft2_widgets_t *w, uint8_t mode) { if (w) w->mouse.mode = mode; }

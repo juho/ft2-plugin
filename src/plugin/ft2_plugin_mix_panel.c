@@ -20,6 +20,8 @@
 #include "ft2_plugin_ui.h"
 #include "../ft2_instance.h"
 
+#define MIX_STATE(inst) (&FT2_UI(inst)->modalPanels.mix)
+
 static const char *dec3StrTab[101] = {
 	"  0","  1","  2","  3","  4","  5","  6","  7","  8","  9",
 	" 10"," 11"," 12"," 13"," 14"," 15"," 16"," 17"," 18"," 19",
@@ -34,120 +36,85 @@ static const char *dec3StrTab[101] = {
 	"100"
 };
 
-typedef struct {
-	bool active;
-	ft2_instance_t *instance;
-	int8_t mixBalance; /* 0=all source, 100=all destination */
-} mix_panel_state_t;
-
-static mix_panel_state_t state = { .active = false, .instance = NULL, .mixBalance = 50 };
-
 static void onMixClick(ft2_instance_t *inst);
 static void onExitClick(ft2_instance_t *inst);
 static void onBalanceScrollbar(ft2_instance_t *inst, uint32_t pos);
 static void onBalanceDown(ft2_instance_t *inst);
 static void onBalanceUp(ft2_instance_t *inst);
 
-/* ---------- Widget setup ---------- */
-
-static void setupWidgets(void)
+static void setupWidgets(ft2_instance_t *inst)
 {
-	ft2_instance_t *inst = state.instance;
-	if (inst == NULL) return;
-	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL) return;
+	if (!inst || !inst->ui) return;
+	mix_panel_state_t *state = MIX_STATE(inst);
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
 
 	pushButton_t *p;
 	scrollBar_t *s;
 
-	p = &widgets->pushButtons[PB_RES_1];
-	memset(p, 0, sizeof(pushButton_t));
+	p = &widgets->pushButtons[PB_RES_1]; memset(p, 0, sizeof(pushButton_t));
 	p->caption = "Mix"; p->x = 197; p->y = 258; p->w = 73; p->h = 16;
-	p->callbackFuncOnUp = onMixClick;
-	widgets->pushButtonVisible[PB_RES_1] = true;
+	p->callbackFuncOnUp = onMixClick; widgets->pushButtonVisible[PB_RES_1] = true;
 
-	p = &widgets->pushButtons[PB_RES_2];
-	memset(p, 0, sizeof(pushButton_t));
+	p = &widgets->pushButtons[PB_RES_2]; memset(p, 0, sizeof(pushButton_t));
 	p->caption = "Exit"; p->x = 361; p->y = 258; p->w = 73; p->h = 16;
-	p->callbackFuncOnUp = onExitClick;
-	widgets->pushButtonVisible[PB_RES_2] = true;
+	p->callbackFuncOnUp = onExitClick; widgets->pushButtonVisible[PB_RES_2] = true;
 
-	p = &widgets->pushButtons[PB_RES_3];
-	memset(p, 0, sizeof(pushButton_t));
+	p = &widgets->pushButtons[PB_RES_3]; memset(p, 0, sizeof(pushButton_t));
 	p->caption = ARROW_LEFT_STRING; p->x = 322; p->y = 244; p->w = 23; p->h = 13;
-	p->preDelay = 1; p->delayFrames = 3;
-	p->callbackFuncOnDown = onBalanceDown;
+	p->preDelay = 1; p->delayFrames = 3; p->callbackFuncOnDown = onBalanceDown;
 	widgets->pushButtonVisible[PB_RES_3] = true;
 
-	p = &widgets->pushButtons[PB_RES_4];
-	memset(p, 0, sizeof(pushButton_t));
+	p = &widgets->pushButtons[PB_RES_4]; memset(p, 0, sizeof(pushButton_t));
 	p->caption = ARROW_RIGHT_STRING; p->x = 411; p->y = 244; p->w = 23; p->h = 13;
-	p->preDelay = 1; p->delayFrames = 3;
-	p->callbackFuncOnDown = onBalanceUp;
+	p->preDelay = 1; p->delayFrames = 3; p->callbackFuncOnDown = onBalanceUp;
 	widgets->pushButtonVisible[PB_RES_4] = true;
 
-	s = &widgets->scrollBars[SB_RES_1];
-	memset(s, 0, sizeof(scrollBar_t));
-	s->x = 345; s->y = 244; s->w = 66; s->h = 13;
-	s->callbackFunc = onBalanceScrollbar;
+	s = &widgets->scrollBars[SB_RES_1]; memset(s, 0, sizeof(scrollBar_t));
+	s->x = 345; s->y = 244; s->w = 66; s->h = 13; s->callbackFunc = onBalanceScrollbar;
 	widgets->scrollBarState[SB_RES_1].visible = true;
 	setScrollBarPageLength(inst, widgets, NULL, SB_RES_1, 1);
 	setScrollBarEnd(inst, widgets, NULL, SB_RES_1, 100);
-	setScrollBarPos(inst, widgets, NULL, SB_RES_1, (uint32_t)state.mixBalance, false);
+	setScrollBarPos(inst, widgets, NULL, SB_RES_1, (uint32_t)state->mixBalance, false);
 }
 
-static void hideWidgets(void)
+static void hideWidgets(ft2_instance_t *inst)
 {
-	ft2_instance_t *inst = state.instance;
-	ft2_widgets_t *widgets = (inst != NULL && inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
-	if (widgets == NULL) return;
-
+	if (!inst || !inst->ui) return;
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
 	for (int i = 0; i < 8; i++) hidePushButton(widgets, PB_RES_1 + i);
 	for (int i = 0; i < 3; i++) hideScrollBar(widgets, SB_RES_1 + i);
 }
 
-/* ---------- Callbacks ---------- */
+static void onMixClick(ft2_instance_t *inst) { ft2_mix_panel_apply(inst); }
+static void onExitClick(ft2_instance_t *inst) { ft2_mix_panel_hide(inst); }
+static void onBalanceScrollbar(ft2_instance_t *inst, uint32_t pos) { if (inst && inst->ui) MIX_STATE(inst)->mixBalance = (int8_t)pos; }
+static void onBalanceDown(ft2_instance_t *inst) { if (inst && inst->ui) { mix_panel_state_t *s = MIX_STATE(inst); if (s->mixBalance > 0) s->mixBalance--; } }
+static void onBalanceUp(ft2_instance_t *inst) { if (inst && inst->ui) { mix_panel_state_t *s = MIX_STATE(inst); if (s->mixBalance < 100) s->mixBalance++; } }
 
-static void onMixClick(ft2_instance_t *inst) { (void)inst; ft2_mix_panel_apply(); }
-static void onExitClick(ft2_instance_t *inst) { (void)inst; ft2_mix_panel_hide(); }
-static void onBalanceScrollbar(ft2_instance_t *inst, uint32_t pos) { (void)inst; state.mixBalance = (int8_t)pos; }
-static void onBalanceDown(ft2_instance_t *inst) { (void)inst; if (state.mixBalance > 0) state.mixBalance--; }
-static void onBalanceUp(ft2_instance_t *inst) { (void)inst; if (state.mixBalance < 100) state.mixBalance++; }
-
-/* ---------- Drawing ---------- */
-
-static void drawFrame(ft2_video_t *video, const ft2_bmp_t *bmp)
+static void drawFrame(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
 	const int16_t x = 192, y = 240, w = 248, h = 38;
+	mix_panel_state_t *state = MIX_STATE(inst);
 
 	fillRect(video, x + 1, y + 1, w - 2, h - 2, PAL_BUTTONS);
-
-	/* Outer border (raised) */
 	vLine(video, x, y, h - 1, PAL_BUTTON1);
 	hLine(video, x + 1, y, w - 2, PAL_BUTTON1);
 	vLine(video, x + w - 1, y, h, PAL_BUTTON2);
 	hLine(video, x, y + h - 1, w - 1, PAL_BUTTON2);
-
-	/* Inner border (sunken) */
 	vLine(video, x + 2, y + 2, h - 5, PAL_BUTTON2);
 	hLine(video, x + 3, y + 2, w - 6, PAL_BUTTON2);
 	vLine(video, x + w - 3, y + 2, h - 4, PAL_BUTTON1);
 	hLine(video, x + 2, y + h - 3, w - 4, PAL_BUTTON1);
 
 	textOutShadow(video, bmp, 198, 246, PAL_FORGRND, PAL_BUTTON2, "Mixing balance");
-	if (state.mixBalance <= 100)
-		textOutFixed(video, bmp, 299, 246, PAL_FORGRND, PAL_BUTTONS, dec3StrTab[state.mixBalance]);
+	if (state->mixBalance <= 100)
+		textOutFixed(video, bmp, 299, 246, PAL_FORGRND, PAL_BUTTONS, dec3StrTab[state->mixBalance]);
 }
 
-/* ---------- Mix algorithm ---------- */
-
-/* Mix source sample into destination with balance weighting.
- * dMixA = source weight (0-1), dMixB = dest weight (0-1).
- * Output length = max(srcLen, dstLen), bit depth = max(srcBits, dstBits). */
-static void applyMixToSample(void)
+static void applyMixToSample(ft2_instance_t *inst)
 {
-	if (state.instance == NULL) return;
-	ft2_instance_t *inst = state.instance;
+	if (!inst || !inst->ui) return;
+	mix_panel_state_t *state = MIX_STATE(inst);
 
 	int16_t dstIns = inst->editor.curInstr, dstSmp = inst->editor.curSmp;
 	int16_t mixIns = inst->editor.srcInstr, mixSmp = inst->editor.srcSmp;
@@ -156,43 +123,42 @@ static void applyMixToSample(void)
 	if (dstIns == mixIns && dstSmp == mixSmp) return;
 
 	ft2_instr_t *dstInstr = inst->replayer.instr[dstIns];
-	if (dstInstr == NULL) return;
+	if (!dstInstr) return;
 
 	ft2_sample_t *s = &dstInstr->smp[dstSmp];
 
 	int8_t *dstPtr = NULL; uint8_t dstFlags = 0; int32_t dstLen = 0;
-	if (s->dataPtr != NULL) { dstPtr = s->dataPtr; dstLen = s->length; dstFlags = s->flags; }
+	if (s->dataPtr) { dstPtr = s->dataPtr; dstLen = s->length; dstFlags = s->flags; }
 
 	int8_t *mixPtr = NULL; uint8_t mixFlags = 0; int32_t mixLen = 0;
 	if (mixIns > 0 && mixIns <= 128) {
 		ft2_instr_t *mixInstr = inst->replayer.instr[mixIns];
-		if (mixInstr != NULL) {
+		if (mixInstr) {
 			ft2_sample_t *mixSample = &mixInstr->smp[mixSmp];
-			if (mixSample->dataPtr != NULL) {
+			if (mixSample->dataPtr) {
 				mixPtr = mixSample->dataPtr; mixLen = mixSample->length; mixFlags = mixSample->flags;
 			}
 		}
 	}
 
-	if (dstPtr == NULL && mixPtr == NULL) return;
+	if (!dstPtr && !mixPtr) return;
 
 	int32_t newLen = (dstLen > mixLen) ? dstLen : mixLen;
 	bool newIs16Bit = ((dstFlags | mixFlags) & FT2_SAMPLE_16BIT) != 0;
 
-	/* Allocate with interpolation padding */
 	int32_t bytesPerSample = newIs16Bit ? 2 : 1;
 	int32_t padding = FT2_MAX_TAPS * bytesPerSample;
 	size_t allocSize = (size_t)(padding * 2 + newLen * bytesPerSample);
 
 	int8_t *newOrigPtr = (int8_t *)calloc(allocSize, 1);
-	if (newOrigPtr == NULL) return;
+	if (!newOrigPtr) return;
 	int8_t *newData = newOrigPtr + padding;
 
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
 
-	double dMixA = (100 - state.mixBalance) / 100.0;
-	double dMixB = state.mixBalance / 100.0;
+	double dMixA = (100 - state->mixBalance) / 100.0;
+	double dMixB = state->mixBalance / 100.0;
 	bool dstIs16 = (dstFlags & FT2_SAMPLE_16BIT) != 0;
 	bool mixIs16 = (mixFlags & FT2_SAMPLE_16BIT) != 0;
 
@@ -226,39 +192,43 @@ static void applyMixToSample(void)
 	inst->uiState.updateSampleEditor = true;
 }
 
-/* ---------- Public API ---------- */
-
 void ft2_mix_panel_show(ft2_instance_t *inst)
 {
-	if (inst == NULL || inst->editor.curInstr == 0) return;
-	state.active = true;
-	state.instance = inst;
-	setupWidgets();
-	ft2_modal_panel_set_active(MODAL_PANEL_MIX);
+	if (!inst || !inst->ui || inst->editor.curInstr == 0) return;
+	mix_panel_state_t *state = MIX_STATE(inst);
+	state->active = true;
+	setupWidgets(inst);
+	ft2_modal_panel_set_active(inst, MODAL_PANEL_MIX);
 }
 
-void ft2_mix_panel_hide(void)
+void ft2_mix_panel_hide(ft2_instance_t *inst)
 {
-	if (!state.active) return;
-	hideWidgets();
-	state.active = false;
-	if (state.instance) state.instance->uiState.updateSampleEditor = true;
-	state.instance = NULL;
-	ft2_modal_panel_set_inactive(MODAL_PANEL_MIX);
+	if (!inst || !inst->ui) return;
+	mix_panel_state_t *state = MIX_STATE(inst);
+	if (!state->active) return;
+	
+	hideWidgets(inst);
+	state->active = false;
+	inst->uiState.updateSampleEditor = true;
+	ft2_modal_panel_set_inactive(inst, MODAL_PANEL_MIX);
 }
 
-bool ft2_mix_panel_is_active(void) { return state.active; }
-
-void ft2_mix_panel_draw(ft2_video_t *video, const ft2_bmp_t *bmp)
+bool ft2_mix_panel_is_active(ft2_instance_t *inst)
 {
-	if (!state.active || video == NULL) return;
-	drawFrame(video, bmp);
+	if (!inst || !inst->ui) return false;
+	return MIX_STATE(inst)->active;
+}
 
-	ft2_widgets_t *widgets = (state.instance && state.instance->ui) ?
-		&((ft2_ui_t *)state.instance->ui)->widgets : NULL;
-	if (widgets == NULL) return;
+void ft2_mix_panel_draw(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+{
+	if (!inst || !inst->ui || !video) return;
+	mix_panel_state_t *state = MIX_STATE(inst);
+	if (!state->active) return;
 
-	setScrollBarPos(state.instance, widgets, video, SB_RES_1, (uint32_t)state.mixBalance, false);
+	drawFrame(inst, video, bmp);
+
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
+	setScrollBarPos(inst, widgets, video, SB_RES_1, (uint32_t)state->mixBalance, false);
 	for (int i = 0; i < 8; i++)
 		if (widgets->pushButtonVisible[PB_RES_1 + i])
 			drawPushButton(widgets, video, bmp, PB_RES_1 + i);
@@ -266,13 +236,10 @@ void ft2_mix_panel_draw(ft2_video_t *video, const ft2_bmp_t *bmp)
 		drawScrollBar(widgets, video, SB_RES_1);
 }
 
-void ft2_mix_panel_apply(void)
+void ft2_mix_panel_apply(ft2_instance_t *inst)
 {
-	if (!state.active) return;
-	applyMixToSample();
-	ft2_mix_panel_hide();
+	if (!inst || !inst->ui) return;
+	if (!MIX_STATE(inst)->active) return;
+	applyMixToSample(inst);
+	ft2_mix_panel_hide(inst);
 }
-
-int8_t ft2_mix_panel_get_balance(void) { return state.mixBalance; }
-void ft2_mix_panel_set_balance(int8_t balance) { state.mixBalance = balance; }
-
