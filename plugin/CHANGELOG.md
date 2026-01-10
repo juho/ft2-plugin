@@ -3,6 +3,7 @@
 ## 1.0.52 (Jan 10, 2026)
 
 - Refactor: Better state tracking in sample editor, trim and about screen.
+- Fix: Mouse wheel handling works properly with small deltas.
 
 ## 1.0.51 (Jan 10, 2026)
 

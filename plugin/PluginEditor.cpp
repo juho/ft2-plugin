@@ -1028,8 +1028,11 @@ void FT2PluginEditor::mouseMove(const juce::MouseEvent& e)
 
 void FT2PluginEditor::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
 {
+    if (wheel.deltaY == 0.0f)
+        return;
+    
     auto ft2Pos = screenToFT2(e.getPosition());
-    int delta = (int)(wheel.deltaY * 120.0f); // Convert to standard wheel units
+    int delta = (wheel.deltaY > 0.0f) ? 1 : -1;
     ft2_ui_mouse_wheel(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, delta);
 }
 
