@@ -2,7 +2,14 @@
 # This builds the FT2 replayer as a VST3/AU/LV2 plugin using JUCE
 
 cmake_minimum_required(VERSION 3.22)
-project(FT2Plugin VERSION 1.0.52)
+
+# macOS deployment target - default for local builds without explicit override
+# CI builds pass explicit values: 11.0 for universal, 10.14 for legacy
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.14" CACHE STRING "Minimum macOS version")
+endif()
+
+project(FT2Plugin VERSION 1.0.53)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

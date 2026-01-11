@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.53 (Jan 11, 2026)
+
+- Feat: Add a `legacy` build target for macOS 10.14+ (Mojave).
+
 ## 1.0.52 (Jan 10, 2026)
 
 - Refactor: Better state tracking in sample editor, trim and about screen.

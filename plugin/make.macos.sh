@@ -1,15 +1,6 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 
-# Create build directory if needed
-mkdir -p build
-cd build
-
-# Run cmake if not configured
-if [ ! -f Makefile ]; then
-    cmake -DCMAKE_BUILD_TYPE=Release ..
-fi
-
 # Kill any processes that might have the plugins locked
 killall -9 AudioComponentRegistrar 2>/dev/null
 
@@ -17,6 +8,25 @@ killall -9 AudioComponentRegistrar 2>/dev/null
 rm -rf ~/Library/Audio/Plug-Ins/AU/FT2*.component
 rm -rf ~/Library/Audio/Plug-Ins/VST3/FT2*.vst3
 
-make ft2_core -j8
-make FT2Plugin_VST3 -j8
-make FT2Plugin_AU -j8
+# Build universal for modern macOS (11.0+)
+echo "=== Building Universal (macOS 11.0+) ==="
+rm -rf build-universal
+cmake -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+      "-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64" \
+      -B build-universal -S .
+cmake --build build-universal --config Release --parallel
+
+# Build x86_64 only for older macOS (10.14 Mojave+)
+echo "=== Building x86_64 Legacy (macOS 10.14+) ==="
+rm -rf build-legacy
+cmake -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_OSX_DEPLOYMENT_TARGET=10.14 \
+      -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+      -B build-legacy -S .
+cmake --build build-legacy --config Release --parallel
+
+echo ""
+echo "=== Build complete ==="
+echo "Universal (macOS 11.0+): build-universal/FT2Plugin_artefacts/Release/"
+echo "Legacy x86_64 (macOS 10.14+): build-legacy/FT2Plugin_artefacts/Release/"

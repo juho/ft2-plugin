@@ -33,23 +33,45 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Configure CMake
-        run: cmake -B plugin/build -S plugin -DCMAKE_BUILD_TYPE=Release
+      - name: Build Universal (macOS 11.0+)
+        run: |
+          cmake -B plugin/build-universal -S plugin \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            "-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64"
+          cmake --build plugin/build-universal --config Release --parallel
 
-      - name: Build
-        run: cmake --build plugin/build --config Release --parallel
+      - name: Build Legacy x86_64 (macOS 10.14+)
+        run: |
+          cmake -B plugin/build-legacy -S plugin \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=10.14 \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64
+          cmake --build plugin/build-legacy --config Release --parallel
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
           name: FT2-Plugin-${{ needs.version.outputs.version }}-VST3-macOS
-          path: plugin/build/FT2Plugin_artefacts/Release/VST3/*.vst3
+          path: plugin/build-universal/FT2Plugin_artefacts/Release/VST3/*.vst3
 
       - name: Upload AU
         uses: actions/upload-artifact@v4
         with:
           name: FT2-Plugin-${{ needs.version.outputs.version }}-AU-macOS
-          path: plugin/build/FT2Plugin_artefacts/Release/AU/*.component
+          path: plugin/build-universal/FT2Plugin_artefacts/Release/AU/*.component
+
+      - name: Upload VST3 Legacy
+        uses: actions/upload-artifact@v4
+        with:
+          name: FT2-Plugin-${{ needs.version.outputs.version }}-VST3-macOS-Legacy
+          path: plugin/build-legacy/FT2Plugin_artefacts/Release/VST3/*.vst3
+
+      - name: Upload AU Legacy
+        uses: actions/upload-artifact@v4
+        with:
+          name: FT2-Plugin-${{ needs.version.outputs.version }}-AU-macOS-Legacy
+          path: plugin/build-legacy/FT2Plugin_artefacts/Release/AU/*.component
 
   build-linux:
     needs: version
@@ -148,6 +170,8 @@ jobs:
           cd artifacts
           zip -r ../FT2-Plugin-${VERSION}-VST3-macOS.zip FT2-Plugin-${VERSION}-VST3-macOS
           zip -r ../FT2-Plugin-${VERSION}-AU-macOS.zip FT2-Plugin-${VERSION}-AU-macOS
+          zip -r ../FT2-Plugin-${VERSION}-VST3-macOS-Legacy.zip FT2-Plugin-${VERSION}-VST3-macOS-Legacy
+          zip -r ../FT2-Plugin-${VERSION}-AU-macOS-Legacy.zip FT2-Plugin-${VERSION}-AU-macOS-Legacy
           zip -r ../FT2-Plugin-${VERSION}-VST3-Linux.zip FT2-Plugin-${VERSION}-VST3-Linux
           zip -r ../FT2-Plugin-${VERSION}-LV2-Linux.zip FT2-Plugin-${VERSION}-LV2-Linux
           zip -r ../FT2-Plugin-${VERSION}-VST3-Windows.zip FT2-Plugin-${VERSION}-VST3-Windows
@@ -161,6 +185,8 @@ jobs:
           gh release upload "v${VERSION}" \
             FT2-Plugin-${VERSION}-VST3-macOS.zip \
             FT2-Plugin-${VERSION}-AU-macOS.zip \
+            FT2-Plugin-${VERSION}-VST3-macOS-Legacy.zip \
+            FT2-Plugin-${VERSION}-AU-macOS-Legacy.zip \
             FT2-Plugin-${VERSION}-VST3-Linux.zip \
             FT2-Plugin-${VERSION}-LV2-Linux.zip \
             FT2-Plugin-${VERSION}-VST3-Windows.zip \
@@ -183,9 +209,14 @@ jobs:
             Released: ${{ github.event.head_commit.timestamp }}
             Commit: ${{ github.sha }}
             Branch: ${{ github.ref_name }}
+            
+            **macOS**: Universal binary (Intel + Apple Silicon), requires macOS 11.0+
+            **macOS Legacy**: Intel only, requires macOS 10.14+
           files: |
             FT2-Plugin-${{ needs.version.outputs.version }}-VST3-macOS.zip
             FT2-Plugin-${{ needs.version.outputs.version }}-AU-macOS.zip
+            FT2-Plugin-${{ needs.version.outputs.version }}-VST3-macOS-Legacy.zip
+            FT2-Plugin-${{ needs.version.outputs.version }}-AU-macOS-Legacy.zip
             FT2-Plugin-${{ needs.version.outputs.version }}-VST3-Linux.zip
             FT2-Plugin-${{ needs.version.outputs.version }}-LV2-Linux.zip
             FT2-Plugin-${{ needs.version.outputs.version }}-VST3-Windows.zip
