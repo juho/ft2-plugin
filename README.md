@@ -33,7 +33,25 @@ Download the latest version from the [releases page](https://github.com/juho/ft2
 
 ### Mac users
 
-The plugins aren't signed, so you need to either "Allow anyway" or run `sudo xattr -r -d com.apple.quarantine /Library/Audio/Plug-Ins/VST3/Fasttracker II.vst3` (or whereever you installed it) to allow the plugin to run. Ditto for AU.
+The plugins aren't signed, so you need to:
+
+1. Load the plugin, you'll get a warning message
+2. Open System Settings > Privacy & Security
+3. Scroll down to find Fasttracker II and click "Allow anyway"
+
+OR run:
+
+(change these to ~Library if you installed to your home directory)
+
+VST3:
+```
+sudo xattr -r -d com.apple.quarantine /Library/Audio/Plug-Ins/VST3/Fasttracker II.vst3
+```
+
+AU:
+```
+sudo xattr -r -d com.apple.quarantine /Library/Audio/Plug-Ins/Components/Fasttracker II.component
+```
 
 ## License
 
