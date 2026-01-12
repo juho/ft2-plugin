@@ -45,12 +45,12 @@ OR run:
 
 VST3:
 ```
-sudo xattr -r -d com.apple.quarantine /Library/Audio/Plug-Ins/VST3/Fasttracker II.vst3
+sudo xattr -r -d com.apple.quarantine "/Library/Audio/Plug-Ins/VST3/Fasttracker II.vst3"
 ```
 
 AU:
 ```
-sudo xattr -r -d com.apple.quarantine /Library/Audio/Plug-Ins/Components/Fasttracker II.component
+sudo xattr -r -d com.apple.quarantine "/Library/Audio/Plug-Ins/Components/Fasttracker II.component"
 ```
 
 ## License
