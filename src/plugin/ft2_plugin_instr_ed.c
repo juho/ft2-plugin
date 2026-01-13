@@ -31,9 +31,56 @@
 #include "ft2_plugin_sample_ed.h"
 #include "ft2_plugin_gui.h"
 #include "ft2_plugin_ui.h"
+#include "ft2_plugin_input.h"
 #include "ft2_instance.h"
 
 static ft2_instr_t *getInstrForInst(ft2_instance_t *inst);
+
+/* ---------- Envelope drag modes ---------- */
+
+#define ENV_DRAG_NONE    0
+#define ENV_DRAG_NORMAL  1
+#define ENV_DRAG_STRETCH 2
+
+/* ---------- Envelope data accessor ---------- */
+
+typedef struct {
+	int16_t (*points)[2];     /* Pointer to points array */
+	uint8_t *length;          /* Pointer to envelope length */
+	uint8_t *sustain;         /* Pointer to sustain point */
+	uint8_t *loopStart;       /* Pointer to loop start */
+	uint8_t *loopEnd;         /* Pointer to loop end */
+	uint8_t *currPoint;       /* Pointer to current selected point */
+	int32_t screenY;          /* Base Y screen position */
+	int32_t maxY;             /* Max Y value (64 for vol, 63 for pan) */
+} env_data_t;
+
+static bool getEnvelopeData(ft2_instance_t *inst, int envNum, env_data_t *out)
+{
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL) return false;
+
+	if (envNum == 0) {
+		out->points = ins->volEnvPoints;
+		out->length = &ins->volEnvLength;
+		out->sustain = &ins->volEnvSustain;
+		out->loopStart = &ins->volEnvLoopStart;
+		out->loopEnd = &ins->volEnvLoopEnd;
+		out->currPoint = &inst->editor.currVolEnvPoint;
+		out->screenY = VOL_ENV_Y;
+		out->maxY = 64;
+	} else {
+		out->points = ins->panEnvPoints;
+		out->length = &ins->panEnvLength;
+		out->sustain = &ins->panEnvSustain;
+		out->loopStart = &ins->panEnvLoopStart;
+		out->loopEnd = &ins->panEnvLoopEnd;
+		out->currPoint = &inst->editor.currPanEnvPoint;
+		out->screenY = PAN_ENV_Y;
+		out->maxY = 63;
+	}
+	return true;
+}
 
 /* ---------- Envelope presets ---------- */
 
@@ -411,6 +458,7 @@ void ft2_instr_ed_init(ft2_instrument_editor_t *editor)
 {
 	if (editor == NULL) return;
 	memset(editor, 0, sizeof(ft2_instrument_editor_t));
+	editor->activeEnv = -1;
 }
 
 /* 3x3 envelope point dot */
@@ -949,6 +997,188 @@ void ft2_instr_ed_draw(ft2_instance_t *inst)
 	updateInstEditor(inst);
 }
 
+/* Handle envelope click - returns true if a point was clicked */
+static bool handleEnvelopeClick(ft2_instance_t *inst, int x, int y, int button, int envNum)
+{
+	if (inst->editor.curInstr == 0)
+		return false;
+
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return false;
+	if (*env.length == 0)
+		return false;
+
+	uint8_t ant = *env.length;
+	if (ant > 12)
+		ant = 12;
+
+	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
+
+	uint8_t i = 0;
+	do
+	{
+		const int32_t px = 8 + env.points[i][0];
+		const int32_t py = env.screenY + 1 + (env.maxY - env.points[i][1]);
+
+		if (x >= px - 2 && x <= px + 2 && y >= py - 2 && y <= py + 2)
+		{
+			*env.currPoint = i;
+			editor->saveMouseX = 8 + (editor->lastMouseX - px);
+			editor->saveMouseY = (env.screenY + 1) + (editor->lastMouseY - py);
+			editor->activeEnv = (int8_t)envNum;
+
+			if (button == MOUSE_BUTTON_RIGHT && i > 0)
+				editor->envDragMode = ENV_DRAG_STRETCH;
+			else
+				editor->envDragMode = ENV_DRAG_NORMAL;
+
+			inst->uiState.updateInstEditor = true;
+			return true;
+		}
+	}
+	while (++i < ant);
+
+	return false;
+}
+
+/* Handle normal envelope point drag (left-click) */
+static void handleEnvelopeDragNormal(ft2_instance_t *inst, int x, int y, int envNum)
+{
+	if (inst->editor.curInstr == 0)
+		return;
+
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return;
+	if (*env.length == 0)
+		return;
+
+	uint8_t ant = *env.length;
+	if (ant > 12)
+		ant = 12;
+
+	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
+	int32_t mx = x;
+	int32_t my = y;
+
+	uint8_t currPoint = *env.currPoint;
+	if (currPoint >= 12) currPoint = 11;
+
+	/* Handle X movement - constrain between adjacent points */
+	if (mx != editor->lastMouseX)
+	{
+		editor->lastMouseX = mx;
+
+		if (ant > 1 && currPoint > 0)
+		{
+			mx -= editor->saveMouseX;
+			if (mx < 0) mx = 0;
+			if (mx > 324) mx = 324;
+
+			int32_t minX, maxX;
+			if (currPoint == ant - 1)
+			{
+				minX = env.points[currPoint - 1][0] + 1;
+				maxX = 324;
+			}
+			else
+			{
+				minX = env.points[currPoint - 1][0] + 1;
+				maxX = env.points[currPoint + 1][0] - 1;
+			}
+
+			if (minX < 0) minX = 0;
+			if (minX > 324) minX = 324;
+			if (maxX < 0) maxX = 0;
+			if (maxX > 324) maxX = 324;
+
+			if (mx < minX) mx = minX;
+			if (mx > maxX) mx = maxX;
+
+			env.points[currPoint][0] = (int16_t)mx;
+			inst->uiState.updateInstEditor = true;
+		}
+	}
+
+	/* Handle Y movement - clamp to 0-maxY */
+	if (my != editor->lastMouseY)
+	{
+		editor->lastMouseY = my;
+
+		my -= editor->saveMouseY;
+		if (my < 0) my = 0;
+		if (my > env.maxY) my = env.maxY;
+		my = env.maxY - my;
+
+		env.points[currPoint][1] = (int16_t)my;
+		inst->uiState.updateInstEditor = true;
+	}
+}
+
+/* Handle envelope stretch mode (right-click drag) */
+static void handleEnvelopeDragStretch(ft2_instance_t *inst, int x, int y, int envNum)
+{
+	if (inst->editor.curInstr == 0)
+		return;
+
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return;
+	if (*env.length == 0)
+		return;
+
+	uint8_t ant = *env.length;
+	if (ant > 12)
+		ant = 12;
+
+	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
+
+	uint8_t currPoint = *env.currPoint;
+	if (currPoint < 1) currPoint = 1;
+	if (currPoint >= ant) currPoint = ant - 1;
+
+	/* Handle X movement - stretch all points from current to end */
+	int32_t mx = x;
+	if (mx != editor->lastMouseX)
+	{
+		int32_t delta = mx - editor->lastMouseX;
+		editor->lastMouseX = mx;
+
+		/* Calculate max delta (rightmost point can't exceed 324) */
+		int32_t maxDelta = 324 - env.points[ant - 1][0];
+
+		/* Calculate min delta (selected point must stay > previous point) */
+		int32_t minDelta = env.points[currPoint - 1][0] + 1 - env.points[currPoint][0];
+
+		if (delta > maxDelta) delta = maxDelta;
+		if (delta < minDelta) delta = minDelta;
+
+		/* Apply delta to selected point and all points to its right */
+		if (delta != 0)
+		{
+			for (int i = currPoint; i < ant; i++)
+				env.points[i][0] += (int16_t)delta;
+			inst->uiState.updateInstEditor = true;
+		}
+	}
+
+	/* Handle Y movement - move only current point's value */
+	int32_t my = y;
+	if (my != editor->lastMouseY)
+	{
+		editor->lastMouseY = my;
+
+		my -= editor->saveMouseY;
+		if (my < 0) my = 0;
+		if (my > env.maxY) my = env.maxY;
+		my = env.maxY - my;
+
+		env.points[currPoint][1] = (int16_t)my;
+		inst->uiState.updateInstEditor = true;
+	}
+}
+
 void ft2_instr_ed_mouse_click(ft2_instance_t *inst, int x, int y, int button)
 {
 	if (inst == NULL || inst->ui == NULL)
@@ -958,69 +1188,15 @@ void ft2_instr_ed_mouse_click(ft2_instance_t *inst, int x, int y, int button)
 	editor->lastMouseX = x;
 	editor->lastMouseY = y;
 
-	/* Check if click is in volume envelope area - exact match to standalone */
+	/* Check envelope areas */
 	if (y >= VOL_ENV_Y && y <= VOL_ENV_Y + ENV_HEIGHT && x >= 7 && x <= 334)
 	{
-		if (inst->editor.curInstr == 0)
-			return;
-		
-		ft2_instr_t *ins = getInstrForInst(inst);
-		if (ins == NULL || ins->volEnvLength == 0)
-			return;
-		
-		uint8_t ant = ins->volEnvLength;
-		if (ant > 12)
-			ant = 12;
-		
-		/* Search for a point within ±2 pixels of the click */
-		for (uint8_t i = 0; i < ant; i++)
-		{
-			const int32_t px = 8 + ins->volEnvPoints[i][0];
-			const int32_t py = VOL_ENV_Y + 1 + (64 - ins->volEnvPoints[i][1]);
-			
-			if (x >= px - 2 && x <= px + 2 && y >= py - 2 && y <= py + 2)
-			{
-				inst->editor.currVolEnvPoint = i;
-				editor->saveMouseX = 8 + (editor->lastMouseX - px);
-				editor->saveMouseY = (VOL_ENV_Y + 1) + (editor->lastMouseY - py);
-				editor->draggingVolEnv = true;
-				inst->uiState.updateInstEditor = true;
-				return;
-			}
-		}
+		handleEnvelopeClick(inst, x, y, button, 0);
 		return;
 	}
-
-	/* Check if click is in panning envelope area - exact match to standalone */
 	if (y >= PAN_ENV_Y && y <= PAN_ENV_Y + ENV_HEIGHT && x >= 7 && x <= 334)
 	{
-		if (inst->editor.curInstr == 0)
-			return;
-		
-		ft2_instr_t *ins = getInstrForInst(inst);
-		if (ins == NULL || ins->panEnvLength == 0)
-			return;
-		
-		uint8_t ant = ins->panEnvLength;
-		if (ant > 12)
-			ant = 12;
-		
-		/* Search for a point within ±2 pixels of the click */
-		for (uint8_t i = 0; i < ant; i++)
-		{
-			const int32_t px = 8 + ins->panEnvPoints[i][0];
-			const int32_t py = PAN_ENV_Y + 1 + (63 - ins->panEnvPoints[i][1]);
-			
-			if (x >= px - 2 && x <= px + 2 && y >= py - 2 && y <= py + 2)
-			{
-				inst->editor.currPanEnvPoint = i;
-				editor->saveMouseX = editor->lastMouseX - px + 8;
-				editor->saveMouseY = editor->lastMouseY - py + (PAN_ENV_Y + 1);
-				editor->draggingPanEnv = true;
-				inst->uiState.updateInstEditor = true;
-				return;
-			}
-		}
+		handleEnvelopeClick(inst, x, y, button, 1);
 		return;
 	}
 
@@ -1124,149 +1300,13 @@ void ft2_instr_ed_mouse_drag(ft2_instance_t *inst, int x, int y)
 		return;
 	}
 
-	/* Handle volume envelope point dragging - exact match to standalone */
-	if (editor->draggingVolEnv)
+	/* Handle envelope dragging */
+	if (editor->activeEnv >= 0)
 	{
-		if (inst->editor.curInstr == 0)
-			return;
-		
-		ft2_instr_t *ins = getInstrForInst(inst);
-		if (ins == NULL || ins->volEnvLength == 0)
-			return;
-		
-		uint8_t ant = ins->volEnvLength;
-		if (ant > 12)
-			ant = 12;
-		
-		int32_t mx = x;
-		int32_t my = y;
-		
-		/* Handle X movement - constrain between adjacent points */
-		int8_t currVolEnvPoint = inst->editor.currVolEnvPoint;
-		if (currVolEnvPoint < 0) currVolEnvPoint = 0;
-		if (currVolEnvPoint >= 12) currVolEnvPoint = 11;
-
-		if (mx != editor->lastMouseX)
-		{
-			editor->lastMouseX = mx;
-			
-			if (ant > 1 && currVolEnvPoint > 0)
-			{
-				mx -= editor->saveMouseX;
-				if (mx < 0) mx = 0;
-				if (mx > 324) mx = 324;
-				
-				int32_t minX, maxX;
-				if (currVolEnvPoint == ant - 1)
-				{
-					minX = ins->volEnvPoints[currVolEnvPoint - 1][0] + 1;
-					maxX = 324;
-				}
-				else
-				{
-					minX = ins->volEnvPoints[currVolEnvPoint - 1][0] + 1;
-					maxX = ins->volEnvPoints[currVolEnvPoint + 1][0] - 1;
-				}
-				
-				if (minX < 0) minX = 0;
-				if (minX > 324) minX = 324;
-				if (maxX < 0) maxX = 0;
-				if (maxX > 324) maxX = 324;
-				
-				if (mx < minX) mx = minX;
-				if (mx > maxX) mx = maxX;
-				
-				ins->volEnvPoints[currVolEnvPoint][0] = (int16_t)mx;
-				inst->uiState.updateInstEditor = true;
-			}
-		}
-		
-		/* Handle Y movement - clamp to 0-64 */
-		if (my != editor->lastMouseY)
-		{
-			editor->lastMouseY = my;
-			
-			my -= editor->saveMouseY;
-			if (my < 0) my = 0;
-			if (my > 64) my = 64;
-			my = 64 - my;
-			
-			ins->volEnvPoints[currVolEnvPoint][1] = (int16_t)my;
-			inst->uiState.updateInstEditor = true;
-		}
-		return;
-	}
-
-	/* Handle panning envelope point dragging - exact match to standalone */
-	if (editor->draggingPanEnv)
-	{
-		if (inst->editor.curInstr == 0)
-			return;
-		
-		ft2_instr_t *ins = getInstrForInst(inst);
-		if (ins == NULL || ins->panEnvLength == 0)
-			return;
-		
-		uint8_t ant = ins->panEnvLength;
-		if (ant > 12)
-			ant = 12;
-		
-		int32_t mx = x;
-		int32_t my = y;
-		
-		/* Handle X movement - constrain between adjacent points */
-		int8_t currPanEnvPoint = inst->editor.currPanEnvPoint;
-		if (currPanEnvPoint < 0) currPanEnvPoint = 0;
-		if (currPanEnvPoint >= 12) currPanEnvPoint = 11;
-
-		if (mx != editor->lastMouseX)
-		{
-			editor->lastMouseX = mx;
-			
-			if (ant > 1 && currPanEnvPoint > 0)
-			{
-				mx -= editor->saveMouseX;
-				if (mx < 0) mx = 0;
-				if (mx > 324) mx = 324;
-				
-				int32_t minX, maxX;
-				if (currPanEnvPoint == ant - 1)
-				{
-					minX = ins->panEnvPoints[currPanEnvPoint - 1][0] + 1;
-					maxX = 324;
-				}
-				else
-				{
-					minX = ins->panEnvPoints[currPanEnvPoint - 1][0] + 1;
-					maxX = ins->panEnvPoints[currPanEnvPoint + 1][0] - 1;
-				}
-				
-				if (minX < 0) minX = 0;
-				if (minX > 324) minX = 324;
-				if (maxX < 0) maxX = 0;
-				if (maxX > 324) maxX = 324;
-				
-				if (mx < minX) mx = minX;
-				if (mx > maxX) mx = maxX;
-				
-				ins->panEnvPoints[currPanEnvPoint][0] = (int16_t)mx;
-				inst->uiState.updateInstEditor = true;
-			}
-		}
-		
-		/* Handle Y movement - clamp to 0-63 */
-		if (my != editor->lastMouseY)
-		{
-			editor->lastMouseY = my;
-			
-			my -= editor->saveMouseY;
-			if (my < 0) my = 0;
-			if (my > 63) my = 63;
-			my = 63 - my;
-			
-			ins->panEnvPoints[currPanEnvPoint][1] = (int16_t)my;
-			inst->uiState.updateInstEditor = true;
-		}
+		if (editor->envDragMode == ENV_DRAG_NORMAL)
+			handleEnvelopeDragNormal(inst, x, y, editor->activeEnv);
+		else if (editor->envDragMode == ENV_DRAG_STRETCH)
+			handleEnvelopeDragStretch(inst, x, y, editor->activeEnv);
 		return;
 	}
 }
@@ -1277,8 +1317,8 @@ void ft2_instr_ed_mouse_up(ft2_instance_t *inst)
 		return;
 
 	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
-	editor->draggingVolEnv = false;
-	editor->draggingPanEnv = false;
+	editor->activeEnv = -1;
+	editor->envDragMode = ENV_DRAG_NONE;
 	editor->draggingPiano = false;
 }
 
@@ -1643,204 +1683,173 @@ void pbPanPreDef4(ft2_instance_t *inst) { setOrStorePanEnvPreset(inst, 3); }
 void pbPanPreDef5(ft2_instance_t *inst) { setOrStorePanEnvPreset(inst, 4); }
 void pbPanPreDef6(ft2_instance_t *inst) { setOrStorePanEnvPreset(inst, 5); }
 
-/* Volume envelope point add/delete */
-void pbVolEnvAdd(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (inst->editor.curInstr == 0 || ins == NULL) return;
-	const int16_t ant = ins->volEnvLength;
-	if (ant >= 12) return;
+/* ---------- Generic envelope point helpers ---------- */
 
-	int16_t i = (int16_t)inst->editor.currVolEnvPoint;
-	if (i < 0 || i >= ant) { i = ant - 1; if (i < 0) i = 0; }
-	if (i < ant - 1 && ins->volEnvPoints[i+1][0] - ins->volEnvPoints[i][0] < 2) return;
-	if (ins->volEnvPoints[i][0] >= 323) return;
+static void envelopeAddPoint(ft2_instance_t *inst, int envNum)
+{
+	if (inst->editor.curInstr == 0)
+		return;
+
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return;
+
+	const int16_t ant = *env.length;
+	if (ant >= 12)
+		return;
+
+	int16_t i = (int16_t)*env.currPoint;
+	if (i < 0 || i >= ant)
+	{
+		i = ant - 1;
+		if (i < 0) i = 0;
+	}
+	if (i < ant - 1 && env.points[i + 1][0] - env.points[i][0] < 2)
+		return;
+	if (env.points[i][0] >= 323)
+		return;
 
 	/* Shift points down */
-	for (int16_t j = ant; j > i; j--) {
-		ins->volEnvPoints[j][0] = ins->volEnvPoints[j-1][0];
-		ins->volEnvPoints[j][1] = ins->volEnvPoints[j-1][1];
+	for (int16_t j = ant; j > i; j--)
+	{
+		env.points[j][0] = env.points[j - 1][0];
+		env.points[j][1] = env.points[j - 1][1];
 	}
-	if (ins->volEnvSustain > i) ins->volEnvSustain++;
-	if (ins->volEnvLoopStart > i) ins->volEnvLoopStart++;
-	if (ins->volEnvLoopEnd > i) ins->volEnvLoopEnd++;
+	if (*env.sustain > i) (*env.sustain)++;
+	if (*env.loopStart > i) (*env.loopStart)++;
+	if (*env.loopEnd > i) (*env.loopEnd)++;
 
 	/* New point halfway between neighbors */
-	if (i < ant - 1) {
-		ins->volEnvPoints[i+1][0] = (ins->volEnvPoints[i][0] + ins->volEnvPoints[i+2][0]) / 2;
-		ins->volEnvPoints[i+1][1] = (ins->volEnvPoints[i][1] + ins->volEnvPoints[i+2][1]) / 2;
-	} else {
-		ins->volEnvPoints[i+1][0] = ins->volEnvPoints[i][0] + 10;
-		ins->volEnvPoints[i+1][1] = ins->volEnvPoints[i][1];
+	if (i < ant - 1)
+	{
+		env.points[i + 1][0] = (env.points[i][0] + env.points[i + 2][0]) / 2;
+		env.points[i + 1][1] = (env.points[i][1] + env.points[i + 2][1]) / 2;
 	}
-	if (ins->volEnvPoints[i+1][0] > 324) ins->volEnvPoints[i+1][0] = 324;
+	else
+	{
+		env.points[i + 1][0] = env.points[i][0] + 10;
+		env.points[i + 1][1] = env.points[i][1];
+	}
+	if (env.points[i + 1][0] > 324)
+		env.points[i + 1][0] = 324;
 
-	ins->volEnvLength++;
+	(*env.length)++;
 	inst->uiState.updateInstEditor = true;
 }
 
-void pbVolEnvDel(ft2_instance_t *inst)
+static void envelopeDeletePoint(ft2_instance_t *inst, int envNum)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL || inst->editor.curInstr == 0 || ins->volEnvLength <= 2) return;
-	int16_t i = (int16_t)inst->editor.currVolEnvPoint;
-	if (i < 0 || i >= ins->volEnvLength) return;
+	if (inst->editor.curInstr == 0)
+		return;
+
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return;
+
+	if (*env.length <= 2)
+		return;
+
+	int16_t i = (int16_t)*env.currPoint;
+	if (i < 0 || i >= *env.length)
+		return;
 
 	/* Shift points up */
-	for (int16_t j = i; j < ins->volEnvLength - 1; j++) {
-		ins->volEnvPoints[j][0] = ins->volEnvPoints[j+1][0];
-		ins->volEnvPoints[j][1] = ins->volEnvPoints[j+1][1];
+	for (int16_t j = i; j < *env.length - 1; j++)
+	{
+		env.points[j][0] = env.points[j + 1][0];
+		env.points[j][1] = env.points[j + 1][1];
 	}
-	if (ins->volEnvSustain > i) ins->volEnvSustain--;
-	if (ins->volEnvLoopStart > i) ins->volEnvLoopStart--;
-	if (ins->volEnvLoopEnd > i) ins->volEnvLoopEnd--;
+	if (*env.sustain > i) (*env.sustain)--;
+	if (*env.loopStart > i) (*env.loopStart)--;
+	if (*env.loopEnd > i) (*env.loopEnd)--;
 
-	ins->volEnvPoints[0][0] = 0;
-	ins->volEnvLength--;
-	if (ins->volEnvSustain >= ins->volEnvLength) ins->volEnvSustain = ins->volEnvLength - 1;
-	if (ins->volEnvLoopStart >= ins->volEnvLength) ins->volEnvLoopStart = ins->volEnvLength - 1;
-	if (ins->volEnvLoopEnd >= ins->volEnvLength) ins->volEnvLoopEnd = ins->volEnvLength - 1;
-	if (ins->volEnvLength == 0) inst->editor.currVolEnvPoint = 0;
-	else if (inst->editor.currVolEnvPoint >= ins->volEnvLength) inst->editor.currVolEnvPoint = ins->volEnvLength - 1;
+	env.points[0][0] = 0;
+	(*env.length)--;
+	if (*env.sustain >= *env.length) *env.sustain = *env.length - 1;
+	if (*env.loopStart >= *env.length) *env.loopStart = *env.length - 1;
+	if (*env.loopEnd >= *env.length) *env.loopEnd = *env.length - 1;
+	if (*env.length == 0) *env.currPoint = 0;
+	else if (*env.currPoint >= *env.length) *env.currPoint = *env.length - 1;
 
 	inst->uiState.updateInstEditor = true;
 }
 
-/* Volume envelope sustain/loop point adjust */
-void pbVolEnvSusUp(ft2_instance_t *inst)
+static void envAdjustSustain(ft2_instance_t *inst, int envNum, int delta)
 {
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->volEnvSustain < instr->volEnvLength - 1) { instr->volEnvSustain++; inst->uiState.updateInstEditor = true; }
-}
-void pbVolEnvSusDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->volEnvSustain > 0) { instr->volEnvSustain--; inst->uiState.updateInstEditor = true; }
-}
-void pbVolEnvRepSUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->volEnvLoopStart < instr->volEnvLoopEnd) { instr->volEnvLoopStart++; inst->uiState.updateInstEditor = true; }
-}
-void pbVolEnvRepSDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->volEnvLoopStart > 0) { instr->volEnvLoopStart--; inst->uiState.updateInstEditor = true; }
-}
-void pbVolEnvRepEUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->volEnvLoopEnd < instr->volEnvLength - 1) { instr->volEnvLoopEnd++; inst->uiState.updateInstEditor = true; }
-}
-void pbVolEnvRepEDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->volEnvLoopEnd > instr->volEnvLoopStart) { instr->volEnvLoopEnd--; inst->uiState.updateInstEditor = true; }
-}
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return;
 
-/* Panning envelope point add/delete */
-void pbPanEnvAdd(ft2_instance_t *inst)
-{
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL || inst->editor.curInstr == 0) return;
-	const int16_t ant = ins->panEnvLength;
-	if (ant >= 12) return;
-
-	int16_t i = (int16_t)inst->editor.currPanEnvPoint;
-	if (i < 0 || i >= ant) { i = ant - 1; if (i < 0) i = 0; }
-	if (i < ant - 1 && ins->panEnvPoints[i+1][0] - ins->panEnvPoints[i][0] < 2) return;
-	if (ins->panEnvPoints[i][0] >= 323) return;
-
-	for (int16_t j = ant; j > i; j--) {
-		ins->panEnvPoints[j][0] = ins->panEnvPoints[j-1][0];
-		ins->panEnvPoints[j][1] = ins->panEnvPoints[j-1][1];
+	if (delta > 0 && *env.sustain < *env.length - 1)
+	{
+		(*env.sustain)++;
+		inst->uiState.updateInstEditor = true;
 	}
-	if (ins->panEnvSustain > i) ins->panEnvSustain++;
-	if (ins->panEnvLoopStart > i) ins->panEnvLoopStart++;
-	if (ins->panEnvLoopEnd > i) ins->panEnvLoopEnd++;
-
-	if (i < ant - 1) {
-		ins->panEnvPoints[i+1][0] = (ins->panEnvPoints[i][0] + ins->panEnvPoints[i+2][0]) / 2;
-		ins->panEnvPoints[i+1][1] = (ins->panEnvPoints[i][1] + ins->panEnvPoints[i+2][1]) / 2;
-	} else {
-		ins->panEnvPoints[i+1][0] = ins->panEnvPoints[i][0] + 10;
-		ins->panEnvPoints[i+1][1] = ins->panEnvPoints[i][1];
+	else if (delta < 0 && *env.sustain > 0)
+	{
+		(*env.sustain)--;
+		inst->uiState.updateInstEditor = true;
 	}
-	if (ins->panEnvPoints[i+1][0] > 324) ins->panEnvPoints[i+1][0] = 324;
-
-	ins->panEnvLength++;
-	inst->uiState.updateInstEditor = true;
 }
 
-void pbPanEnvDel(ft2_instance_t *inst)
+static void envAdjustLoopStart(ft2_instance_t *inst, int envNum, int delta)
 {
-	ft2_instr_t *ins = getInstrForInst(inst);
-	if (ins == NULL || inst->editor.curInstr == 0 || ins->panEnvLength <= 2) return;
-	int16_t i = (int16_t)inst->editor.currPanEnvPoint;
-	if (i < 0 || i >= ins->panEnvLength) return;
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return;
 
-	for (int16_t j = i; j < ins->panEnvLength - 1; j++) {
-		ins->panEnvPoints[j][0] = ins->panEnvPoints[j+1][0];
-		ins->panEnvPoints[j][1] = ins->panEnvPoints[j+1][1];
+	if (delta > 0 && *env.loopStart < *env.loopEnd)
+	{
+		(*env.loopStart)++;
+		inst->uiState.updateInstEditor = true;
 	}
-	if (ins->panEnvSustain > i) ins->panEnvSustain--;
-	if (ins->panEnvLoopStart > i) ins->panEnvLoopStart--;
-	if (ins->panEnvLoopEnd > i) ins->panEnvLoopEnd--;
-
-	ins->panEnvPoints[0][0] = 0;
-	ins->panEnvLength--;
-	if (ins->panEnvSustain >= ins->panEnvLength) ins->panEnvSustain = ins->panEnvLength - 1;
-	if (ins->panEnvLoopStart >= ins->panEnvLength) ins->panEnvLoopStart = ins->panEnvLength - 1;
-	if (ins->panEnvLoopEnd >= ins->panEnvLength) ins->panEnvLoopEnd = ins->panEnvLength - 1;
-	if (ins->panEnvLength == 0) inst->editor.currPanEnvPoint = 0;
-	else if (inst->editor.currPanEnvPoint >= ins->panEnvLength) inst->editor.currPanEnvPoint = ins->panEnvLength - 1;
-
-	inst->uiState.updateInstEditor = true;
+	else if (delta < 0 && *env.loopStart > 0)
+	{
+		(*env.loopStart)--;
+		inst->uiState.updateInstEditor = true;
+	}
 }
 
-/* Panning envelope sustain/loop point adjust */
-void pbPanEnvSusUp(ft2_instance_t *inst)
+static void envAdjustLoopEnd(ft2_instance_t *inst, int envNum, int delta)
 {
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->panEnvSustain < instr->panEnvLength - 1) { instr->panEnvSustain++; inst->uiState.updateInstEditor = true; }
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return;
+
+	if (delta > 0 && *env.loopEnd < *env.length - 1)
+	{
+		(*env.loopEnd)++;
+		inst->uiState.updateInstEditor = true;
+	}
+	else if (delta < 0 && *env.loopEnd > *env.loopStart)
+	{
+		(*env.loopEnd)--;
+		inst->uiState.updateInstEditor = true;
+	}
 }
-void pbPanEnvSusDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->panEnvSustain > 0) { instr->panEnvSustain--; inst->uiState.updateInstEditor = true; }
-}
-void pbPanEnvRepSUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->panEnvLoopStart < instr->panEnvLoopEnd) { instr->panEnvLoopStart++; inst->uiState.updateInstEditor = true; }
-}
-void pbPanEnvRepSDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->panEnvLoopStart > 0) { instr->panEnvLoopStart--; inst->uiState.updateInstEditor = true; }
-}
-void pbPanEnvRepEUp(ft2_instance_t *inst)
-{
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->panEnvLoopEnd < instr->panEnvLength - 1) { instr->panEnvLoopEnd++; inst->uiState.updateInstEditor = true; }
-}
-void pbPanEnvRepEDown(ft2_instance_t *inst)
-{
-	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL) return;
-	if (instr->panEnvLoopEnd > instr->panEnvLoopStart) { instr->panEnvLoopEnd--; inst->uiState.updateInstEditor = true; }
-}
+
+/* ---------- Envelope point callbacks ---------- */
+
+void pbVolEnvAdd(ft2_instance_t *inst) { envelopeAddPoint(inst, 0); }
+void pbVolEnvDel(ft2_instance_t *inst) { envelopeDeletePoint(inst, 0); }
+void pbPanEnvAdd(ft2_instance_t *inst) { envelopeAddPoint(inst, 1); }
+void pbPanEnvDel(ft2_instance_t *inst) { envelopeDeletePoint(inst, 1); }
+
+/* ---------- Sustain/loop point callbacks ---------- */
+
+void pbVolEnvSusUp(ft2_instance_t *inst)   { envAdjustSustain(inst, 0, +1); }
+void pbVolEnvSusDown(ft2_instance_t *inst) { envAdjustSustain(inst, 0, -1); }
+void pbVolEnvRepSUp(ft2_instance_t *inst)   { envAdjustLoopStart(inst, 0, +1); }
+void pbVolEnvRepSDown(ft2_instance_t *inst) { envAdjustLoopStart(inst, 0, -1); }
+void pbVolEnvRepEUp(ft2_instance_t *inst)   { envAdjustLoopEnd(inst, 0, +1); }
+void pbVolEnvRepEDown(ft2_instance_t *inst) { envAdjustLoopEnd(inst, 0, -1); }
+
+void pbPanEnvSusUp(ft2_instance_t *inst)   { envAdjustSustain(inst, 1, +1); }
+void pbPanEnvSusDown(ft2_instance_t *inst) { envAdjustSustain(inst, 1, -1); }
+void pbPanEnvRepSUp(ft2_instance_t *inst)   { envAdjustLoopStart(inst, 1, +1); }
+void pbPanEnvRepSDown(ft2_instance_t *inst) { envAdjustLoopStart(inst, 1, -1); }
+void pbPanEnvRepEUp(ft2_instance_t *inst)   { envAdjustLoopEnd(inst, 1, +1); }
+void pbPanEnvRepEDown(ft2_instance_t *inst) { envAdjustLoopEnd(inst, 1, -1); }
 
 /* Sample parameter buttons */
 void pbInstVolDown(ft2_instance_t *inst)

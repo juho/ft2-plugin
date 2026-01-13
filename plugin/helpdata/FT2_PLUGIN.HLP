@@ -640,6 +640,15 @@ vibrato off.
 >Same as above, except from that the vibrato is not connected to
 the panning envelope.
 
+>@X040@C001Editing envelope points:
+>@X060@C002
+>Click and drag an envelope point to move it. The first point (at
+tick 0) can only be moved vertically.
+>Right-click and drag a point to enter "stretch mode": this moves
+the selected point and all points to its right together, allowing
+you to stretch or compress sections of the envelope. The selected
+point's Y value can also be adjusted while stretching.
+
 >@X040@C001Tune (finetune):
 >@X060@C002
 >The finetune resolution has been changed from a signed nibble

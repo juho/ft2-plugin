@@ -42,14 +42,14 @@ struct ft2_instance_t;
 #define PIANO_OCTAVES 8
 
 typedef struct ft2_instrument_editor_t {
-	bool draggingVolEnv;
-	bool draggingPanEnv;
+	int8_t activeEnv;        /* -1=none, 0=vol, 1=pan */
+	int8_t envDragMode;      /* 0=none, 1=drag, 2=stretch */
 	int32_t saveMouseX;      /* Drag offset from point center */
 	int32_t saveMouseY;
-	bool pianoKeyStatus[96]; /* Key pressed state */
-	bool draggingPiano;      /* Click-drag sample assignment */
 	int32_t lastMouseX;
 	int32_t lastMouseY;
+	bool pianoKeyStatus[96]; /* Key pressed state */
+	bool draggingPiano;      /* Click-drag sample assignment */
 } ft2_instrument_editor_t;
 
 /* Init/draw */

@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.55 (Jan 13, 2026)
+
+- Feat: "Stretch" envelopes with right-click drag in instrument editor.
+
 ## 1.0.54 (Jan 13, 2026)
 
 - Feat: Add `Reset` button to I/O routing tab in config.
