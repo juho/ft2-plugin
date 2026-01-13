@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.54 (Jan 13, 2026)
+
+- Feat: Add `Reset` button to I/O routing tab in config.
+
 ## 1.0.53 (Jan 11, 2026)
 
 - Feat: Add a `legacy` build target for macOS 10.14+ (Mojave).
