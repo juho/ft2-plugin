@@ -271,6 +271,7 @@ void configModRangeDown(struct ft2_instance_t *inst);
 void pbConfigReset(struct ft2_instance_t *inst);
 void pbConfigLoad(struct ft2_instance_t *inst);
 void pbConfigSave(struct ft2_instance_t *inst);
+void pbConfigRoutingReset(struct ft2_instance_t *inst);
 
 /* Channel routing callbacks (32 channels x 2 directions) */
 void pbRoutingCh1Up(struct ft2_instance_t *inst);

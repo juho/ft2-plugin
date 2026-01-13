@@ -390,6 +390,7 @@ void hideConfigScreen(ft2_instance_t *inst)
 		hidePushButton(widgets, PB_CONFIG_ROUTING_CH1_DOWN + (i * 2));
 		hideCheckBox(widgets, CB_CONF_ROUTING_CH1_TOMAIN + i);
 	}
+	hidePushButton(widgets, PB_CONFIG_ROUTING_RESET);
 
 	inst->uiState.configScreenShown = false;
 }
@@ -699,23 +700,22 @@ static void showConfigIORouting(ft2_instance_t *inst, ft2_video_t *video, const 
 
 	drawFramework(video, 110, 0, 522, 173, FRAMEWORK_TYPE1);
 
-	textOutShadow(video, bmp, 116, 4, PAL_FORGRND, PAL_DSKTOP2, "Channel Output Routing:");
-	textOutShadow(video, bmp, 116, 16, PAL_FORGRND, PAL_DSKTOP2, "Map each tracker channel (1-32) to an output bus (1-15) and/or to the main mix.");
-	textOutShadow(video, bmp, 120, 32, PAL_FORGRND, PAL_DSKTOP2, "Ch");
-	textOutShadow(video, bmp, 152, 32, PAL_FORGRND, PAL_DSKTOP2, "Out");
-	textOutShadow(video, bmp, 210, 32, PAL_FORGRND, PAL_DSKTOP2, "Main");
-	textOutShadow(video, bmp, 280, 32, PAL_FORGRND, PAL_DSKTOP2, "Ch");
-	textOutShadow(video, bmp, 312, 32, PAL_FORGRND, PAL_DSKTOP2, "Out");
-	textOutShadow(video, bmp, 370, 32, PAL_FORGRND, PAL_DSKTOP2, "Main");
-	textOutShadow(video, bmp, 440, 32, PAL_FORGRND, PAL_DSKTOP2, "Ch");
-	textOutShadow(video, bmp, 472, 32, PAL_FORGRND, PAL_DSKTOP2, "Out");
-	textOutShadow(video, bmp, 530, 32, PAL_FORGRND, PAL_DSKTOP2, "Main");
+	textOutShadow(video, bmp, 116, 4, PAL_FORGRND, PAL_DSKTOP2, "Map each tracker channel (1-32) to an output bus (1-15) and/or to the main mix.");
+	textOutShadow(video, bmp, 120, 24, PAL_FORGRND, PAL_DSKTOP2, "Ch");
+	textOutShadow(video, bmp, 152, 24, PAL_FORGRND, PAL_DSKTOP2, "Out");
+	textOutShadow(video, bmp, 210, 24, PAL_FORGRND, PAL_DSKTOP2, "Main");
+	textOutShadow(video, bmp, 280, 24, PAL_FORGRND, PAL_DSKTOP2, "Ch");
+	textOutShadow(video, bmp, 312, 24, PAL_FORGRND, PAL_DSKTOP2, "Out");
+	textOutShadow(video, bmp, 370, 24, PAL_FORGRND, PAL_DSKTOP2, "Main");
+	textOutShadow(video, bmp, 440, 24, PAL_FORGRND, PAL_DSKTOP2, "Ch");
+	textOutShadow(video, bmp, 472, 24, PAL_FORGRND, PAL_DSKTOP2, "Out");
+	textOutShadow(video, bmp, 530, 24, PAL_FORGRND, PAL_DSKTOP2, "Main");
 
 	/* 32 channels in 3 columns */
 	char buf[16];
 	for (int i = 0; i < 32; i++) {
 		int col = i / 11, row = i % 11;
-		int baseX = 120 + col * 160, baseY = 43 + row * 11;
+		int baseX = 120 + col * 160, baseY = 35 + row * 11;
 
 		sprintf(buf, "%2d:", i + 1);
 		textOutShadow(video, bmp, baseX, baseY, PAL_FORGRND, PAL_DSKTOP2, buf);
@@ -729,6 +729,8 @@ static void showConfigIORouting(ft2_instance_t *inst, ft2_video_t *video, const 
 		widgets->checkBoxChecked[CB_CONF_ROUTING_CH1_TOMAIN + i] = cfg->channelToMain[i];
 		showCheckBox(widgets, video, bmp, CB_CONF_ROUTING_CH1_TOMAIN + i);
 	}
+
+	showPushButton(widgets, video, bmp, PB_CONFIG_ROUTING_RESET);
 }
 
 /* ---------- MIDI Input tab (plugin-specific) ---------- */
@@ -1523,6 +1525,27 @@ void pbConfigSave(ft2_instance_t *inst)
 	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
 	if (ui != NULL)
 		ft2_dialog_show_yesno_cb(&ui->dialog, "System request", "Overwrite global config?", inst, onSaveGlobalConfigResult, NULL);
+}
+
+static void onResetRoutingResult(ft2_instance_t *inst, ft2_dialog_result_t result, const char *inputText, void *userData)
+{
+	(void)inputText; (void)userData;
+	if (result != DIALOG_RESULT_YES || inst == NULL) return;
+
+	for (int i = 0; i < 32; i++) {
+		inst->config.channelRouting[i] = i % FT2_NUM_OUTPUTS;
+		inst->config.channelToMain[i] = true;
+	}
+	inst->uiState.needsFullRedraw = true;
+}
+
+void pbConfigRoutingReset(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	if (ui != NULL)
+		ft2_dialog_show_yesno_cb(&ui->dialog, "System request",
+			"Reset channel routing to defaults?", inst, onResetRoutingResult, NULL);
 }
 
 /* ---------- Channel output routing ---------- */

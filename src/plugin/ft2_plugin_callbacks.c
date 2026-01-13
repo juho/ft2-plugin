@@ -2192,6 +2192,7 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_CONFIG_ROUTING_CH31_DOWN].callbackFuncOnDown = pbRoutingCh31Down;
 	widgets->pushButtons[PB_CONFIG_ROUTING_CH32_UP].callbackFuncOnDown = pbRoutingCh32Up;
 	widgets->pushButtons[PB_CONFIG_ROUTING_CH32_DOWN].callbackFuncOnDown = pbRoutingCh32Down;
+	widgets->pushButtons[PB_CONFIG_ROUTING_RESET].callbackFuncOnUp = pbConfigRoutingReset;
 
 	widgets->pushButtons[PB_HELP].callbackFuncOnUp = pbHelp;
 	widgets->pushButtons[PB_HELP_EXIT].callbackFuncOnUp = pbHelpExit;
