@@ -22,6 +22,7 @@ This is a fork of [8bitbubsy's standalone ft2-clone](https://github.com/8bitbubs
 - Multi-output support (can map any of the 32 channels to 15 busses plus a main mix)
 - MIDI input and output support, including aftertouch, bender and mod wheel recording.
 - Drag and drop modules or samples to the plugin
+- Right-click drag in instrument editor to "stretch" envelope points without having to move all of them
 
 ### Under active development!
 
