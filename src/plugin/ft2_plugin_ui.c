@@ -515,7 +515,7 @@ void ft2_ui_mouse_move(ft2_ui_t *ui, void *inst, int x, int y)
 		ft2_instr_ed_mouse_drag(ft2inst, x, y);
 }
 
-void ft2_ui_mouse_wheel(ft2_ui_t *ui, void *inst, int x, int y, int delta)
+void ft2_ui_mouse_wheel(ft2_ui_t *ui, void *inst, int x, int y, int delta, int modifiers)
 {
 	if (!ui) return;
 
@@ -524,6 +524,7 @@ void ft2_ui_mouse_wheel(ft2_ui_t *ui, void *inst, int x, int y, int delta)
 	if (!ft2inst) return;
 
 	bool up = (delta > 0);
+	bool shiftDown = (modifiers & FT2_MOD_SHIFT) != 0;
 
 	/* Top screen (y < 173) */
 	if (y < 173)
@@ -591,14 +592,34 @@ void ft2_ui_mouse_wheel(ft2_ui_t *ui, void *inst, int x, int y, int delta)
 		/* Bottom screen */
 		if (ft2inst->uiState.patternEditorShown)
 		{
-			int32_t numRows = ft2inst->replayer.patternNumRows[ft2inst->editor.editPattern];
-			if (up && ft2inst->editor.row > 0) ft2inst->editor.row--;
-			else if (!up && ft2inst->editor.row < numRows - 1) ft2inst->editor.row++;
+			if (shiftDown && ft2inst->uiState.pattChanScrollShown)
+			{
+				/* Shift+wheel = horizontal channel scroll */
+				up ? scrollChannelLeft(ft2inst) : scrollChannelRight(ft2inst);
+			}
+			else
+			{
+				/* Normal wheel = vertical row scroll */
+				int32_t numRows = ft2inst->replayer.patternNumRows[ft2inst->editor.editPattern];
+				int16_t row = ft2inst->replayer.song.row;
+
+				if (up)
+					row = (row > 0) ? row - 1 : numRows - 1;
+				else
+					row = (row < numRows - 1) ? row + 1 : 0;
+
+				ft2inst->replayer.song.row = row;
+				if (!ft2inst->replayer.songPlaying)
+					ft2inst->editor.row = (uint8_t)row;
+			}
 			ft2inst->uiState.updatePatternEditor = true;
 		}
 		else if (ft2inst->uiState.sampleEditorShown && y >= 174 && y <= 328)
 		{
-			up ? ft2_sample_ed_zoom_in(ft2inst, x) : ft2_sample_ed_zoom_out(ft2inst, x);
+			if (shiftDown)
+				up ? ft2_sample_ed_scroll_left(ft2inst) : ft2_sample_ed_scroll_right(ft2inst);
+			else
+				up ? ft2_sample_ed_zoom_in(ft2inst, x) : ft2_sample_ed_zoom_out(ft2inst, x);
 			ft2inst->uiState.updateSampleEditor = true;
 		}
 	}

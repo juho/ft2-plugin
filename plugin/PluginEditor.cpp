@@ -21,6 +21,64 @@ extern "C" {
 // Use JUCE's OpenGL namespace
 using namespace ::juce::gl;
 
+/* JUCE-to-FT2 key code mapping table for special keys.
+   ASCII keys (0-127) pass through unchanged; these are the remapped keys
+   that need explicit translation for both press and release detection. */
+struct KeyMapping { int juceCode; int ft2Code; };
+static const KeyMapping kKeyMap[] = {
+    /* Navigation keys */
+    { juce::KeyPress::leftKey,      FT2_KEY_LEFT },
+    { juce::KeyPress::rightKey,     FT2_KEY_RIGHT },
+    { juce::KeyPress::upKey,        FT2_KEY_UP },
+    { juce::KeyPress::downKey,      FT2_KEY_DOWN },
+    { juce::KeyPress::pageUpKey,    FT2_KEY_PAGEUP },
+    { juce::KeyPress::pageDownKey,  FT2_KEY_PAGEDOWN },
+    { juce::KeyPress::homeKey,      FT2_KEY_HOME },
+    { juce::KeyPress::endKey,       FT2_KEY_END },
+    { juce::KeyPress::insertKey,    FT2_KEY_INSERT },
+    /* F-keys */
+    { juce::KeyPress::F1Key,        FT2_KEY_F1 },
+    { juce::KeyPress::F2Key,        FT2_KEY_F2 },
+    { juce::KeyPress::F3Key,        FT2_KEY_F3 },
+    { juce::KeyPress::F4Key,        FT2_KEY_F4 },
+    { juce::KeyPress::F5Key,        FT2_KEY_F5 },
+    { juce::KeyPress::F6Key,        FT2_KEY_F6 },
+    { juce::KeyPress::F7Key,        FT2_KEY_F7 },
+    { juce::KeyPress::F8Key,        FT2_KEY_F8 },
+    { juce::KeyPress::F9Key,        FT2_KEY_F9 },
+    { juce::KeyPress::F10Key,       FT2_KEY_F10 },
+    { juce::KeyPress::F11Key,       FT2_KEY_F11 },
+    { juce::KeyPress::F12Key,       FT2_KEY_F12 },
+    /* Numpad keys */
+    { juce::KeyPress::numberPad0,           FT2_KEY_NUMPAD0 },
+    { juce::KeyPress::numberPad1,           FT2_KEY_NUMPAD1 },
+    { juce::KeyPress::numberPad2,           FT2_KEY_NUMPAD2 },
+    { juce::KeyPress::numberPad3,           FT2_KEY_NUMPAD3 },
+    { juce::KeyPress::numberPad4,           FT2_KEY_NUMPAD4 },
+    { juce::KeyPress::numberPad5,           FT2_KEY_NUMPAD5 },
+    { juce::KeyPress::numberPad6,           FT2_KEY_NUMPAD6 },
+    { juce::KeyPress::numberPad7,           FT2_KEY_NUMPAD7 },
+    { juce::KeyPress::numberPad8,           FT2_KEY_NUMPAD8 },
+    { juce::KeyPress::numberPad9,           FT2_KEY_NUMPAD9 },
+    { juce::KeyPress::numberPadAdd,         FT2_KEY_NUMPAD_PLUS },
+    { juce::KeyPress::numberPadSubtract,    FT2_KEY_NUMPAD_MINUS },
+    { juce::KeyPress::numberPadMultiply,    FT2_KEY_NUMPAD_MULTIPLY },
+    { juce::KeyPress::numberPadDivide,      FT2_KEY_NUMPAD_DIVIDE },
+    { juce::KeyPress::numberPadDecimalPoint, FT2_KEY_NUMPAD_PERIOD },
+    { juce::KeyPress::numberPadDelete,      FT2_KEY_NUMLOCK },
+    { 0xF739,                               FT2_KEY_NUMLOCK }, /* Mac Clear key */
+    { 0, 0 } /* sentinel */
+};
+
+/* Lookup FT2 key code from JUCE key code. Returns 0 if not in table. */
+static int juceToFt2Key(int juceCode)
+{
+    for (const KeyMapping* m = kKeyMap; m->juceCode != 0; ++m)
+        if (m->juceCode == juceCode)
+            return m->ft2Code;
+    return 0;
+}
+
 //==============================================================================
 FT2PluginEditor::FT2PluginEditor (FT2PluginProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
@@ -418,11 +476,11 @@ void FT2PluginEditor::processDiskOpRequests()
 
 void FT2PluginEditor::deleteDiskOpFile()
 {
-    ft2_instance_t* inst = audioProcessor.getInstance();
-    if (inst == nullptr)
+    ft2_instance_t* instPtr = audioProcessor.getInstance();
+    if (instPtr == nullptr)
         return;
 
-    auto& diskop = inst->diskop;
+    auto& diskop = instPtr->diskop;
     int32_t idx = diskop.selectedEntry + diskop.dirPos;
 
     if (diskop.entries == nullptr || idx < 0 || idx >= diskop.fileCount)
@@ -433,7 +491,6 @@ void FT2PluginEditor::deleteDiskOpFile()
 
     if (file.exists())
     {
-        // Confirm before delete
         juce::AlertWindow::showOkCancelBox(
             juce::AlertWindow::WarningIcon,
             "Delete",
@@ -462,11 +519,11 @@ void FT2PluginEditor::deleteDiskOpFile()
 
 void FT2PluginEditor::renameDiskOpFile()
 {
-    ft2_instance_t* inst = audioProcessor.getInstance();
-    if (inst == nullptr)
+    ft2_instance_t* instPtr = audioProcessor.getInstance();
+    if (instPtr == nullptr)
         return;
 
-    auto& diskop = inst->diskop;
+    auto& diskop = instPtr->diskop;
     int32_t idx = diskop.selectedEntry + diskop.dirPos;
 
     if (diskop.entries == nullptr || idx < 0 || idx >= diskop.fileCount)
@@ -1028,12 +1085,14 @@ void FT2PluginEditor::mouseMove(const juce::MouseEvent& e)
 
 void FT2PluginEditor::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
 {
-    if (wheel.deltaY == 0.0f)
+    float delta_f = (wheel.deltaY != 0.0f) ? wheel.deltaY : wheel.deltaX;
+    if (delta_f == 0.0f)
         return;
     
     auto ft2Pos = screenToFT2(e.getPosition());
-    int delta = (wheel.deltaY > 0.0f) ? 1 : -1;
-    ft2_ui_mouse_wheel(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, delta);
+    int delta = (delta_f > 0.0f) ? 1 : -1;
+    int modifiers = getModifiers(juce::ModifierKeys::getCurrentModifiers());
+    ft2_ui_mouse_wheel(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, delta, modifiers);
 }
 
 bool FT2PluginEditor::keyPressed(const juce::KeyPress& key)
@@ -1041,60 +1100,50 @@ bool FT2PluginEditor::keyPressed(const juce::KeyPress& key)
     int32_t keyCode = key.getKeyCode();
     int modifiers = getModifiers(juce::ModifierKeys::getCurrentModifiers());
     
-    /* Map JUCE key codes to FT2 key codes */
-    int ft2Key = 0;
-    if (keyCode == juce::KeyPress::spaceKey)        ft2Key = FT2_KEY_SPACE;
-    else if (keyCode == juce::KeyPress::returnKey)  ft2Key = FT2_KEY_RETURN;
-    else if (keyCode == juce::KeyPress::escapeKey)  ft2Key = FT2_KEY_ESCAPE;
-    else if (keyCode == juce::KeyPress::backspaceKey) ft2Key = FT2_KEY_BACKSPACE;
-    else if (keyCode == juce::KeyPress::deleteKey)  ft2Key = FT2_KEY_DELETE;
-    else if (keyCode == juce::KeyPress::insertKey)  ft2Key = FT2_KEY_INSERT;
-    else if (keyCode == juce::KeyPress::leftKey)    ft2Key = FT2_KEY_LEFT;
-    else if (keyCode == juce::KeyPress::rightKey)   ft2Key = FT2_KEY_RIGHT;
-    else if (keyCode == juce::KeyPress::upKey)      ft2Key = FT2_KEY_UP;
-    else if (keyCode == juce::KeyPress::downKey)    ft2Key = FT2_KEY_DOWN;
-    else if (keyCode == juce::KeyPress::pageUpKey)  ft2Key = FT2_KEY_PAGEUP;
-    else if (keyCode == juce::KeyPress::pageDownKey) ft2Key = FT2_KEY_PAGEDOWN;
-    else if (keyCode == juce::KeyPress::homeKey)    ft2Key = FT2_KEY_HOME;
-    else if (keyCode == juce::KeyPress::endKey)     ft2Key = FT2_KEY_END;
-    else if (keyCode == juce::KeyPress::tabKey)     ft2Key = FT2_KEY_TAB;
-    else if (keyCode == juce::KeyPress::F1Key)      ft2Key = FT2_KEY_F1;
-    else if (keyCode == juce::KeyPress::F2Key)      ft2Key = FT2_KEY_F2;
-    else if (keyCode == juce::KeyPress::F3Key)      ft2Key = FT2_KEY_F3;
-    else if (keyCode == juce::KeyPress::F4Key)      ft2Key = FT2_KEY_F4;
-    else if (keyCode == juce::KeyPress::F5Key)      ft2Key = FT2_KEY_F5;
-    else if (keyCode == juce::KeyPress::F6Key)      ft2Key = FT2_KEY_F6;
-    else if (keyCode == juce::KeyPress::F7Key)      ft2Key = FT2_KEY_F7;
-    else if (keyCode == juce::KeyPress::F8Key)      ft2Key = FT2_KEY_F8;
-    else if (keyCode == juce::KeyPress::F9Key)      ft2Key = FT2_KEY_F9;
-    else if (keyCode == juce::KeyPress::F10Key)     ft2Key = FT2_KEY_F10;
-    else if (keyCode == juce::KeyPress::F11Key)     ft2Key = FT2_KEY_F11;
-    else if (keyCode == juce::KeyPress::F12Key)     ft2Key = FT2_KEY_F12;
-    else ft2Key = keyCode; /* Pass through for regular characters */
+    /* Map JUCE key codes to FT2 key codes.
+       Special keys use the mapping table; ASCII keys that have different
+       JUCE constants (space, return, etc.) are handled explicitly;
+       printable ASCII passes through unchanged. */
+    int ft2Key = juceToFt2Key(keyCode);
+    if (ft2Key == 0)
+    {
+        if (keyCode == juce::KeyPress::spaceKey)         ft2Key = FT2_KEY_SPACE;
+        else if (keyCode == juce::KeyPress::returnKey)   ft2Key = FT2_KEY_RETURN;
+        else if (keyCode == juce::KeyPress::escapeKey)   ft2Key = FT2_KEY_ESCAPE;
+        else if (keyCode == juce::KeyPress::backspaceKey) ft2Key = FT2_KEY_BACKSPACE;
+        else if (keyCode == juce::KeyPress::deleteKey)   ft2Key = FT2_KEY_DELETE;
+        else if (keyCode == juce::KeyPress::tabKey)      ft2Key = FT2_KEY_TAB;
+        else ft2Key = keyCode; /* Pass through for printable ASCII */
+    }
     
     /* Check for text character input */
     juce::juce_wchar textChar = key.getTextCharacter();
     if (textChar >= 32 && textChar <= 126)
-    {
         ft2_ui_text_input(ui, audioProcessor.getInstance(), static_cast<char>(textChar));
-    }
     
     ft2_ui_key_press(ui, audioProcessor.getInstance(), ft2Key, modifiers);
-    return true; // Mark as handled
+    return true;
 }
 
 bool FT2PluginEditor::keyStateChanged(bool isKeyDown)
 {
     if (!isKeyDown && ui != nullptr)
     {
-        // A key was released - find which one(s) by comparing tracked state vs actual
-        for (int key = 0; key < 512; key++)
+        int modifiers = getModifiers(juce::ModifierKeys::getCurrentModifiers());
+        ft2_instance_t* inst = audioProcessor.getInstance();
+        
+        /* Check ASCII key releases (FT2 codes match JUCE codes for 0-127) */
+        for (int k = 0; k < 128; k++)
         {
-            if (ui->input.keyDown[key] && !juce::KeyPress::isKeyCurrentlyDown(key))
-            {
-                int modifiers = getModifiers(juce::ModifierKeys::getCurrentModifiers());
-                ft2_ui_key_release(ui, audioProcessor.getInstance(), key, modifiers);
-            }
+            if (ui->input.keyDown[k] && !juce::KeyPress::isKeyCurrentlyDown(k))
+                ft2_ui_key_release(ui, inst, k, modifiers);
+        }
+        
+        /* Check remapped key releases using the mapping table */
+        for (const KeyMapping* m = kKeyMap; m->juceCode != 0; ++m)
+        {
+            if (ui->input.keyDown[m->ft2Code] && !juce::KeyPress::isKeyCurrentlyDown(m->juceCode))
+                ft2_ui_key_release(ui, inst, m->ft2Code, modifiers);
         }
     }
     return false;

@@ -77,6 +77,9 @@ typedef struct {
 	bool blockCopied;
 	int32_t markXSize, markYSize;
 	struct ft2_note_t *blkCopyBuff;      /* Allocated: MAX_PATT_LEN * MAX_CHANNELS */
+	struct ft2_note_t *trackCopyBuff;    /* Allocated: MAX_PATT_LEN */
+	struct ft2_note_t *ptnCopyBuff;      /* Allocated: MAX_PATT_LEN * MAX_CHANNELS */
+	uint16_t trkBufLen, ptnBufLen;       /* Length of copied track/pattern */
 	int32_t lastMouseX, lastMouseY;
 	int8_t lastChMark;
 	int16_t lastRowMark;
@@ -202,6 +205,22 @@ void keybPattMarkRight(struct ft2_instance_t *inst);
 void cutBlock(struct ft2_instance_t *inst);
 void copyBlock(struct ft2_instance_t *inst);
 void pasteBlock(struct ft2_instance_t *inst);
+
+/* Track operations (Shift+F3/F4/F5) */
+void cutTrack(struct ft2_instance_t *inst);
+void copyTrack(struct ft2_instance_t *inst);
+void pasteTrack(struct ft2_instance_t *inst);
+
+/* Pattern operations (Ctrl+F3/F4/F5) */
+void cutPattern(struct ft2_instance_t *inst);
+void copyPattern(struct ft2_instance_t *inst);
+void pastePattern(struct ft2_instance_t *inst);
+
+/* Volume scale/fade (Alt+V, Shift+V, Ctrl+V) */
+void scaleFadeVolumeBlock(struct ft2_instance_t *inst);
+void scaleFadeVolumeTrack(struct ft2_instance_t *inst);
+void scaleFadeVolumePattern(struct ft2_instance_t *inst);
+
 void handlePatternDataMouseDown(struct ft2_instance_t *inst, int32_t mouseX, int32_t mouseY, bool mouseButtonHeld, bool rightButton);
 
 /* Channel scroll */

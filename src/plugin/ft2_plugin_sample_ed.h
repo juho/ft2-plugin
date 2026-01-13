@@ -107,6 +107,8 @@ void ft2_sample_ed_draw_pos_line(struct ft2_instance_t *inst);
 /* View control */
 void ft2_sample_ed_zoom_in(struct ft2_instance_t *inst, int32_t mouseX);
 void ft2_sample_ed_zoom_out(struct ft2_instance_t *inst, int32_t mouseX);
+void ft2_sample_ed_scroll_left(struct ft2_instance_t *inst);
+void ft2_sample_ed_scroll_right(struct ft2_instance_t *inst);
 void ft2_sample_ed_show_all(struct ft2_instance_t *inst);
 void ft2_sample_ed_show_loop(struct ft2_instance_t *inst);
 void ft2_sample_ed_show_range(struct ft2_instance_t *inst);

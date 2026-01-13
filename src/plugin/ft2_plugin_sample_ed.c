@@ -797,6 +797,57 @@ void ft2_sample_ed_zoom_out(ft2_instance_t *inst, int32_t mouseX)
 	}
 }
 
+/* Scrolls sample view left by 1/32 of view size */
+void ft2_sample_ed_scroll_left(ft2_instance_t *inst)
+{
+	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
+	if (!editor || !inst) return;
+
+	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
+	int32_t smpLen = s ? s->length : 0;
+
+	if (editor->viewSize == 0 || editor->viewSize >= smpLen)
+		return;
+
+	int32_t scrollAmount = editor->viewSize / 32;
+	if (scrollAmount < 1) scrollAmount = 1;
+
+	editor->scrPos -= scrollAmount;
+	if (editor->scrPos < 0) editor->scrPos = 0;
+
+	ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets)
+		widgets->scrollBarState[SB_SAMP_SCROLL].pos = (uint32_t)editor->scrPos;
+
+	updateScalingFactors(editor);
+}
+
+/* Scrolls sample view right by 1/32 of view size */
+void ft2_sample_ed_scroll_right(ft2_instance_t *inst)
+{
+	ft2_sample_editor_t *editor = FT2_SAMPLE_ED(inst);
+	if (!editor || !inst) return;
+
+	ft2_sample_t *s = getCurrentSampleWithInst(editor, inst);
+	int32_t smpLen = s ? s->length : 0;
+
+	if (editor->viewSize == 0 || editor->viewSize >= smpLen)
+		return;
+
+	int32_t scrollAmount = editor->viewSize / 32;
+	if (scrollAmount < 1) scrollAmount = 1;
+
+	editor->scrPos += scrollAmount;
+	if (editor->scrPos + editor->viewSize > smpLen)
+		editor->scrPos = smpLen - editor->viewSize;
+
+	ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets)
+		widgets->scrollBarState[SB_SAMP_SCROLL].pos = (uint32_t)editor->scrPos;
+
+	updateScalingFactors(editor);
+}
+
 /* ------------------------------------------------------------------------- */
 /*                           VIEW PRESETS                                    */
 /* ------------------------------------------------------------------------- */

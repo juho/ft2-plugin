@@ -445,6 +445,18 @@ Delete  @T160Delete note or volume column at cursor.
 >Alt+F4 @T160Copy block.
 >Alt+F5 @T160Paste block.
 >Alt+C  @T160Mark current track.
+>
+>@X010@C002Alternative cut/copy/paste (plugin only):
+>@X060@C002These shortcuts use Cmd on Mac, Ctrl on Windows/Linux:
+>Cmd/Ctrl+C @T160Copy block.
+>Cmd/Ctrl+X @T160Cut block.
+>Cmd/Ctrl+V @T160Paste block.
+>Cmd/Ctrl+Shift+C @T160Copy track.
+>Cmd/Ctrl+Shift+X @T160Cut track.
+>Cmd/Ctrl+Shift+V @T160Paste track.
+>Cmd/Ctrl+Alt+C @T160Copy pattern.
+>Cmd/Ctrl+Alt+X @T160Cut pattern.
+>Cmd/Ctrl+Alt+V @T160Paste pattern.
 
 @X040@C001Miscellaneous:
 >@X060@C002

@@ -94,7 +94,7 @@ uint32_t *ft2_ui_get_framebuffer(ft2_ui_t *ui);
 void ft2_ui_mouse_press(ft2_ui_t *ui, void *inst, int x, int y, bool leftButton, bool rightButton);
 void ft2_ui_mouse_release(ft2_ui_t *ui, void *inst, int x, int y, int button);
 void ft2_ui_mouse_move(ft2_ui_t *ui, void *inst, int x, int y);
-void ft2_ui_mouse_wheel(ft2_ui_t *ui, void *inst, int x, int y, int delta);
+void ft2_ui_mouse_wheel(ft2_ui_t *ui, void *inst, int x, int y, int delta, int modifiers);
 void ft2_ui_key_press(ft2_ui_t *ui, void *inst, int key, int modifiers);
 void ft2_ui_key_release(ft2_ui_t *ui, void *inst, int key, int modifiers);
 void ft2_ui_key_state_changed(ft2_ui_t *ui, bool isKeyDown);

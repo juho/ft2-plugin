@@ -317,7 +317,7 @@ static bool handleNumpadInstrumentKeys(ft2_instance_t *inst, ft2_input_state_t *
 	if (inst == NULL || input == NULL) return false;
 
 	/* With + held, only bank selection keys work */
-	if (input->numPadPlusPressed && !(modifiers & FT2_MOD_CTRL)) {
+	if (input->keyDown[FT2_KEY_NUMPAD_PLUS] && !(modifiers & FT2_MOD_CTRL)) {
 		if (keyCode != FT2_KEY_NUMLOCK && keyCode != FT2_KEY_NUMPAD_DIVIDE &&
 			keyCode != FT2_KEY_NUMPAD_MULTIPLY && keyCode != FT2_KEY_NUMPAD_MINUS)
 			return false;
@@ -335,7 +335,7 @@ static bool handleNumpadInstrumentKeys(ft2_instance_t *inst, ft2_input_state_t *
 			return true;
 		
 		case FT2_KEY_NUMLOCK:
-			if (input->numPadPlusPressed)
+			if (input->keyDown[FT2_KEY_NUMPAD_PLUS])
 				inst->editor.instrBankOffset = inst->editor.instrBankSwapped ? 12*8 : 4*8;
 			else
 				inst->editor.instrBankOffset = inst->editor.instrBankSwapped ? 8*8 : 0;
@@ -343,7 +343,7 @@ static bool handleNumpadInstrumentKeys(ft2_instance_t *inst, ft2_input_state_t *
 			return true;
 		
 		case FT2_KEY_NUMPAD_DIVIDE:
-			if (input->numPadPlusPressed)
+			if (input->keyDown[FT2_KEY_NUMPAD_PLUS])
 				inst->editor.instrBankOffset = inst->editor.instrBankSwapped ? 13*8 : 5*8;
 			else
 				inst->editor.instrBankOffset = inst->editor.instrBankSwapped ? 9*8 : 1*8;
@@ -351,7 +351,7 @@ static bool handleNumpadInstrumentKeys(ft2_instance_t *inst, ft2_input_state_t *
 			return true;
 		
 		case FT2_KEY_NUMPAD_MULTIPLY:
-			if (input->numPadPlusPressed)
+			if (input->keyDown[FT2_KEY_NUMPAD_PLUS])
 				inst->editor.instrBankOffset = inst->editor.instrBankSwapped ? 14*8 : 6*8;
 			else
 				inst->editor.instrBankOffset = inst->editor.instrBankSwapped ? 10*8 : 2*8;
@@ -359,7 +359,7 @@ static bool handleNumpadInstrumentKeys(ft2_instance_t *inst, ft2_input_state_t *
 			return true;
 		
 		case FT2_KEY_NUMPAD_MINUS:
-			if (input->numPadPlusPressed)
+			if (input->keyDown[FT2_KEY_NUMPAD_PLUS])
 				inst->editor.instrBankOffset = inst->editor.instrBankSwapped ? 15*8 : 7*8;
 			else
 				inst->editor.instrBankOffset = inst->editor.instrBankSwapped ? 11*8 : 3*8;
@@ -367,7 +367,7 @@ static bool handleNumpadInstrumentKeys(ft2_instance_t *inst, ft2_input_state_t *
 			return true;
 		
 		case FT2_KEY_NUMPAD_PLUS:
-			input->numPadPlusPressed = true;
+			/* State is tracked via keyDown[], no action needed here */
 			return true;
 		
 		case FT2_KEY_NUMPAD_PERIOD:
@@ -465,7 +465,84 @@ static bool handleModifiedKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 	bool altDown = (modifiers & FT2_MOD_ALT) != 0;
 	bool shiftDown = (modifiers & FT2_MOD_SHIFT) != 0;
 
-	/* Ctrl+key: screen toggles */
+	/* Platform-native clipboard modifier: Cmd on Mac, Ctrl on Windows/Linux */
+#ifdef __APPLE__
+	bool clipMod = (modifiers & FT2_MOD_CMD) != 0;
+#else
+	bool clipMod = ctrlDown;
+#endif
+
+	/* --- Clipboard shortcuts using platform-native modifier --- */
+
+	/* Sample editor: clipMod+C/X/V (highest priority) */
+	if (clipMod && inst->uiState.sampleEditorShown) {
+		switch (keyCode) {
+			case 'c': case 'C': ft2_sample_ed_copy(inst); return true;
+			case 'x': case 'X': ft2_sample_ed_cut(inst); return true;
+			case 'v': case 'V': ft2_sample_ed_paste(inst); return true;
+			default: break;
+		}
+	}
+
+	/* Pattern editor clipboard ops with combined modifiers */
+	if (inst->uiState.patternEditorShown) {
+		/* Block ops: clipMod + C/X/V (no Shift, no Alt) */
+		if (clipMod && !shiftDown && !altDown) {
+			switch (keyCode) {
+				case 'c': case 'C': copyBlock(inst); return true;
+				case 'x': case 'X': cutBlock(inst); return true;
+				case 'v': case 'V': pasteBlock(inst); return true;
+				default: break;
+			}
+		}
+		/* Track ops: clipMod + Shift + C/X/V */
+		if (clipMod && shiftDown && !altDown) {
+			switch (keyCode) {
+				case 'c': case 'C': copyTrack(inst); return true;
+				case 'x': case 'X': cutTrack(inst); return true;
+				case 'v': case 'V': pasteTrack(inst); return true;
+				default: break;
+			}
+		}
+		/* Pattern ops: clipMod + Alt + C/X/V */
+		if (clipMod && !shiftDown && altDown) {
+			switch (keyCode) {
+				case 'c': case 'C': copyPattern(inst); return true;
+				case 'x': case 'X': cutPattern(inst); return true;
+				case 'v': case 'V': pastePattern(inst); return true;
+				default: break;
+			}
+		}
+	}
+
+	/* --- Volume scale/fade shortcuts (pattern editor only, not sample editor) --- */
+	if (inst->uiState.patternEditorShown && !inst->uiState.sampleEditorShown) {
+		/* Alt+V alone (no clipMod) = scale/fade block */
+		if (altDown && !ctrlDown && !shiftDown && !clipMod) {
+			if (keyCode == 'v' || keyCode == 'V') {
+				scaleFadeVolumeBlock(inst);
+				return true;
+			}
+		}
+		/* Shift+V alone (no clipMod) = scale/fade track */
+		if (shiftDown && !ctrlDown && !altDown && !clipMod) {
+			if (keyCode == 'v' || keyCode == 'V') {
+				scaleFadeVolumeTrack(inst);
+				return true;
+			}
+		}
+#ifdef __APPLE__
+		/* Ctrl+V alone (no Cmd) = scale/fade pattern (Mac only) */
+		if (ctrlDown && !altDown && !shiftDown && !clipMod) {
+			if (keyCode == 'v' || keyCode == 'V') {
+				scaleFadeVolumePattern(inst);
+				return true;
+			}
+		}
+#endif
+	}
+
+	/* --- Ctrl+key screen toggles (not in sample/pattern editor for C/X/V) --- */
 	if (ctrlDown && !altDown && !shiftDown) {
 		switch (keyCode) {
 			case 'a': case 'A': inst->uiState.advEditShown = !inst->uiState.advEditShown; return true;
@@ -477,12 +554,10 @@ static bool handleModifiedKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 				}
 				return true;
 			case 'c': case 'C':
-				if (!inst->uiState.sampleEditorShown) {
-					inst->uiState.configScreenShown = !inst->uiState.configScreenShown;
-					if (inst->uiState.configScreenShown) {
-						inst->uiState.aboutScreenShown = false;
-						inst->uiState.helpScreenShown = false;
-					}
+				inst->uiState.configScreenShown = !inst->uiState.configScreenShown;
+				if (inst->uiState.configScreenShown) {
+					inst->uiState.aboutScreenShown = false;
+					inst->uiState.helpScreenShown = false;
 				}
 				return true;
 			case 'd': case 'D': inst->uiState.diskOpShown = !inst->uiState.diskOpShown; return true;
@@ -552,7 +627,9 @@ static bool handleModifiedKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 		}
 	}
 
-	/* Alt+key: block ops and channel jumping */
+	/* --- F-key shortcuts for clipboard ops (all platforms) --- */
+
+	/* Alt+F3/F4/F5: Block cut/copy/paste */
 	if (altDown && !ctrlDown && !shiftDown) {
 		switch (keyCode) {
 			case FT2_KEY_F3: cutBlock(inst); return true;
@@ -560,8 +637,30 @@ static bool handleModifiedKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 			case FT2_KEY_F5: pasteBlock(inst); return true;
 			default: break;
 		}
+	}
 
-		/* Alt+QWERTY/ASDF = jump to channel 0-15 */
+	/* Shift+F3/F4/F5: Track cut/copy/paste */
+	if (shiftDown && !ctrlDown && !altDown) {
+		switch (keyCode) {
+			case FT2_KEY_F3: cutTrack(inst); return true;
+			case FT2_KEY_F4: copyTrack(inst); return true;
+			case FT2_KEY_F5: pasteTrack(inst); return true;
+			default: break;
+		}
+	}
+
+	/* Ctrl+F3/F4/F5: Pattern cut/copy/paste */
+	if (ctrlDown && !shiftDown && !altDown) {
+		switch (keyCode) {
+			case FT2_KEY_F3: cutPattern(inst); return true;
+			case FT2_KEY_F4: copyPattern(inst); return true;
+			case FT2_KEY_F5: pastePattern(inst); return true;
+			default: break;
+		}
+	}
+
+	/* Alt+QWERTY/ASDF = jump to channel 0-15 */
+	if (altDown && !ctrlDown && !shiftDown) {
 		int channel = -1;
 		switch (keyCode) {
 			case 'q': case 'Q': channel = 0; break;
@@ -1151,10 +1250,14 @@ void ft2_input_key_down(ft2_instance_t *inst, ft2_input_state_t *input, int keyC
 		return;
 	}
 
-	if (keyCode == FT2_KEY_NUMPAD_PLUS) input->numPadPlusPressed = true;
-
-	if (modifiers & (FT2_MOD_CTRL | FT2_MOD_ALT))
+	if (modifiers & (FT2_MOD_CTRL | FT2_MOD_ALT | FT2_MOD_SHIFT | FT2_MOD_CMD))
 		if (handleModifiedKeys(inst, keyCode, modifiers)) return;
+
+	/* Delete key: sample cut in sample editor */
+	if (keyCode == FT2_KEY_DELETE && inst->uiState.sampleEditorShown) {
+		ft2_sample_ed_cut(inst);
+		return;
+	}
 
 	handlePlaybackKeys(inst, keyCode, modifiers);
 	if (handleNumpadInstrumentKeys(inst, input, keyCode, modifiers)) return;
@@ -1177,7 +1280,6 @@ void ft2_input_key_up(ft2_instance_t *inst, ft2_input_state_t *input, int keyCod
 	if (keyCode >= 0 && keyCode < 512) input->keyDown[keyCode] = false;
 	input->modifiers = (uint8_t)modifiers;
 
-	if (keyCode == FT2_KEY_NUMPAD_PLUS) input->numPadPlusPressed = false;
 	if (input->ignoreCurrKeyUp) { input->ignoreCurrKeyUp = false; return; }
 
 	/* Release note on key up for proper jamming */

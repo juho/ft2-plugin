@@ -341,6 +341,10 @@ typedef struct ft2_editor_t
 	int16_t currMIDIPitch;       /* Current pitch bend value (-128 to +127) */
 	uint8_t currAftertouch;      /* Current aftertouch value (0-127) */
 	uint8_t lastRecordedAT;      /* Last aftertouch value recorded to pattern */
+
+	/* Volume scale/fade state */
+	double volScaleStart;        /* Start scale factor (default 1.0) */
+	double volScaleEnd;          /* End scale factor (default 1.0) */
 } ft2_editor_t;
 
 /**

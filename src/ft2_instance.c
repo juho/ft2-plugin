@@ -175,6 +175,8 @@ static void initEditorState(ft2_instance_t *inst)
 	inst->editor.speed = 6;
 	inst->editor.globalVolume = 64;
 	inst->editor.smpEd_NoteNr = 48;  /* C-4 (note 48 = 4*12) - same as standalone */
+	inst->editor.volScaleStart = 1.0;
+	inst->editor.volScaleEnd = 1.0;
 
 	/* Advanced edit defaults - matching standalone ft2_main.c */
 	inst->editor.srcInstr = 1;

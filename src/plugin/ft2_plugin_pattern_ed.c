@@ -11,6 +11,8 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <math.h>
 #include "ft2_plugin_video.h"
 #include "ft2_plugin_bmp.h"
 #include "ft2_plugin_pattern_ed.h"
@@ -23,6 +25,7 @@
 #include "ft2_plugin_sample_ed.h"
 #include "ft2_plugin_instr_ed.h"
 #include "ft2_plugin_textbox.h"
+#include "ft2_plugin_dialog.h"
 #include "ft2_instance.h"
 
 #ifndef MAX_CHANNELS
@@ -514,8 +517,10 @@ void ft2_pattern_ed_init(ft2_pattern_editor_t *editor, ft2_video_t *video)
 	editor->ptnChnNumbers = true;
 	editor->ptnFrmWrk = true;
 	
-	/* Allocate pattern block clipboard buffer */
+	/* Allocate pattern clipboard buffers */
 	editor->clipboard.blkCopyBuff = (ft2_note_t *)calloc(MAX_PATT_LEN * MAX_CHANNELS, sizeof(ft2_note_t));
+	editor->clipboard.trackCopyBuff = (ft2_note_t *)calloc(MAX_PATT_LEN, sizeof(ft2_note_t));
+	editor->clipboard.ptnCopyBuff = (ft2_note_t *)calloc(MAX_PATT_LEN * MAX_CHANNELS, sizeof(ft2_note_t));
 	editor->clipboard.lastMarkX1 = -1;
 	editor->clipboard.lastMarkX2 = -1;
 	editor->clipboard.lastMarkY1 = -1;
@@ -1475,6 +1480,156 @@ void pasteBlock(ft2_instance_t *inst)
 	inst->uiState.updatePatternEditor = true;
 }
 
+/* ============ TRACK CUT/COPY/PASTE (Shift+F3/F4/F5) ============ */
+
+void cutTrack(ft2_instance_t *inst)
+{
+	if (!inst) return;
+
+	uint16_t curPattern = inst->editor.editPattern;
+	ft2_note_t *p = inst->replayer.pattern[curPattern];
+	if (!p) return;
+
+	const int16_t numRows = inst->replayer.patternNumRows[curPattern];
+	const uint8_t ch = inst->cursor.ch;
+	patt_clipboard_t *clip = &FT2_PATTERN_ED(inst)->clipboard;
+
+	if (inst->config.ptnCutToBuffer && clip->trackCopyBuff) {
+		memset(clip->trackCopyBuff, 0, MAX_PATT_LEN * sizeof(ft2_note_t));
+		for (int16_t i = 0; i < numRows; i++)
+			copyNoteWithMask(inst, &p[(i * FT2_MAX_CHANNELS) + ch], &clip->trackCopyBuff[i]);
+		clip->trkBufLen = numRows;
+	}
+
+	for (int16_t i = 0; i < numRows; i++)
+		memset(&p[(i * FT2_MAX_CHANNELS) + ch], 0, sizeof(ft2_note_t));
+
+	killPatternIfUnused(inst, curPattern);
+	ft2_song_mark_modified(inst);
+	inst->uiState.updatePatternEditor = true;
+}
+
+void copyTrack(ft2_instance_t *inst)
+{
+	if (!inst) return;
+
+	uint16_t curPattern = inst->editor.editPattern;
+	ft2_note_t *p = inst->replayer.pattern[curPattern];
+	if (!p) return;
+
+	const int16_t numRows = inst->replayer.patternNumRows[curPattern];
+	const uint8_t ch = inst->cursor.ch;
+	patt_clipboard_t *clip = &FT2_PATTERN_ED(inst)->clipboard;
+
+	if (!clip->trackCopyBuff) return;
+
+	memset(clip->trackCopyBuff, 0, MAX_PATT_LEN * sizeof(ft2_note_t));
+	for (int16_t i = 0; i < numRows; i++)
+		copyNoteWithMask(inst, &p[(i * FT2_MAX_CHANNELS) + ch], &clip->trackCopyBuff[i]);
+	clip->trkBufLen = numRows;
+}
+
+void pasteTrack(ft2_instance_t *inst)
+{
+	if (!inst) return;
+
+	patt_clipboard_t *clip = &FT2_PATTERN_ED(inst)->clipboard;
+	if (clip->trkBufLen == 0 || !clip->trackCopyBuff) return;
+
+	uint16_t curPattern = inst->editor.editPattern;
+	if (!allocatePattern(inst, curPattern)) return;
+
+	ft2_note_t *p = inst->replayer.pattern[curPattern];
+	const int16_t numRows = inst->replayer.patternNumRows[curPattern];
+	const uint8_t ch = inst->cursor.ch;
+
+	for (int16_t i = 0; i < numRows; i++)
+		pasteNoteWithMask(inst, &clip->trackCopyBuff[i], &p[(i * FT2_MAX_CHANNELS) + ch]);
+
+	killPatternIfUnused(inst, curPattern);
+	ft2_song_mark_modified(inst);
+	inst->uiState.updatePatternEditor = true;
+}
+
+/* ============ PATTERN CUT/COPY/PASTE (Ctrl+F3/F4/F5) ============ */
+
+void cutPattern(ft2_instance_t *inst)
+{
+	if (!inst) return;
+
+	uint16_t curPattern = inst->editor.editPattern;
+	ft2_note_t *p = inst->replayer.pattern[curPattern];
+	if (!p) return;
+
+	const int16_t numRows = inst->replayer.patternNumRows[curPattern];
+	const int16_t numCh = inst->replayer.song.numChannels;
+	patt_clipboard_t *clip = &FT2_PATTERN_ED(inst)->clipboard;
+
+	if (inst->config.ptnCutToBuffer && clip->ptnCopyBuff) {
+		memset(clip->ptnCopyBuff, 0, (MAX_PATT_LEN * MAX_CHANNELS) * sizeof(ft2_note_t));
+		for (int16_t x = 0; x < numCh; x++) {
+			for (int16_t i = 0; i < numRows; i++)
+				copyNoteWithMask(inst, &p[(i * FT2_MAX_CHANNELS) + x], &clip->ptnCopyBuff[(i * MAX_CHANNELS) + x]);
+		}
+		clip->ptnBufLen = numRows;
+	}
+
+	for (int16_t x = 0; x < numCh; x++) {
+		for (int16_t i = 0; i < numRows; i++)
+			memset(&p[(i * FT2_MAX_CHANNELS) + x], 0, sizeof(ft2_note_t));
+	}
+
+	killPatternIfUnused(inst, curPattern);
+	ft2_song_mark_modified(inst);
+	inst->uiState.updatePatternEditor = true;
+}
+
+void copyPattern(ft2_instance_t *inst)
+{
+	if (!inst) return;
+
+	uint16_t curPattern = inst->editor.editPattern;
+	ft2_note_t *p = inst->replayer.pattern[curPattern];
+	if (!p) return;
+
+	const int16_t numRows = inst->replayer.patternNumRows[curPattern];
+	const int16_t numCh = inst->replayer.song.numChannels;
+	patt_clipboard_t *clip = &FT2_PATTERN_ED(inst)->clipboard;
+
+	if (!clip->ptnCopyBuff) return;
+
+	memset(clip->ptnCopyBuff, 0, (MAX_PATT_LEN * MAX_CHANNELS) * sizeof(ft2_note_t));
+	for (int16_t x = 0; x < numCh; x++) {
+		for (int16_t i = 0; i < numRows; i++)
+			copyNoteWithMask(inst, &p[(i * FT2_MAX_CHANNELS) + x], &clip->ptnCopyBuff[(i * MAX_CHANNELS) + x]);
+	}
+	clip->ptnBufLen = numRows;
+}
+
+void pastePattern(ft2_instance_t *inst)
+{
+	if (!inst) return;
+
+	patt_clipboard_t *clip = &FT2_PATTERN_ED(inst)->clipboard;
+	if (clip->ptnBufLen == 0 || !clip->ptnCopyBuff) return;
+
+	uint16_t curPattern = inst->editor.editPattern;
+	if (!allocatePattern(inst, curPattern)) return;
+
+	ft2_note_t *p = inst->replayer.pattern[curPattern];
+	const int16_t numRows = inst->replayer.patternNumRows[curPattern];
+	const int16_t numCh = inst->replayer.song.numChannels;
+
+	for (int16_t x = 0; x < numCh; x++) {
+		for (int16_t i = 0; i < numRows; i++)
+			pasteNoteWithMask(inst, &clip->ptnCopyBuff[(i * MAX_CHANNELS) + x], &p[(i * FT2_MAX_CHANNELS) + x]);
+	}
+
+	killPatternIfUnused(inst, curPattern);
+	ft2_song_mark_modified(inst);
+	inst->uiState.updatePatternEditor = true;
+}
+
 /* ============ MOUSE MARKING ============ */
 
 static int8_t mouseXToCh(ft2_instance_t *inst, int32_t mouseX)
@@ -1641,6 +1796,11 @@ void scrollChannelLeft(ft2_instance_t *inst)
 {
 	if (!inst || inst->uiState.channelOffset == 0) return;
 	inst->uiState.channelOffset--;
+
+	ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets)
+		widgets->scrollBarState[SB_CHAN_SCROLL].pos = inst->uiState.channelOffset;
+
 	inst->uiState.updatePatternEditor = true;
 }
 
@@ -1650,6 +1810,11 @@ void scrollChannelRight(ft2_instance_t *inst)
 	uint8_t maxOffset = inst->replayer.song.numChannels - inst->uiState.numChannelsShown;
 	if (inst->uiState.channelOffset < maxOffset) {
 		inst->uiState.channelOffset++;
+
+		ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+		if (widgets)
+			widgets->scrollBarState[SB_CHAN_SCROLL].pos = inst->uiState.channelOffset;
+
 		inst->uiState.updatePatternEditor = true;
 	}
 }
@@ -2463,4 +2628,229 @@ void doTranspose(ft2_instance_t *inst, uint8_t mode, int8_t addValue, bool allIn
 	}
 
 	inst->uiState.updatePatternEditor = true;
+}
+
+/* ============ VOLUME SCALE/FADE ============ */
+
+/*
+ * Extract the effective volume from a note.
+ * Returns volume 0-64 or -1 if no volume is set.
+ * Priority: volume column > Cxx effect > instrument default
+ */
+static int8_t getNoteVolume(ft2_instance_t *inst, ft2_note_t *p)
+{
+	int8_t vv = -1, ev = -1, nv = -1;
+
+	/* Volume column (0x10-0x50 = vol 0-64) */
+	if (p->vol >= 0x10 && p->vol <= 0x50)
+		vv = (int8_t)(p->vol - 0x10);
+
+	/* Cxx effect */
+	if (p->efx == 0x0C) {
+		ev = (int8_t)p->efxData;
+		if (ev > 64) ev = 64;
+	}
+
+	/* Instrument default volume */
+	if (p->instr != 0 && p->instr <= 128) {
+		ft2_instr_t *ins = inst->replayer.instr[p->instr];
+		if (ins != NULL)
+			nv = (int8_t)ins->smp[0].volume;
+	}
+
+	int8_t finalv = -1;
+	if (nv >= 0) finalv = nv;
+	if (vv >= 0) finalv = vv;
+	if (ev >= 0) finalv = ev;
+
+	return finalv;
+}
+
+/*
+ * Set the volume on a note. Writes to either the volume column
+ * or Cxx effect depending on which was originally set.
+ */
+static void setNoteVolume(ft2_note_t *p, int8_t newVol)
+{
+	if (newVol < 0)
+		return;
+	if (newVol > 64)
+		newVol = 64;
+
+	if (p->efx == 0x0C)
+		p->efxData = (uint8_t)newVol;
+	else
+		p->vol = (uint8_t)(0x10 + newVol);
+}
+
+/*
+ * Apply a scale factor to a single note's volume.
+ */
+static void scaleNote(ft2_instance_t *inst, uint16_t pattNum, int32_t ch, int32_t row, double dScale)
+{
+	if (pattNum >= FT2_MAX_PATTERNS || inst->replayer.pattern[pattNum] == NULL)
+		return;
+
+	const int32_t numRows = inst->replayer.patternNumRows[pattNum];
+	if (row < 0 || row >= numRows || ch < 0 || ch >= inst->replayer.song.numChannels)
+		return;
+
+	ft2_note_t *p = &inst->replayer.pattern[pattNum][(row * FT2_MAX_CHANNELS) + ch];
+
+	int32_t vol = getNoteVolume(inst, p);
+	if (vol >= 0) {
+		vol = (int32_t)((vol * dScale) + 0.5);
+		if (vol < 0) vol = 0;
+		if (vol > 64) vol = 64;
+		setNoteVolume(p, (int8_t)vol);
+	}
+}
+
+/* Callback data for scale/fade dialog */
+typedef struct {
+	int mode;  /* 0=block, 1=track, 2=pattern */
+} scaleFadeUserData_t;
+
+/* Callback invoked when scale/fade dialog closes */
+static void scaleFadeDialogCallback(ft2_instance_t *inst, ft2_dialog_result_t result,
+                                    const char *inputText, void *userData)
+{
+	scaleFadeUserData_t *data = (scaleFadeUserData_t *)userData;
+	if (!data || result != DIALOG_RESULT_OK || !inputText) {
+		free(data);
+		return;
+	}
+
+	/* Parse "start,end" format */
+	double startScale = 1.0, endScale = 1.0;
+	const char *comma = strchr(inputText, ',');
+	if (comma != NULL) {
+		startScale = atof(inputText);
+		endScale = atof(comma + 1);
+	} else {
+		/* Single value = uniform scale */
+		startScale = endScale = atof(inputText);
+	}
+
+	/* Store for next time */
+	inst->editor.volScaleStart = startScale;
+	inst->editor.volScaleEnd = endScale;
+
+	const uint16_t curPattern = inst->editor.editPattern;
+	if (curPattern >= FT2_MAX_PATTERNS || inst->replayer.pattern[curPattern] == NULL) {
+		free(data);
+		return;
+	}
+
+	const int32_t numRows = inst->replayer.patternNumRows[curPattern];
+	const int32_t numCh = inst->replayer.song.numChannels;
+
+	switch (data->mode) {
+		case 0: /* Block */
+		{
+			int16_t markX1 = inst->editor.pattMark.markX1;
+			int16_t markX2 = inst->editor.pattMark.markX2;
+			int16_t markY1 = inst->editor.pattMark.markY1;
+			int16_t markY2 = inst->editor.pattMark.markY2;
+
+			if (markY1 >= markY2) {
+				free(data);
+				return;
+			}
+
+			const int32_t blockRows = markY2 - markY1;
+			double dVolDelta = (blockRows > 0) ? (endScale - startScale) / blockRows : 0.0;
+			double dVol = startScale;
+
+			for (int32_t row = markY1; row < markY2; row++) {
+				for (int32_t ch = markX1; ch <= markX2; ch++)
+					scaleNote(inst, curPattern, ch, row, dVol);
+				dVol += dVolDelta;
+			}
+		}
+		break;
+
+		case 1: /* Track */
+		{
+			double dVolDelta = (numRows > 0) ? (endScale - startScale) / numRows : 0.0;
+			double dVol = startScale;
+
+			for (int32_t row = 0; row < numRows; row++) {
+				scaleNote(inst, curPattern, inst->cursor.ch, row, dVol);
+				dVol += dVolDelta;
+			}
+		}
+		break;
+
+		case 2: /* Pattern */
+		{
+			double dVolDelta = (numRows > 0) ? (endScale - startScale) / numRows : 0.0;
+			double dVol = startScale;
+
+			for (int32_t row = 0; row < numRows; row++) {
+				for (int32_t ch = 0; ch < numCh; ch++)
+					scaleNote(inst, curPattern, ch, row, dVol);
+				dVol += dVolDelta;
+			}
+		}
+		break;
+	}
+
+	ft2_song_mark_modified(inst);
+	inst->uiState.updatePatternEditor = true;
+	free(data);
+}
+
+void scaleFadeVolumeBlock(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return;
+
+	scaleFadeUserData_t *data = (scaleFadeUserData_t *)malloc(sizeof(scaleFadeUserData_t));
+	if (!data) return;
+	data->mode = 0;
+
+	char defaultVal[32];
+	snprintf(defaultVal, sizeof(defaultVal), "%.2f,%.2f",
+	         inst->editor.volScaleStart, inst->editor.volScaleEnd);
+
+	ft2_dialog_show_input_cb(&inst->ui->dialog,
+	                         "Scale-fade block", "Start,end scale (e.g. 1.0,0.5):",
+	                         defaultVal, 31, inst,
+	                         scaleFadeDialogCallback, data);
+}
+
+void scaleFadeVolumeTrack(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return;
+
+	scaleFadeUserData_t *data = (scaleFadeUserData_t *)malloc(sizeof(scaleFadeUserData_t));
+	if (!data) return;
+	data->mode = 1;
+
+	char defaultVal[32];
+	snprintf(defaultVal, sizeof(defaultVal), "%.2f,%.2f",
+	         inst->editor.volScaleStart, inst->editor.volScaleEnd);
+
+	ft2_dialog_show_input_cb(&inst->ui->dialog,
+	                         "Scale-fade track", "Start,end scale (e.g. 1.0,0.5):",
+	                         defaultVal, 31, inst,
+	                         scaleFadeDialogCallback, data);
+}
+
+void scaleFadeVolumePattern(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return;
+
+	scaleFadeUserData_t *data = (scaleFadeUserData_t *)malloc(sizeof(scaleFadeUserData_t));
+	if (!data) return;
+	data->mode = 2;
+
+	char defaultVal[32];
+	snprintf(defaultVal, sizeof(defaultVal), "%.2f,%.2f",
+	         inst->editor.volScaleStart, inst->editor.volScaleEnd);
+
+	ft2_dialog_show_input_cb(&inst->ui->dialog,
+	                         "Scale-fade pattern", "Start,end scale (e.g. 1.0,0.5):",
+	                         defaultVal, 31, inst,
+	                         scaleFadeDialogCallback, data);
 }

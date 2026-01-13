@@ -24,6 +24,24 @@ This is a fork of [8bitbubsy's standalone ft2-clone](https://github.com/8bitbubs
 - Drag and drop modules or samples to the plugin
 - Right-click drag in instrument editor to "stretch" envelope points without having to move all of them
 
+### New keyboard shortcuts:
+
+**Pattern editor clipboard (cut/copy/paste):**
+
+| Scope | Mac | Windows/Linux |
+|-------|-----|---------------|
+| Block (selection) | Cmd+C/X/V | Ctrl+C/X/V |
+| Track (column) | Cmd+Shift+C/X/V | Ctrl+Shift+C/X/V |
+| Pattern (all) | Cmd+Option+C/X/V | Ctrl+Alt+C/X/V |
+
+**Volume scale/fade:**
+
+| Scope | Mac | Windows/Linux |
+|-------|-----|---------------|
+| Block | Option+V | Alt+V |
+| Track | Shift+V | Shift+V |
+| Pattern | Ctrl+V | (use block after marking all) |
+
 ### Under active development!
 
 Note that there are lots of updates coming at a rapid pace right now, and I am taking input for reasonable feature requests and of course want to fix any bugs. If there is a newer version than the one you have already downloaded (look at the "About" screen for your plugin's version), issues might have been fixed already. [Please check the changelog for changes.](https://github.com/juho/ft2-plugin/blob/master/plugin/CHANGELOG.md)

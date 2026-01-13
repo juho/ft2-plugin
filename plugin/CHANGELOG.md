@@ -1,5 +1,17 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.56 (Jan 13, 2026)
+
+- Fix: Better key handling. Add key shortcuts for copy paste:
+
+    | Scope | Mac | Windows/Linux |
+    |-------|-----|---------------|
+    | Block (selection) | Cmd+C/X/V | Ctrl+C/X/V |
+    | Track (column) | Cmd+Shift+C/X/V | Ctrl+Shift+C/X/V |
+    | Pattern (all) | Cmd+Option+C/X/V | Ctrl+Alt+C/X/V |
+
+- Fix: Shift-scrollwheel scrolls horizontally. Scrollwheel also works in pattern editor now.
+
 ## 1.0.55 (Jan 13, 2026)
 
 - Feat: "Stretch" envelopes with right-click drag in instrument editor.
