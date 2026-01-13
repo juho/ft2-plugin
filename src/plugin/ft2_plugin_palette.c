@@ -144,7 +144,7 @@ void setPal16(ft2_video_t *video, pal16 *p, bool redrawScreen)
 		video->palette[i] = ((uint32_t)i << 24) | RGB32(r, g, b);
 	}
 
-	/* Extended palette entries (FT2 clone additions) */
+	/* Extended palette entries */
 	video->palette[PAL_TEXTMRK] = ((uint32_t)PAL_TEXTMRK << 24) | TEXT_MARK_COLOR;
 	video->palette[PAL_BOXSLCT] = ((uint32_t)PAL_BOXSLCT << 24) | BOX_SELECT_COLOR;
 
