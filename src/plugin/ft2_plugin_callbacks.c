@@ -1268,15 +1268,29 @@ void pbSwapInstrBank(ft2_instance_t *inst)
 void pbSampleListUp(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
-	if (inst->editor.sampleBankOffset > 0)
+	if (inst->editor.sampleBankOffset > 0) {
 		inst->editor.sampleBankOffset--;
+
+		ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+		if (widgets)
+			widgets->scrollBarState[SB_SAMPLE_LIST].pos = inst->editor.sampleBankOffset;
+
+		inst->uiState.updateInstrSwitcher = true;
+	}
 }
 
 void pbSampleListDown(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
-	if (inst->editor.sampleBankOffset < 11)
+	if (inst->editor.sampleBankOffset < 11) {
 		inst->editor.sampleBankOffset++;
+
+		ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+		if (widgets)
+			widgets->scrollBarState[SB_SAMPLE_LIST].pos = inst->editor.sampleBankOffset;
+
+		inst->uiState.updateInstrSwitcher = true;
+	}
 }
 
 void pbChanScrollLeft(ft2_instance_t *inst)
@@ -2019,6 +2033,7 @@ void sbSampleList(ft2_instance_t *inst, uint32_t pos)
 {
 	if (inst == NULL) return;
 	inst->editor.sampleBankOffset = (uint8_t)pos;
+	inst->uiState.updateInstrSwitcher = true;
 }
 
 void sbChanScroll(ft2_instance_t *inst, uint32_t pos)

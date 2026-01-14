@@ -9,7 +9,7 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.14" CACHE STRING "Minimum macOS version")
 endif()
 
-project(FT2Plugin VERSION 1.0.56)
+project(FT2Plugin VERSION 1.0.57)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

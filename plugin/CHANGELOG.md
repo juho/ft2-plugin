@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.0.57 (Jan 14, 2026)
+
+- Fix: scrolling in sample and instrument editor with mousewheel.
+
 ## 1.0.56 (Jan 13, 2026)
 
 - Fix: Better key handling. Add key shortcuts for copy paste:

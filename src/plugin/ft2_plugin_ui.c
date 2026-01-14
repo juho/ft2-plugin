@@ -577,13 +577,37 @@ void ft2_ui_mouse_wheel(ft2_ui_t *ui, void *inst, int x, int y, int delta, int m
 		{
 			if (y <= 93)
 			{
-				if (up && ft2inst->editor.curInstr > 0) ft2inst->editor.curInstr--;
-				else if (!up && ft2inst->editor.curInstr < 127) ft2inst->editor.curInstr++;
+				/* Instrument area - change selection and auto-scroll */
+				if (up && ft2inst->editor.curInstr > 1) {
+					ft2inst->editor.curInstr--;
+					ft2inst->editor.instrBankOffset = ((ft2inst->editor.curInstr - 1) / 8) * 8;
+				} else if (!up && ft2inst->editor.curInstr < 128) {
+					ft2inst->editor.curInstr++;
+					ft2inst->editor.instrBankOffset = ((ft2inst->editor.curInstr - 1) / 8) * 8;
+					if (ft2inst->editor.instrBankOffset > 120)
+						ft2inst->editor.instrBankOffset = 120;
+				}
+				ft2inst->uiState.updateInstrSwitcher = true;
 			}
-			else
+			else if (y >= 94)
 			{
-				if (up && ft2inst->editor.curSmp > 0) ft2inst->editor.curSmp--;
-				else if (!up && ft2inst->editor.curSmp < 15) ft2inst->editor.curSmp++;
+				/* Sample area - change selection and auto-scroll */
+				if (up && ft2inst->editor.curSmp > 0) {
+					ft2inst->editor.curSmp--;
+					ft2inst->editor.sampleBankOffset = (ft2inst->editor.curSmp / 5) * 5;
+				} else if (!up && ft2inst->editor.curSmp < 15) {
+					ft2inst->editor.curSmp++;
+					ft2inst->editor.sampleBankOffset = (ft2inst->editor.curSmp / 5) * 5;
+					if (ft2inst->editor.sampleBankOffset > 11)
+						ft2inst->editor.sampleBankOffset = 11;
+				}
+
+				ft2_widgets_t *widgets = ft2inst->ui ? &((ft2_ui_t *)ft2inst->ui)->widgets : NULL;
+				if (widgets)
+					widgets->scrollBarState[SB_SAMPLE_LIST].pos = ft2inst->editor.sampleBankOffset;
+
+				ft2inst->uiState.updateInstrSwitcher = true;
+				ft2inst->uiState.updateSampleEditor = true;
 			}
 		}
 	}
