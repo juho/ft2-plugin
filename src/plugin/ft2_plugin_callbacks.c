@@ -34,6 +34,7 @@
 #include "ft2_plugin_instr_ed.h"
 #include "ft2_plugin_nibbles.h"
 #include "ft2_plugin_diskop.h"
+#include "ft2_plugin_slicer_panel.h"
 #include "ft2_instance.h"
 
 /* ========== POSITION EDITOR CALLBACKS ========== */
@@ -1608,7 +1609,10 @@ void pbSampShowAll(ft2_instance_t *inst)
 	ft2_sample_ed_show_all(inst);
 }
 
-void pbSampSaveRng(ft2_instance_t *inst) { (void)inst; }
+void pbSampSlicer(ft2_instance_t *inst)
+{
+	showSlicerScreen(inst);
+}
 
 void pbSampCut(ft2_instance_t *inst)
 {
@@ -2383,7 +2387,7 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_SAMP_CLR_RANGE].callbackFuncOnUp = pbSampClrRange;
 	widgets->pushButtons[PB_SAMP_ZOOM_OUT].callbackFuncOnUp = pbSampZoomOut;
 	widgets->pushButtons[PB_SAMP_SHOW_ALL].callbackFuncOnUp = pbSampShowAll;
-	widgets->pushButtons[PB_SAMP_SAVE_RNG].callbackFuncOnUp = pbSampSaveRng;
+	widgets->pushButtons[PB_SAMP_SLICER].callbackFuncOnUp = pbSampSlicer;
 	widgets->pushButtons[PB_SAMP_CUT].callbackFuncOnUp = pbSampCut;
 	widgets->pushButtons[PB_SAMP_COPY].callbackFuncOnUp = pbSampCopy;
 	widgets->pushButtons[PB_SAMP_PASTE].callbackFuncOnUp = pbSampPaste;
@@ -2417,6 +2421,17 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_SAMPFX_UNDO].callbackFuncOnUp = pbSampFxUndo;
 	widgets->pushButtons[PB_SAMPFX_XFADE].callbackFuncOnUp = pbSampFxXFade;
 	widgets->pushButtons[PB_SAMPFX_BACK].callbackFuncOnUp = pbSampFxBack;
+
+	/* Sample slicer panel */
+	widgets->pushButtons[PB_SLICER_SLICES_UP].callbackFuncOnDown = pbSlicerSlicesUp;
+	widgets->pushButtons[PB_SLICER_SLICES_DOWN].callbackFuncOnDown = pbSlicerSlicesDown;
+	widgets->pushButtons[PB_SLICER_SENS_UP].callbackFuncOnDown = pbSlicerSensUp;
+	widgets->pushButtons[PB_SLICER_SENS_DOWN].callbackFuncOnDown = pbSlicerSensDown;
+	widgets->pushButtons[PB_SLICER_ROOT_UP].callbackFuncOnDown = pbSlicerRootUp;
+	widgets->pushButtons[PB_SLICER_ROOT_DOWN].callbackFuncOnDown = pbSlicerRootDown;
+	widgets->pushButtons[PB_SLICER_DETECT].callbackFuncOnUp = pbSlicerDetect;
+	widgets->pushButtons[PB_SLICER_PROCESS].callbackFuncOnUp = pbSlicerProcess;
+	widgets->pushButtons[PB_SLICER_BACK].callbackFuncOnUp = pbSlicerBack;
 
 	/* Sample editor extension */
 	widgets->pushButtons[PB_SAMP_EXT_CLEAR_COPYBUF].callbackFuncOnUp = pbSampExtClearCopyBuf;

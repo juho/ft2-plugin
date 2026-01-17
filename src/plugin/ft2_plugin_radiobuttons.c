@@ -209,7 +209,12 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 
 	/* MIDI recording priority */
 	{ 226, 146, 48, RB_GROUP_CONFIG_MIDI_PRIORITY, NULL },
-	{ 274, 146, 90, RB_GROUP_CONFIG_MIDI_PRIORITY, NULL }
+	{ 274, 146, 90, RB_GROUP_CONFIG_MIDI_PRIORITY, NULL },
+
+	/* Sample slicer mode */
+	/*x,   y,   w,  group,                callback */
+	{ 137, 366, 60, RB_GROUP_SLICER_MODE, NULL },  /* RB_SLICER_SAMPLES */
+	{ 137, 383, 80, RB_GROUP_SLICER_MODE, NULL }   /* RB_SLICER_INSTRUMENTS */
 };
 
 /* ------------------------------------------------------------------------- */

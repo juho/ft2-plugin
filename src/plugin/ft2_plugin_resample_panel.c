@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include "ft2_plugin_resample_panel.h"
 #include "ft2_plugin_modal_panels.h"
+#include "ft2_plugin_common.h"
 #include "ft2_plugin_video.h"
 #include "ft2_plugin_bmp.h"
 #include "ft2_plugin_pushbuttons.h"
@@ -17,8 +18,6 @@
 #include "ft2_plugin_replayer.h"
 #include "ft2_plugin_ui.h"
 #include "../ft2_instance.h"
-
-#define MAX_SAMPLE_LEN 0x3FFFFFFF
 #define RES_STATE(inst) (&FT2_UI(inst)->modalPanels.resample)
 
 static void onResampleClick(ft2_instance_t *inst);
@@ -121,7 +120,7 @@ static void drawFrame(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 	if (s && s->dataPtr)
 	{
 		double dNewLen = s->length * pow(2.0, state->relReSmp * (1.0 / 12.0));
-		if (dNewLen > (double)MAX_SAMPLE_LEN) dNewLen = (double)MAX_SAMPLE_LEN;
+		if (dNewLen > (double)FT2_MAX_SAMPLE_LEN) dNewLen = (double)FT2_MAX_SAMPLE_LEN;
 		newLen = (int32_t)dNewLen;
 	}
 
@@ -153,7 +152,7 @@ static void applyResampleToSample(ft2_instance_t *inst)
 	const double dRatio = pow(2.0, (int32_t)state->relReSmp * (1.0 / 12.0));
 
 	double dNewLen = s->length * dRatio;
-	if (dNewLen > (double)MAX_SAMPLE_LEN) dNewLen = (double)MAX_SAMPLE_LEN;
+	if (dNewLen > (double)FT2_MAX_SAMPLE_LEN) dNewLen = (double)FT2_MAX_SAMPLE_LEN;
 	const uint32_t newLen = (uint32_t)floor(dNewLen);
 	if (newLen == 0) return;
 

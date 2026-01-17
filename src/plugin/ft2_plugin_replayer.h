@@ -35,6 +35,10 @@ void ft2_reset_ramp_volumes(ft2_instance_t *inst);
 void ft2_channel_reset_volumes(ft2_channel_t *ch);
 void ft2_channel_trigger_instrument(ft2_channel_t *ch);
 void ft2_channel_update_vol_pan_autovib(ft2_instance_t *inst, ft2_channel_t *ch);
+void ft2_key_off(ft2_instance_t *inst, ft2_channel_t *ch);
+
+/* Sinc interpolation LUT setup (call after setting v->delta) */
+void ft2_voice_setup_sinc_lut(ft2_instance_t *inst, ft2_voice_t *v);
 
 #ifdef __cplusplus
 }

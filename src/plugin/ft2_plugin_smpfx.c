@@ -712,7 +712,7 @@ void showSampleEffectsScreen(ft2_instance_t *inst)
 	widgets->pushButtonVisible[PB_SAMP_PRANGE] = widgets->pushButtonVisible[PB_SAMP_PDISPLAY] = false;
 	widgets->pushButtonVisible[PB_SAMP_SHOW_RANGE] = widgets->pushButtonVisible[PB_SAMP_RANGE_ALL] = false;
 	widgets->pushButtonVisible[PB_SAMP_CLR_RANGE] = widgets->pushButtonVisible[PB_SAMP_ZOOM_OUT] = false;
-	widgets->pushButtonVisible[PB_SAMP_SHOW_ALL] = widgets->pushButtonVisible[PB_SAMP_SAVE_RNG] = false;
+	widgets->pushButtonVisible[PB_SAMP_SHOW_ALL] = widgets->pushButtonVisible[PB_SAMP_SLICER] = false;
 	widgets->pushButtonVisible[PB_SAMP_CUT] = widgets->pushButtonVisible[PB_SAMP_COPY] = false;
 	widgets->pushButtonVisible[PB_SAMP_PASTE] = widgets->pushButtonVisible[PB_SAMP_CROP] = false;
 	widgets->pushButtonVisible[PB_SAMP_VOLUME] = widgets->pushButtonVisible[PB_SAMP_EFFECTS] = false;
@@ -756,17 +756,20 @@ void hideSampleEffectsScreen(ft2_instance_t *inst)
 	widgets->pushButtonVisible[PB_SAMPFX_SET_AMP] = widgets->pushButtonVisible[PB_SAMPFX_UNDO] = false;
 	widgets->pushButtonVisible[PB_SAMPFX_XFADE] = widgets->pushButtonVisible[PB_SAMPFX_BACK] = false;
 
-	/* Show sample editor buttons */
-	widgets->pushButtonVisible[PB_SAMP_PNOTE_UP] = widgets->pushButtonVisible[PB_SAMP_PNOTE_DOWN] = true;
-	widgets->pushButtonVisible[PB_SAMP_STOP] = widgets->pushButtonVisible[PB_SAMP_PWAVE] = true;
-	widgets->pushButtonVisible[PB_SAMP_PRANGE] = widgets->pushButtonVisible[PB_SAMP_PDISPLAY] = true;
-	widgets->pushButtonVisible[PB_SAMP_SHOW_RANGE] = widgets->pushButtonVisible[PB_SAMP_RANGE_ALL] = true;
-	widgets->pushButtonVisible[PB_SAMP_CLR_RANGE] = widgets->pushButtonVisible[PB_SAMP_ZOOM_OUT] = true;
-	widgets->pushButtonVisible[PB_SAMP_SHOW_ALL] = true;
-	/* widgets->pushButtonVisible[PB_SAMP_SAVE_RNG] = true; */
-	widgets->pushButtonVisible[PB_SAMP_CUT] = widgets->pushButtonVisible[PB_SAMP_COPY] = true;
-	widgets->pushButtonVisible[PB_SAMP_PASTE] = widgets->pushButtonVisible[PB_SAMP_CROP] = true;
-	widgets->pushButtonVisible[PB_SAMP_VOLUME] = widgets->pushButtonVisible[PB_SAMP_EFFECTS] = true;
+	/* Only restore sample editor buttons if sample editor is still visible */
+	if (inst->uiState.sampleEditorShown)
+	{
+		widgets->pushButtonVisible[PB_SAMP_PNOTE_UP] = widgets->pushButtonVisible[PB_SAMP_PNOTE_DOWN] = true;
+		widgets->pushButtonVisible[PB_SAMP_STOP] = widgets->pushButtonVisible[PB_SAMP_PWAVE] = true;
+		widgets->pushButtonVisible[PB_SAMP_PRANGE] = widgets->pushButtonVisible[PB_SAMP_PDISPLAY] = true;
+		widgets->pushButtonVisible[PB_SAMP_SHOW_RANGE] = widgets->pushButtonVisible[PB_SAMP_RANGE_ALL] = true;
+		widgets->pushButtonVisible[PB_SAMP_CLR_RANGE] = widgets->pushButtonVisible[PB_SAMP_ZOOM_OUT] = true;
+		widgets->pushButtonVisible[PB_SAMP_SHOW_ALL] = true;
+		widgets->pushButtonVisible[PB_SAMP_SLICER] = true;
+		widgets->pushButtonVisible[PB_SAMP_CUT] = widgets->pushButtonVisible[PB_SAMP_COPY] = true;
+		widgets->pushButtonVisible[PB_SAMP_PASTE] = widgets->pushButtonVisible[PB_SAMP_CROP] = true;
+		widgets->pushButtonVisible[PB_SAMP_VOLUME] = widgets->pushButtonVisible[PB_SAMP_EFFECTS] = true;
+	}
 
 	inst->uiState.needsFullRedraw = true;
 }

@@ -178,18 +178,3 @@ ft2_interp_tables_t *ft2_interp_tables_get(void)
 	return g_interpTables.initialized ? &g_interpTables : NULL;
 }
 
-/* Select sinc kernel based on resampling ratio (delta).
- * Higher ratios use smaller kernels with more aggressive cutoff. */
-const float *ft2_select_sinc_kernel(uint64_t delta, ft2_interp_tables_t *tables, bool *is16Point)
-{
-	if (tables == NULL) return NULL;
-
-	int32_t kernelIdx;
-	if (delta <= tables->sincRatio1) kernelIdx = 0;
-	else if (delta <= tables->sincRatio2) kernelIdx = 1;
-	else kernelIdx = 2;
-
-	*is16Point = (delta <= tables->sincRatio1);
-	return *is16Point ? tables->fSinc16[kernelIdx] : tables->fSinc8[kernelIdx];
-}
-

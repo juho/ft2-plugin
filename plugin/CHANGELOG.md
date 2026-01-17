@@ -1,5 +1,15 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.1.0 (Jan 17, 2026)
+
+- Feat: Sample slicer panel in sample editor.
+- Fix: Regression in sinc8 interpolation.
+- Fix: Loading of WAV samples now correctly infers the sample rate and finetuning.
+- Fix: Keyjazz now correctly plays notes while holding down keys when not editing.
+- Fix: Sample editor playhead correctly picks up the latest note playing.
+- Fix: Finetune value uses decimal, not hex.
+- Fix: Minor scope nits while working in sample editor.
+
 ## 1.0.57 (Jan 14, 2026)
 
 - Fix: scrolling in sample and instrument editor with mousewheel.

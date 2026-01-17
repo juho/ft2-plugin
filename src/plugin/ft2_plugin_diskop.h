@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "ft2_instance.h"
+#include "ft2_plugin_load_wav.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -106,28 +107,11 @@ bool ft2_load_instrument(ft2_instance_t *inst, int16_t instrNum,
 bool ft2_save_instrument(ft2_instance_t *inst, int16_t instrNum,
                           uint8_t **outData, uint32_t *outSize);
 
-/* Sample load/save (WAV format) */
-bool ft2_load_sample(ft2_instance_t *inst, int16_t instrNum, int16_t sampleNum,
-                      const uint8_t *data, uint32_t dataSize);
-bool ft2_save_sample(ft2_instance_t *inst, int16_t instrNum, int16_t sampleNum,
-                      uint8_t **outData, uint32_t *outSize);
-void ft2_set_sample_name_from_filename(ft2_instance_t *inst, int16_t instrNum,
-                                        int16_t sampleNum, const char *filename);
-
 /* Pattern load/save (XP format) */
 bool ft2_load_pattern(ft2_instance_t *inst, int16_t pattNum,
                        const uint8_t *data, uint32_t dataSize);
 bool ft2_save_pattern(ft2_instance_t *inst, int16_t pattNum,
                        uint8_t **outData, uint32_t *outSize);
-
-/* WAV helpers */
-bool ft2_parse_wav(const uint8_t *data, uint32_t dataSize,
-                    const uint8_t **outAudioData, uint32_t *outAudioSize,
-                    int16_t *outChannels, int16_t *outBitsPerSample,
-                    uint32_t *outSampleRate);
-bool ft2_create_wav(const int8_t *sampleData, int32_t sampleLength,
-                     int16_t channels, int16_t bitsPerSample, uint32_t sampleRate,
-                     uint8_t **outData, uint32_t *outSize);
 
 /* Drag-and-drop: confirms if unsaved changes, then sets requestDropLoad */
 void ft2_diskop_request_drop_load(ft2_instance_t *inst, const char *path);

@@ -10,16 +10,14 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include "ft2_plugin_load_s3m.h"
+#include "ft2_plugin_load_wav.h"
+#include "ft2_plugin_common.h"
 #include "ft2_plugin_mem_reader.h"
 #include "ft2_plugin_sample_ed.h"
 #include "../ft2_instance.h"
 
-#define NOTE_C4 48
 #define NOTE_OFF 97
-#define C4_FREQ 8363.0
-#define CLAMP(x, low, high) (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
 
 #ifdef _MSC_VER
 #pragma pack(push, 1)
@@ -82,16 +80,6 @@ static void conv16BitSample(int8_t *p, int32_t length, bool stereo)
 	} else {
 		for (int32_t i = 0; i < length; i++) p16_1[i] ^= 0x8000;
 	}
-}
-
-/* Convert S3M C4 frequency to XM relative note + finetune */
-static void setSampleC4Hz(ft2_sample_t *s, double dC4Hz)
-{
-	const double dC4PeriodOffset = (NOTE_C4 * 16) + 16;
-	int32_t period = (int32_t)round(dC4PeriodOffset + (log2(dC4Hz / C4_FREQ) * 12.0 * 16.0));
-	period = CLAMP(period, 0, (12 * 16 * 10) - 1);
-	s->finetune = ((period & 31) - 16) << 3;
-	s->relativeNote = (int8_t)(((period & ~31) >> 4) - NOTE_C4);
 }
 
 /* Find highest channel with note data */
@@ -371,7 +359,7 @@ bool load_s3m_from_memory(ft2_instance_t *inst, const uint8_t *data, uint32_t da
 				s->volume = (smpHdr.volume > 64) ? 64 : smpHdr.volume;
 				s->loopStart = smpHdr.loopStart;
 				s->loopLength = smpHdr.loopEnd - smpHdr.loopStart;
-				setSampleC4Hz(s, smpHdr.midCFreq);
+				ft2_set_sample_c4hz(s, smpHdr.midCFreq);
 
 				if (sample16Bit) { s->flags |= SAMPLE_16BIT; lengthInFile <<= 1; }
 				if (!allocateSmpData(inst, 1 + i, 0, s->length, sample16Bit)) return false;

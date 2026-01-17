@@ -16,6 +16,7 @@
 #include "ft2_plugin_interpolation.h"
 #include "ft2_plugin_scopes.h"
 #include "ft2_plugin_config.h"
+#include "ft2_plugin_common.h"
 #include "../ft2_instance.h"
 
 /* Period tables from ft2_tables_plugin.c */
@@ -25,8 +26,6 @@ extern const uint8_t vibratoTab[32];
 extern const int8_t autoVibSineTab[256];
 extern const uint8_t arpeggioTab[32];
 extern const uint32_t songTickDuration35fp[(255-32)+1];
-
-#define CLAMP(x, low, high) (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
 
 /* Forward declarations */
 static void doVibrato(ft2_instance_t *inst, ft2_channel_t *ch);
@@ -301,32 +300,50 @@ void ft2_set_interpolation(ft2_instance_t *inst, uint8_t type)
 	inst->audio.interpolationType = type;
 }
 
-/* Selects appropriate sinc kernel based on playback rate (delta) */
-static void updateVoiceSincLUT(ft2_instance_t *inst, ft2_voice_t *v)
+/* Selects appropriate sinc kernel based on playback rate (delta) and user's interpolation setting */
+void ft2_voice_setup_sinc_lut(ft2_instance_t *inst, ft2_voice_t *v)
 {
-	if (inst->audio.interpolationType != FT2_INTERP_SINC8 &&
-	    inst->audio.interpolationType != FT2_INTERP_SINC16)
+	const uint8_t interpType = inst->audio.interpolationType;
+	if (interpType != FT2_INTERP_SINC8 && interpType != FT2_INTERP_SINC16)
 		return;
 
 	ft2_interp_tables_t *tables = ft2_interp_tables_get();
 	if (!tables)
 		return;
 
-	bool is16Point;
-	v->fSincLUT = ft2_select_sinc_kernel(v->delta, tables, &is16Point);
+	/* Select kernel based on delta (cutoff frequency variant) */
+	int32_t kernelIdx;
+	if (v->delta <= tables->sincRatio1)
+		kernelIdx = 0;
+	else if (v->delta <= tables->sincRatio2)
+		kernelIdx = 1;
+	else
+		kernelIdx = 2;
+
+	/* Select table type based on user's interpolation setting, not delta */
+	if (interpType == FT2_INTERP_SINC16)
+		v->fSincLUT = tables->fSinc16[kernelIdx];
+	else
+		v->fSincLUT = tables->fSinc8[kernelIdx];
 }
 
 /* ------------------------------------------------------------------------- */
 /*                       KEY OFF / TRIGGER HELPERS                           */
 /* ------------------------------------------------------------------------- */
 
-static void keyOff(ft2_instance_t *inst, ft2_channel_t *ch)
+void ft2_key_off(ft2_instance_t *inst, ft2_channel_t *ch)
 {
 	ch->keyOff = true;
 
 	ft2_instr_t *ins = ch->instrPtr;
 	if (!ins)
+	{
+		/* No instrument: treat as no envelope, silence immediately */
+		ch->realVol = 0;
+		ch->outVol = 0;
+		ch->status |= FT2_CS_UPDATE_VOL | FT2_CS_USE_QUICK_VOLRAMP;
 		return;
+	}
 
 	if (ins->volEnvFlags & FT2_ENV_ENABLED)
 	{
@@ -464,7 +481,7 @@ static void triggerNote(ft2_instance_t *inst, uint8_t note, uint8_t efx, uint8_t
 {
 	if (note == FT2_NOTE_OFF)
 	{
-		keyOff(inst, ch);
+		ft2_key_off(inst, ch);
 		return;
 	}
 
@@ -1496,7 +1513,7 @@ static void noteDelay(ft2_instance_t *inst, ft2_channel_t *ch, uint8_t param)
 static void keyOffCmd(ft2_instance_t *inst, ft2_channel_t *ch, uint8_t param)
 {
 	if ((uint8_t)(inst->replayer.song.speed - inst->replayer.song.tick) == (param & 31))
-		keyOff(inst, ch);
+		ft2_key_off(inst, ch);
 }
 
 static void E_Effects_TickNonZero(ft2_instance_t *inst, ft2_channel_t *ch, uint8_t param)
@@ -1882,7 +1899,7 @@ static void preparePortamento(ft2_instance_t *inst, ft2_channel_t *ch, ft2_note_
 	{
 		if (p->note == FT2_NOTE_OFF)
 		{
-			keyOff(inst, ch);
+			ft2_key_off(inst, ch);
 		}
 		else
 		{
@@ -1982,7 +1999,7 @@ static void getNewNote(ft2_instance_t *inst, ft2_channel_t *ch, ft2_note_t *p)
 
 		if (p->efx == 0x14 && p->efxData == 0) // K00
 		{
-			keyOff(inst, ch);
+			ft2_key_off(inst, ch);
 			if (instNum)
 				resetVolumes(ch);
 			handleEffects_TickZero(inst, ch);
@@ -2002,7 +2019,7 @@ static void getNewNote(ft2_instance_t *inst, ft2_channel_t *ch, ft2_note_t *p)
 	}
 
 	if (p->note == FT2_NOTE_OFF)
-		keyOff(inst, ch);
+		ft2_key_off(inst, ch);
 	else
 		triggerNote(inst, p->note, p->efx, p->efxData, ch);
 
@@ -2195,11 +2212,26 @@ void ft2_update_voices(ft2_instance_t *inst)
 		if (status & FT2_CF_UPDATE_PERIOD)
 		{
 			v->delta = ft2_period_to_delta(inst, ch->finalPeriod);
-			updateVoiceSincLUT(inst, v);
+			ft2_voice_setup_sinc_lut(inst, v);
 		}
 
+		/* Save range preview end position before it gets reset */
+		const int32_t rangeEndPos = ch->smpEndPos;
+
 		if (status & FT2_CS_TRIGGER_VOICE)
+		{
 			ft2_trigger_voice(inst, i, ch->smpPtr, ch->smpStartPos);
+
+			/* Override sample end for range preview (Wave/Range/Display buttons) */
+			if (rangeEndPos > 0)
+			{
+				v->sampleEnd = rangeEndPos;
+				v->loopType = 0;
+				v->loopStart = 0;
+				v->loopLength = 0;
+				ch->smpEndPos = -1;  /* Reset after use */
+			}
+		}
 
 		/* Push scope sync entry for UI thread */
 		if (status & (FT2_CS_UPDATE_VOL | FT2_CF_UPDATE_PERIOD | FT2_CS_TRIGGER_VOICE))
@@ -2221,12 +2253,25 @@ void ft2_update_voices(ft2_instance_t *inst)
 				{
 					syncEntry.base8 = smp->dataPtr;
 					syncEntry.base16 = (smp->flags & FT2_SAMPLE_16BIT) ? (const int16_t *)smp->dataPtr : NULL;
-					syncEntry.length = smp->length;
-					syncEntry.loopStart = smp->loopStart;
-					syncEntry.loopLength = smp->loopLength;
-					syncEntry.loopType = smp->flags & (FT2_LOOP_FWD | FT2_LOOP_BIDI);
 					syncEntry.sample16Bit = !!(smp->flags & FT2_SAMPLE_16BIT);
 					syncEntry.smpStartPos = ch->smpStartPos;
+
+					if (rangeEndPos > 0)
+					{
+						/* Range preview: use range end and disable loop */
+						syncEntry.length = rangeEndPos;
+						syncEntry.loopStart = 0;
+						syncEntry.loopLength = 0;
+						syncEntry.loopType = 0;
+					}
+					else
+					{
+						/* Normal playback: use sample's full length and loop settings */
+						syncEntry.length = smp->length;
+						syncEntry.loopStart = smp->loopStart;
+						syncEntry.loopLength = smp->loopLength;
+						syncEntry.loopType = smp->flags & (FT2_LOOP_FWD | FT2_LOOP_BIDI);
+					}
 				}
 			}
 			

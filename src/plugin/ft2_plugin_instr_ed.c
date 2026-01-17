@@ -676,24 +676,38 @@ void updateInstEditor(ft2_instance_t *inst)
 		hexOutBg(video, bmp, 505, 191, PAL_FORGRND, PAL_DESKTOP, 128, 2);
 	}
 
-	/* Draw Fine-tune (at 491, 205) */
+	/* Draw Fine-tune (at 491, 205) - decimal with right-alignment like standalone */
 	fillRect(video, 491, 205, 27, 8, PAL_DESKTOP);
 	if (s != NULL)
-			{
+	{
 		int16_t ftune = s->finetune;
 		if (ftune == 0)
 		{
 			charOut(video, bmp, 512, 205, PAL_FORGRND, '0');
 		}
-		else if (ftune > 0)
-		{
-			charOut(video, bmp, 491, 205, PAL_FORGRND, '+');
-			hexOutBg(video, bmp, 498, 205, PAL_FORGRND, PAL_DESKTOP, ftune, 2);
-		}
 		else
 		{
-			charOut(video, bmp, 491, 205, PAL_FORGRND, '-');
-			hexOutBg(video, bmp, 498, 205, PAL_FORGRND, PAL_DESKTOP, -ftune, 2);
+			const char sign = (ftune < 0) ? '-' : '+';
+			ftune = (ftune < 0) ? -ftune : ftune;
+
+			if (ftune >= 100)
+			{
+				charOut(video, bmp, 491, 205, PAL_FORGRND, sign);
+				charOut(video, bmp, 498, 205, PAL_FORGRND, '0' + ((ftune / 100) % 10));
+				charOut(video, bmp, 505, 205, PAL_FORGRND, '0' + ((ftune / 10) % 10));
+				charOut(video, bmp, 512, 205, PAL_FORGRND, '0' + (ftune % 10));
+			}
+			else if (ftune >= 10)
+			{
+				charOut(video, bmp, 498, 205, PAL_FORGRND, sign);
+				charOut(video, bmp, 505, 205, PAL_FORGRND, '0' + ((ftune / 10) % 10));
+				charOut(video, bmp, 512, 205, PAL_FORGRND, '0' + (ftune % 10));
+			}
+			else
+			{
+				charOut(video, bmp, 505, 205, PAL_FORGRND, sign);
+				charOut(video, bmp, 512, 205, PAL_FORGRND, '0' + (ftune % 10));
+			}
 		}
 	}
 	else

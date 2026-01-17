@@ -188,6 +188,7 @@ typedef struct ft2_channel_t
 	uint16_t midiVibDepth;
 	int32_t fadeoutVol, fadeoutSpeed;
 	int32_t smpStartPos;
+	int32_t smpEndPos;  /* Override sample end for range preview (-1 = use sample length) */
 
 	float fFinalVol, fVolEnvDelta, fPanEnvDelta, fVolEnvValue, fPanEnvValue;
 
@@ -370,7 +371,7 @@ typedef struct ft2_ui_state_t
 	uint8_t oldTopLeftScreen;
 
 	/* Bottom screens */
-	bool patternEditorShown, instEditorShown, sampleEditorShown, sampleEditorEffectsShown, pattChanScrollShown;
+	bool patternEditorShown, instEditorShown, sampleEditorShown, sampleEditorEffectsShown, sampleEditorSlicerShown, pattChanScrollShown;
 	bool leftLoopPinMoving, rightLoopPinMoving;
 	bool drawReplayerPianoFlag, drawPianoFlag, updatePatternEditor, updateSampleEditor, updateInstEditor;
 	bool updateChanScrollPos; /* Flag to update channel scrollbar position */
@@ -406,7 +407,7 @@ typedef struct ft2_ui_state_t
 	/* Backup flags for extended pattern editor */
 	bool _aboutScreenShown, _helpScreenShown, _configScreenShown, _diskOpShown;
 	bool _nibblesShown, _transposeShown, _instEditorShown;
-	bool _instEditorExtShown, _sampleEditorExtShown, _sampleEditorEffectsShown, _patternEditorShown;
+	bool _instEditorExtShown, _sampleEditorExtShown, _sampleEditorEffectsShown, _sampleEditorSlicerShown, _patternEditorShown;
 	bool _sampleEditorShown, _advEditShown, _wavRendererShown, _trimScreenShown;
 } ft2_ui_state_t;
 
@@ -486,6 +487,22 @@ typedef struct ft2_nibbles_state_t
 	int16_t pendingP1Slot;
 	int16_t pendingP2Slot;
 } ft2_nibbles_state_t;
+
+/**
+ * @brief Sample slicer state.
+ *
+ * Stores transient detection results and slice marker positions
+ * for the sample editor slicer feature.
+ */
+typedef struct ft2_slicer_state_t
+{
+	uint8_t numSlices;           /* Number of slices (2-16) */
+	uint8_t rootNote;            /* Starting note for mapping (0-95, default 48 = C-4) */
+	uint8_t sensitivity;         /* Transient detection sensitivity (0-100) */
+	int32_t slicePos[17];        /* Slice boundaries (numSlices + 1 positions) */
+	int8_t draggedMarker;        /* Currently dragged marker (-1 = none) */
+	int8_t selectedSlice;        /* Currently selected slice for preview (-1 = none) */
+} ft2_slicer_state_t;
 
 /**
  * @brief Cursor state structure.
@@ -645,6 +662,7 @@ typedef struct ft2_instance_t
 	ft2_ui_state_t uiState;
 	ft2_cursor_t cursor;
 	ft2_nibbles_state_t nibbles;
+	ft2_slicer_state_t slicer;   /* Sample slicer state */
 	ft2_diskop_state_t diskop;   /* Disk Op. state */
 	ft2_plugin_config_t config;  /* Per-instance configuration */
 	ft2_scope_sync_queue_t scopeSyncQueue;  /* Audio-to-UI scope sync */

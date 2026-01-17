@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include "ft2_plugin_echo_panel.h"
 #include "ft2_plugin_modal_panels.h"
+#include "ft2_plugin_common.h"
 #include "ft2_plugin_video.h"
 #include "ft2_plugin_bmp.h"
 #include "ft2_plugin_pushbuttons.h"
@@ -21,8 +22,6 @@
 #include "ft2_plugin_replayer.h"
 #include "ft2_plugin_ui.h"
 #include "../ft2_instance.h"
-
-#define MAX_SAMPLE_LEN 0x3FFFFFFF
 #define ECHO_STATE(inst) (&FT2_UI(inst)->modalPanels.echo)
 
 /* Right-aligned 3-digit decimal strings for display */
@@ -210,7 +209,7 @@ static void applyEchoToSample(ft2_instance_t *inst)
 	int32_t writeLen = readLen;
 	if (state->echoAddMemory) {
 		int64_t tmp64 = (int64_t)distance * (nEchoes - 1) + writeLen;
-		if (tmp64 > MAX_SAMPLE_LEN) tmp64 = MAX_SAMPLE_LEN;
+		if (tmp64 > FT2_MAX_SAMPLE_LEN) tmp64 = FT2_MAX_SAMPLE_LEN;
 		writeLen = (int32_t)tmp64;
 	}
 

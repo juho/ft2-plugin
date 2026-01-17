@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "ft2_plugin_common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,12 +31,9 @@ enum {
 #define RGB32_B(x) ((x) & 0xFF)
 #define RGB32(r, g, b) (((r) << 16) | ((g) << 8) | (b))
 
-/* Math macros */
+/* Math macros (MIN, MAX, CLAMP in ft2_plugin_common.h) */
 #define SGN(x) (((x) >= 0) ? 1 : -1)
 #define ABS(a) (((a) < 0) ? -(a) : (a))
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
-#define CLAMP(x, low, high) (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
 
 /* Framework types */
 #define FRAMEWORK_TYPE1 0

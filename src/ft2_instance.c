@@ -606,6 +606,7 @@ void ft2_instance_trigger_note(ft2_instance_t *inst, int8_t note, uint8_t instr,
 	ch->efxData = 0;
 	ch->keyOff = false;
 	ch->smpStartPos = 0;
+	ch->smpEndPos = -1;  /* No range override for keyjazz */
 	
 	/* Calculate period using lookup tables (matches standalone triggerNote) */
 	int32_t relNote = note + smp->relativeNote;
@@ -634,65 +635,16 @@ void ft2_instance_trigger_note(ft2_instance_t *inst, int8_t note, uint8_t instr,
 	ch->midiVibDepth = midiVibDepth;
 	ch->midiPitch = midiPitch;
 	
-	/* Set status flags for voice trigger */
-	ch->status |= FT2_CS_TRIGGER_VOICE | FT2_CS_UPDATE_VOL | FT2_CS_UPDATE_PAN | 
-	              FT2_CF_UPDATE_PERIOD | FT2_CS_USE_QUICK_VOLRAMP;
-	
+	/* Set status flags for voice trigger (voice triggered via ft2_update_voices) */
+	ch->status = FT2_CS_TRIGGER_VOICE | FT2_CS_UPDATE_VOL | FT2_CS_UPDATE_PAN | 
+	             FT2_CF_UPDATE_PERIOD | FT2_CS_USE_QUICK_VOLRAMP;
+
 	/* Process envelopes immediately (matches updateVolPanAutoVib) */
 	ft2_channel_update_vol_pan_autovib(inst, ch);
-	
-	/* Trigger the voice directly for immediate playback */
-	ft2_voice_t *v = &inst->voice[channel];
-	
-	/* Calculate loop parameters (matches ft2_trigger_voice) */
-	const int32_t length = smp->length;
-	const int32_t loopStart = smp->loopStart;
-	const int32_t loopLength = smp->loopLength;
-	const int32_t loopEnd = loopStart + loopLength;
-	const bool sample16Bit = !!(smp->flags & FT2_SAMPLE_16BIT);
-	uint8_t loopType = smp->flags & (FT2_LOOP_FWD | FT2_LOOP_BIDI);
-	
-	if (loopLength < 1)
-		loopType = 0;
-	
-	/* Set sample data pointers based on bit depth (matches ft2_trigger_voice) */
-	if (sample16Bit)
-	{
-		v->base16 = (const int16_t *)smp->dataPtr;
-		v->base8 = NULL;
-		v->revBase16 = &v->base16[loopStart + loopEnd];
-		v->leftEdgeTaps16 = smp->leftEdgeTapSamples16 + FT2_MAX_LEFT_TAPS;
-	}
-	else
-	{
-		v->base8 = (const int8_t *)smp->dataPtr;
-		v->base16 = NULL;
-		v->revBase8 = &v->base8[loopStart + loopEnd];
-		v->leftEdgeTaps8 = smp->leftEdgeTapSamples8 + FT2_MAX_LEFT_TAPS;
-	}
-	
-	v->hasLooped = false;
-	v->samplingBackwards = false;
-	v->loopType = loopType;
-	v->sampleEnd = (loopType == 0) ? length : loopEnd;
-	v->loopStart = loopStart;
-	v->loopLength = loopLength;
-	v->position = 0;
-	v->positionFrac = 0;
-	v->panning = smp->panning;
-	
-	/* Set mix function offset based on sample type and loop type */
-	int32_t mixFuncOffset = ((int32_t)sample16Bit * 3) + loopType;
-	mixFuncOffset += inst->audio.interpolationType * 6;
-	v->mixFuncOffset = (uint8_t)mixFuncOffset;
-	
-	/* Convert period to delta using the same function as pattern playback */
-	v->delta = ft2_period_to_delta(inst, ch->outPeriod);
-	
-	v->active = true;
-	
-	/* Initialize L/R stereo volumes for the mixer */
-	ft2_voice_update_volumes(inst, channel, FT2_CS_TRIGGER_VOICE);
+
+	/* Track which channel is playing the current sample for sample editor playhead */
+	if (instr == inst->editor.curInstr)
+		inst->editor.curSmpChannel = channel;
 
 	/* MIDI Output - send note on if instrument has midiOn enabled */
 	if (instrPtr->midiOn && !instrPtr->mute)
@@ -731,99 +683,78 @@ void ft2_instance_release_note(ft2_instance_t *inst, uint8_t channel)
 		return;
 	
 	ft2_channel_t *ch = &inst->replayer.channel[channel];
-	ch->keyOff = true;
-	ch->status |= FT2_CS_UPDATE_VOL;
-
-	/* MIDI Output - send note off if a note is active */
-	if (ch->midiNoteActive && ch->instrPtr != NULL && ch->instrPtr->midiOn)
-	{
-		ft2_midi_event_t offEvent = {0};
-		offEvent.type = FT2_MIDI_NOTE_OFF;
-		offEvent.channel = ch->instrPtr->midiChannel;
-		offEvent.note = ch->lastMidiNote;
-		ft2_midi_queue_push(inst, &offEvent);
-
-		ch->midiNoteActive = false;
-	}
+	ft2_key_off(inst, ch);
 }
 
 void ft2_instance_play_sample(ft2_instance_t *inst, int8_t note, uint8_t instr, uint8_t smpNum, uint8_t channel, uint8_t volume, int32_t offset, int32_t length)
 {
 	if (inst == NULL || channel >= FT2_MAX_CHANNELS)
 		return;
-	
+
 	if (note < 1 || note > 96)
 		return;
-	
+
 	if (instr > 127 || smpNum >= 16)
 		return;
-	
+
 	ft2_instr_t *instrPtr = inst->replayer.instr[instr];
 	if (instrPtr == NULL)
 		return;
-	
+
 	ft2_sample_t *smp = &instrPtr->smp[smpNum];
 	if (smp->dataPtr == NULL || smp->length == 0)
 		return;
-	
-	/* Trigger the voice directly for immediate playback */
-	ft2_voice_t *v = &inst->voice[channel];
-	
-	v->active = true;
-	v->samplingBackwards = false;
-	
-	/* Set sample data pointers based on bit depth */
-	if (smp->flags & FT2_SAMPLE_16BIT)
-	{
-		v->base16 = (const int16_t *)smp->dataPtr;
-		v->base8 = NULL;
-	}
-	else
-	{
-		v->base8 = (const int8_t *)smp->dataPtr;
-		v->base16 = NULL;
-	}
-	
-	v->loopStart = smp->loopStart;
-	v->loopLength = smp->loopLength;
-	v->loopType = smp->flags & 3;
-	v->panning = smp->panning;
-	
-	/* Apply offset and length if playing a range */
+
+	/* Clamp offset/length to sample bounds */
 	int32_t startPos = offset;
-	int32_t endPos = (length > 0) ? (offset + length) : smp->length;
-	
+	int32_t endPos = (length > 0) ? (offset + length) : -1;
+
 	if (startPos < 0) startPos = 0;
 	if (startPos > smp->length) startPos = smp->length;
 	if (endPos > smp->length) endPos = smp->length;
-	if (endPos < startPos) endPos = startPos;
-	
-	v->position = startPos;
-	v->positionFrac = 0;
-	v->sampleEnd = endPos;
-	v->fVolume = volume / 64.0f;
-	
-	/* For range playback, disable looping */
-	if (length > 0)
-	{
-		v->loopType = 0;
-		v->loopStart = 0;
-		v->loopLength = 0;
-	}
-	
+	if (endPos > 0 && endPos < startPos) endPos = startPos;
+
+	/* Set up channel state (matches standalone playSample/playRange) */
+	ft2_channel_t *ch = &inst->replayer.channel[channel];
+	ch->instrNum = instr;
+	ch->instrPtr = instrPtr;
+	ch->smpNum = smpNum;
+	ch->smpPtr = smp;
+	ch->noteNum = note;
+	ch->relativeNote = smp->relativeNote;
+	ch->finetune = smp->finetune;
+
+	/* Set sample start/end positions */
+	ch->smpStartPos = startPos;
+	ch->smpEndPos = endPos;
+
+	/* Reset key-off state and fadeout (critical for continuous playback) */
+	ch->keyOff = false;
+	ch->fadeoutVol = 32768;
+
+	/* Set volume from sample (or override if specified) */
+	uint8_t vol = (volume > 0) ? volume : smp->volume;
+	ch->realVol = vol;
+	ch->outVol = vol;
+	ch->oldVol = vol;
+	ch->oldPan = smp->panning;
+	ch->outPan = smp->panning;
+
 	/* Calculate period using lookup tables (matches standalone triggerNote) */
 	int32_t relNote = note + smp->relativeNote;
 	if (relNote < 1) relNote = 1;
 	if (relNote >= 10 * 12) relNote = (10 * 12) - 1;
-	
+
 	const uint16_t noteIndex = ((relNote - 1) * 16) + (((int8_t)smp->finetune >> 3) + 16);
 	const uint16_t *lut = inst->audio.linearPeriodsFlag ? linearPeriodLUT : amigaPeriodLUT;
-	uint16_t period = lut[noteIndex];
-	
-	v->delta = ft2_period_to_delta(inst, period);
-	
-	/* Initialize L/R stereo volumes for the mixer */
-	ft2_voice_update_volumes(inst, channel, FT2_CS_TRIGGER_VOICE);
+	ch->outPeriod = ch->realPeriod = lut[noteIndex];
+
+	/* Set status flags for voice trigger (voice triggered via ft2_update_voices) */
+	ch->status = FT2_CS_TRIGGER_VOICE | FT2_CS_UPDATE_VOL | FT2_CS_UPDATE_PAN |
+	             FT2_CF_UPDATE_PERIOD | FT2_CS_USE_QUICK_VOLRAMP;
+
+	/* Calculate final volumes (matches standalone updateVolPanAutoVib call) */
+	ft2_channel_update_vol_pan_autovib(inst, ch);
 }
 
 void ft2_instance_play(ft2_instance_t *inst, int8_t mode, int16_t startRow)

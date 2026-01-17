@@ -9,7 +9,7 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.14" CACHE STRING "Minimum macOS version")
 endif()
 
-project(FT2Plugin VERSION 1.0.57)
+project(FT2Plugin VERSION 1.1.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,9 +48,11 @@ set(FT2_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_mix_panel.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_wave_panel.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_filter_panel.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_slicer_panel.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_smpfx.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_instr_ed.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_diskop.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_load_wav.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_input.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_ui.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_about.c

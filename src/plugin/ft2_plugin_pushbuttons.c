@@ -184,7 +184,7 @@ const pushButton_t pushButtonsTemplate[NUM_PUSHBUTTONS] =
 	{ 118, 382, 63, 16, 0, 0, "Sample",           NULL,    NULL,       NULL },
 	{ 182, 348, 63, 16, 0, 0, "Zoom out",         NULL,    NULL,       NULL },
 	{ 182, 365, 63, 16, 0, 0, "Show all",         NULL,    NULL,       NULL },
-	{ 182, 382, 63, 16, 0, 0, "Save rng.",        NULL,    NULL,       NULL },
+	{ 182, 382, 63, 16, 0, 0, "Slicer",           NULL,    NULL,       NULL },
 	{ 251, 348, 43, 16, 0, 0, "Cut",              NULL,    NULL,       NULL },
 	{ 251, 365, 43, 16, 0, 0, "Copy",             NULL,    NULL,       NULL },
 	{ 251, 382, 43, 16, 0, 0, "Paste",            NULL,    NULL,       NULL },
@@ -219,6 +219,10 @@ const pushButton_t pushButtonsTemplate[NUM_PUSHBUTTONS] =
 	{ 300, 348, 50, 16, 0, 0, "Undo",            NULL, NULL, NULL },
 	{ 300, 365, 50, 16, 0, 0, "X-Fade",          NULL, NULL, NULL },
 	{ 300, 382, 50, 16, 0, 0, "Back...",         NULL, NULL, NULL },
+
+	/* Sample slicer panel (positions set dynamically in setupWidgets) */
+	{ 0 }, { 0 }, { 0 }, { 0 }, { 0 },  /* slices up/down, sens up/down, root up */
+	{ 0 }, { 0 }, { 0 }, { 0 }, { 0 },  /* root down, detect, process, close, back */
 
 	/* Sample editor extension */
 	/*x,   y,   w,  h,  p, d, text #1,     text #2, funcOnDown, funcOnUp */

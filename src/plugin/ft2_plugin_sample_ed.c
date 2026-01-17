@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include "ft2_plugin_common.h"
 #include "ft2_plugin_video.h"
 #include "ft2_plugin_bmp.h"
 #include "ft2_plugin_sample_ed.h"
@@ -25,6 +26,7 @@
 #include "ft2_plugin_pattern_ed.h"
 #include "ft2_plugin_gui.h"
 #include "ft2_plugin_instr_ed.h"
+#include "ft2_plugin_slicer_panel.h"
 #include "ft2_instance.h"
 
 static ft2_sample_t *getCurrentSampleWithInst(ft2_sample_editor_t *editor, ft2_instance_t *inst);
@@ -565,28 +567,26 @@ void ft2_sample_ed_draw_pos_line(ft2_instance_t *inst)
 	ft2_sample_t *s = &instr->smp[editor->currSample];
 	if (!s->dataPtr || s->length <= 0) return;
 
+	/* Use the tracked channel for the current sample (set by ft2_instance_trigger_note) */
+	uint8_t ch = inst->editor.curSmpChannel;
+	if (ch >= FT2_MAX_CHANNELS) return;
+
+	ft2_voice_t *v = &inst->voice[ch];
+	if (!v->active) return;
+
+	bool isSameSample = (v->base8 && (const int8_t *)s->dataPtr == v->base8) ||
+	                    (v->base16 && (const int16_t *)s->dataPtr == v->base16);
+	if (!isSameSample) return;
+
+	int32_t smpPos = (int32_t)v->position;
+	if (smpPos < 0 || smpPos >= s->length) return;
+
+	int32_t screenX = ft2_sample_smpPos2Scr(inst, smpPos);
+	if (screenX < 0 || screenX >= SAMPLE_AREA_WIDTH) return;
+
 	ft2_video_t *video = editor->video;
-
-	for (int ch = 0; ch < FT2_MAX_CHANNELS; ch++)
-	{
-		ft2_voice_t *v = &inst->voice[ch];
-		if (!v->active) continue;
-
-		bool isSameSample = (v->base8 && (const int8_t *)s->dataPtr == v->base8) ||
-		                    (v->base16 && (const int16_t *)s->dataPtr == v->base16);
-		if (!isSameSample) continue;
-
-		int32_t smpPos = (int32_t)v->position;
-		if (smpPos < 0 || smpPos >= s->length) continue;
-
-		int32_t screenX = ft2_sample_smpPos2Scr(inst, smpPos);
-		if (screenX < 0 || screenX >= SAMPLE_AREA_WIDTH) continue;
-
-		for (int32_t y = SAMPLE_AREA_Y_START; y < SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT; y++)
-			video->frameBuffer[(y * SCREEN_W) + screenX] = video->palette[PAL_PATTEXT];
-
-		break;  /* Only show first voice */
-	}
+	for (int32_t y = SAMPLE_AREA_Y_START; y < SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT; y++)
+		video->frameBuffer[(y * SCREEN_W) + screenX] = video->palette[PAL_PATTEXT];
 }
 
 void ft2_sample_ed_draw(ft2_instance_t *inst)
@@ -609,8 +609,31 @@ void ft2_sample_ed_draw(ft2_instance_t *inst)
 	/* Draw sample editor framework - exact match of standalone showSampleEditor() */
 	drawFramework(video, 0,   329, 632, 17, FRAMEWORK_TYPE1);  /* scrollbar area */
 
-	/* Check if effects panel is shown */
-	if (inst != NULL && inst->uiState.sampleEditorEffectsShown)
+	/* Check if slicer or effects panel is shown */
+	if (inst != NULL && inst->uiState.sampleEditorSlicerShown)
+	{
+		/* Draw slicer panel */
+		drawSlicerScreen(inst, video, bmp);
+
+		/* Draw right side - loop/bit controls and display values */
+		drawFramework(video, 353, 346,  74, 54, FRAMEWORK_TYPE1);  /* loop/bit radio buttons */
+		drawFramework(video, 427, 346, 205, 54, FRAMEWORK_TYPE1);  /* exit/display/values */
+
+		/* Draw loop/bit labels */
+		if (bmp != NULL)
+		{
+			textOutShadow(video, bmp, 371, 352, PAL_FORGRND, PAL_DSKTOP2, "No loop");
+			textOutShadow(video, bmp, 371, 369, PAL_FORGRND, PAL_DSKTOP2, "Forward");
+			textOutShadow(video, bmp, 371, 386, PAL_FORGRND, PAL_DSKTOP2, "Pingpong");
+			textOutShadow(video, bmp, 446, 369, PAL_FORGRND, PAL_DSKTOP2, "8-bit");
+			textOutShadow(video, bmp, 445, 384, PAL_FORGRND, PAL_DSKTOP2, "16-bit");
+			textOutShadow(video, bmp, 488, 350, PAL_FORGRND, PAL_DSKTOP2, "Display");
+			textOutShadow(video, bmp, 488, 362, PAL_FORGRND, PAL_DSKTOP2, "Length");
+			textOutShadow(video, bmp, 488, 375, PAL_FORGRND, PAL_DSKTOP2, "Repeat");
+			textOutShadow(video, bmp, 488, 387, PAL_FORGRND, PAL_DSKTOP2, "Replen.");
+		}
+	}
+	else if (inst != NULL && inst->uiState.sampleEditorEffectsShown)
 	{
 		/* Draw effects panel - call into smpfx module */
 		drawSampleEffectsScreen(inst, video, bmp);
@@ -684,6 +707,10 @@ void ft2_sample_ed_draw(ft2_instance_t *inst)
 
 	/* Draw loop points */
 	ft2_sample_ed_draw_loop_points(inst);
+
+	/* Draw slice markers when slicer is active */
+	if (inst->uiState.sampleEditorSlicerShown)
+		drawSliceMarkers(inst, video, bmp);
 
 	/* Draw sample playback position line */
 	ft2_sample_ed_draw_pos_line(inst);
@@ -1197,6 +1224,24 @@ void ft2_sample_ed_mouse_click(ft2_instance_t *inst, int x, int y, int button)
 
 	if (button == 1) /* Left button */
 	{
+		/* Slicer mode - check for marker drag or slice preview */
+		if (inst->uiState.sampleEditorSlicerShown && my >= SAMPLE_AREA_Y_START && my < SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT)
+		{
+			/* Check if clicking on a marker */
+			int8_t markerIdx = slicerHitTestMarker(inst, mx);
+			if (markerIdx >= 0)
+			{
+				slicerStartMarkerDrag(inst, markerIdx);
+				inst->uiState.sampleDataOrLoopDrag = 2;  /* 2 = slicer marker drag */
+				editor->lastMouseX = mx;
+				return;
+			}
+
+			/* Not on a marker - preview the slice under cursor */
+			slicerPreviewSlice(inst, mx);
+			return;
+		}
+
 		/* Check for loop pin clicks */
 		if (my >= SAMPLE_AREA_Y_START && my < SAMPLE_AREA_Y_START + 9) /* Top 9 pixels - left loop pin area */
 		{
@@ -1266,6 +1311,14 @@ void ft2_sample_ed_mouse_drag(ft2_instance_t *inst, int x, int y, bool shiftPres
 
 	if (mx == editor->lastMouseX) return;
 
+	/* Slicer marker dragging */
+	if (inst->uiState.sampleDataOrLoopDrag == 2 && inst->uiState.sampleEditorSlicerShown)
+	{
+		editor->lastMouseX = mx;
+		slicerDragMarker(inst, mx);
+		return;
+	}
+
 	if (inst->uiState.leftLoopPinMoving)
 	{
 		editor->lastMouseX = mx;
@@ -1323,6 +1376,11 @@ void ft2_sample_ed_mouse_up(ft2_instance_t *inst)
 		inst->uiState.rightLoopPinMoving = false;
 		inst->uiState.updateSampleEditor = true;
 	}
+
+	/* End slicer marker dragging */
+	if (inst->uiState.sampleDataOrLoopDrag == 2 && inst->uiState.sampleEditorSlicerShown)
+		slicerEndMarkerDrag(inst);
+
 	inst->uiState.sampleDataOrLoopDrag = -1;
 }
 
@@ -1529,8 +1587,7 @@ void ft2_sample_ed_paste(ft2_instance_t *inst)
 		return;
 	
 	/* Check max sample length */
-	#define MAX_SAMPLE_LEN 0x3FFFFFFF
-	if (newLength > MAX_SAMPLE_LEN)
+	if (newLength > FT2_MAX_SAMPLE_LEN)
 		return;
 	
 	/* Allocate new buffer */
@@ -1997,7 +2054,7 @@ void showSampleEditor(ft2_instance_t *inst)
 	widgets->pushButtonVisible[PB_SAMP_CLR_RANGE] = true;
 	widgets->pushButtonVisible[PB_SAMP_ZOOM_OUT] = true;
 	widgets->pushButtonVisible[PB_SAMP_SHOW_ALL] = true;
-	/* widgets->pushButtonVisible[PB_SAMP_SAVE_RNG] = true; */ /* TODO: Implement save range */
+	widgets->pushButtonVisible[PB_SAMP_SLICER] = true;
 	widgets->pushButtonVisible[PB_SAMP_CUT] = true;
 	widgets->pushButtonVisible[PB_SAMP_COPY] = true;
 	widgets->pushButtonVisible[PB_SAMP_PASTE] = true;
@@ -2048,7 +2105,7 @@ void hideSampleEditor(ft2_instance_t *inst)
 	widgets->pushButtonVisible[PB_SAMP_CLR_RANGE] = false;
 	widgets->pushButtonVisible[PB_SAMP_ZOOM_OUT] = false;
 	widgets->pushButtonVisible[PB_SAMP_SHOW_ALL] = false;
-	widgets->pushButtonVisible[PB_SAMP_SAVE_RNG] = false;
+	widgets->pushButtonVisible[PB_SAMP_SLICER] = false;
 	widgets->pushButtonVisible[PB_SAMP_CUT] = false;
 	widgets->pushButtonVisible[PB_SAMP_COPY] = false;
 	widgets->pushButtonVisible[PB_SAMP_PASTE] = false;
@@ -2080,6 +2137,10 @@ void hideSampleEditor(ft2_instance_t *inst)
 	/* Hide sample effects screen if open */
 	if (inst->uiState.sampleEditorEffectsShown)
 		hideSampleEffectsScreen(inst);
+
+	/* Hide slicer screen if open */
+	if (inst->uiState.sampleEditorSlicerShown)
+		hideSlicerScreen(inst);
 }
 
 void toggleSampleEditor(ft2_instance_t *inst)

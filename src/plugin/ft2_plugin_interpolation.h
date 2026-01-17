@@ -74,9 +74,6 @@ bool ft2_interp_tables_init(void);
 void ft2_interp_tables_free(void);
 ft2_interp_tables_t *ft2_interp_tables_get(void);
 
-/* Select sinc kernel based on resampling ratio */
-const float *ft2_select_sinc_kernel(uint64_t delta, ft2_interp_tables_t *tables, bool *is16Point);
-
 #ifdef __cplusplus
 }
 #endif
