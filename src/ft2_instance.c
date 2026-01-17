@@ -509,6 +509,14 @@ void ft2_instance_free_instr(ft2_instance_t *inst, int32_t insNum)
 			s->origDataPtr = NULL;
 		}
 		s->dataPtr = NULL;
+
+		/* Free right channel for stereo samples */
+		if (s->origDataPtrR != NULL)
+		{
+			free(s->origDataPtrR);
+			s->origDataPtrR = NULL;
+		}
+		s->dataPtrR = NULL;
 	}
 
 	free(ins);
@@ -1305,42 +1313,15 @@ void ft2_sanitize_sample(ft2_sample_t *s)
 }
 
 /**
- * @brief Prepares sample for branchless mixer interpolation.
- *
- * Modifies samples before index 0, and after loop/end for interpolation.
- * This must be called after loading or modifying sample data.
- *
- * @param s The sample to fix.
+ * @brief Internal helper to fix a single channel of sample data for mixer interpolation.
  */
-void ft2_fix_sample(ft2_sample_t *s)
+static void fixSampleChannel(int8_t *dataPtr, int8_t *leftEdgeTaps8, int16_t *leftEdgeTaps16,
+                              int16_t *fixedSmp, bool sample16Bit, uint8_t loopType,
+                              int32_t length, int32_t loopStart, int32_t loopLength, int32_t loopEnd)
 {
 	int32_t pos;
 	bool backwards;
-
-	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
-	{
-		if (s != NULL)
-		{
-			s->isFixed = false;
-			s->fixedPos = 0;
-		}
-		return;
-	}
-
-	const bool sample16Bit = !!(s->flags & FT2_SAMPLE_16BIT);
-	int16_t *ptr16 = (int16_t *)s->dataPtr;
-	uint8_t loopType = s->flags & (FT2_LOOP_FWD | FT2_LOOP_BIDI);
-	int32_t length = s->length;
-	int32_t loopStart = s->loopStart;
-	int32_t loopLength = s->loopLength;
-	int32_t loopEnd = s->loopStart + s->loopLength;
-
-	/* Treat loop as disabled if loopLen == 0 (FT2 does this) */
-	if (loopType != 0 && loopLength <= 0)
-	{
-		loopType = 0;
-		loopStart = loopLength = loopEnd = 0;
-	}
+	int16_t *ptr16 = (int16_t *)dataPtr;
 
 	/* All negative taps should be equal to the first sample point when at sampling
 	** position #0 (on sample trigger), until an eventual loop cycle, where we do
@@ -1355,7 +1336,7 @@ void ft2_fix_sample(ft2_sample_t *s)
 	else
 	{
 		for (int32_t i = 0; i < FT2_MAX_LEFT_TAPS; i++)
-			s->dataPtr[i - FT2_MAX_LEFT_TAPS] = s->dataPtr[0];
+			dataPtr[i - FT2_MAX_LEFT_TAPS] = dataPtr[0];
 	}
 
 	if (loopType == FT2_LOOP_OFF) /* No loop */
@@ -1368,16 +1349,10 @@ void ft2_fix_sample(ft2_sample_t *s)
 		else
 		{
 			for (int32_t i = 0; i < FT2_MAX_RIGHT_TAPS; i++)
-				s->dataPtr[length + i] = s->dataPtr[length - 1];
+				dataPtr[length + i] = dataPtr[length - 1];
 		}
-
-		s->fixedPos = 0;
-		s->isFixed = false;
 		return;
 	}
-
-	s->fixedPos = loopEnd;
-	s->isFixed = true;
 
 	if (loopType == FT2_LOOP_FWD) /* Forward loop */
 	{
@@ -1387,14 +1362,14 @@ void ft2_fix_sample(ft2_sample_t *s)
 			for (int32_t i = -FT2_MAX_LEFT_TAPS; i < FT2_MAX_TAPS; i++)
 			{
 				pos = loopStart + myMod(i, loopLength);
-				s->leftEdgeTapSamples16[FT2_MAX_LEFT_TAPS + i] = ptr16[pos];
+				leftEdgeTaps16[FT2_MAX_LEFT_TAPS + i] = ptr16[pos];
 			}
 
 			/* Right edge (change actual sample data since data after loop is never used) */
 			pos = loopStart;
 			for (int32_t i = 0; i < FT2_MAX_RIGHT_TAPS; i++)
 			{
-				s->fixedSmp[i] = ptr16[loopEnd + i];
+				fixedSmp[i] = ptr16[loopEnd + i];
 				ptr16[loopEnd + i] = ptr16[pos];
 
 				if (++pos >= loopEnd)
@@ -1407,15 +1382,15 @@ void ft2_fix_sample(ft2_sample_t *s)
 			for (int32_t i = -FT2_MAX_LEFT_TAPS; i < FT2_MAX_TAPS; i++)
 			{
 				pos = loopStart + myMod(i, loopLength);
-				s->leftEdgeTapSamples8[FT2_MAX_LEFT_TAPS + i] = s->dataPtr[pos];
+				leftEdgeTaps8[FT2_MAX_LEFT_TAPS + i] = dataPtr[pos];
 			}
 
 			/* Right edge */
 			pos = loopStart;
 			for (int32_t i = 0; i < FT2_MAX_RIGHT_TAPS; i++)
 			{
-				s->fixedSmp[i] = s->dataPtr[loopEnd + i];
-				s->dataPtr[loopEnd + i] = s->dataPtr[pos];
+				fixedSmp[i] = dataPtr[loopEnd + i];
+				dataPtr[loopEnd + i] = dataPtr[pos];
 
 				if (++pos >= loopEnd)
 					pos -= loopLength;
@@ -1445,7 +1420,7 @@ void ft2_fix_sample(ft2_sample_t *s)
 					backwards = true;
 				}
 
-				s->leftEdgeTapSamples16[FT2_MAX_LEFT_TAPS + i] = ptr16[pos];
+				leftEdgeTaps16[FT2_MAX_LEFT_TAPS + i] = ptr16[pos];
 
 				if (backwards)
 					pos--;
@@ -1455,7 +1430,7 @@ void ft2_fix_sample(ft2_sample_t *s)
 
 			/* Left edge (negative taps) */
 			for (int32_t i = 0; i < FT2_MAX_LEFT_TAPS; i++)
-				s->leftEdgeTapSamples16[(FT2_MAX_LEFT_TAPS - 1) - i] = s->leftEdgeTapSamples16[FT2_MAX_LEFT_TAPS + 1 + i];
+				leftEdgeTaps16[(FT2_MAX_LEFT_TAPS - 1) - i] = leftEdgeTaps16[FT2_MAX_LEFT_TAPS + 1 + i];
 
 			/* Right edge */
 			pos = loopEnd - 1;
@@ -1476,7 +1451,7 @@ void ft2_fix_sample(ft2_sample_t *s)
 					backwards = true;
 				}
 
-				s->fixedSmp[i] = ptr16[loopEnd + i];
+				fixedSmp[i] = ptr16[loopEnd + i];
 				ptr16[loopEnd + i] = ptr16[pos];
 
 				if (backwards)
@@ -1506,7 +1481,7 @@ void ft2_fix_sample(ft2_sample_t *s)
 					backwards = true;
 				}
 
-				s->leftEdgeTapSamples8[FT2_MAX_LEFT_TAPS + i] = s->dataPtr[pos];
+				leftEdgeTaps8[FT2_MAX_LEFT_TAPS + i] = dataPtr[pos];
 
 				if (backwards)
 					pos--;
@@ -1516,7 +1491,7 @@ void ft2_fix_sample(ft2_sample_t *s)
 
 			/* Left edge (negative taps) */
 			for (int32_t i = 0; i < FT2_MAX_LEFT_TAPS; i++)
-				s->leftEdgeTapSamples8[(FT2_MAX_LEFT_TAPS - 1) - i] = s->leftEdgeTapSamples8[FT2_MAX_LEFT_TAPS + 1 + i];
+				leftEdgeTaps8[(FT2_MAX_LEFT_TAPS - 1) - i] = leftEdgeTaps8[FT2_MAX_LEFT_TAPS + 1 + i];
 
 			/* Right edge */
 			pos = loopEnd - 1;
@@ -1537,8 +1512,8 @@ void ft2_fix_sample(ft2_sample_t *s)
 					backwards = true;
 				}
 
-				s->fixedSmp[i] = s->dataPtr[loopEnd + i];
-				s->dataPtr[loopEnd + i] = s->dataPtr[pos];
+				fixedSmp[i] = dataPtr[loopEnd + i];
+				dataPtr[loopEnd + i] = dataPtr[pos];
 
 				if (backwards)
 					pos--;
@@ -1550,9 +1525,69 @@ void ft2_fix_sample(ft2_sample_t *s)
 }
 
 /**
+ * @brief Prepares sample for branchless mixer interpolation.
+ *
+ * Modifies samples before index 0, and after loop/end for interpolation.
+ * This must be called after loading or modifying sample data.
+ * Handles both mono and stereo samples.
+ *
+ * @param s The sample to fix.
+ */
+void ft2_fix_sample(ft2_sample_t *s)
+{
+	if (s == NULL || s->dataPtr == NULL || s->length <= 0)
+	{
+		if (s != NULL)
+		{
+			s->isFixed = false;
+			s->fixedPos = 0;
+		}
+		return;
+	}
+
+	const bool sample16Bit = !!(s->flags & FT2_SAMPLE_16BIT);
+	const bool isStereo = !!(s->flags & FT2_SAMPLE_STEREO);
+	uint8_t loopType = s->flags & (FT2_LOOP_FWD | FT2_LOOP_BIDI);
+	int32_t length = s->length;
+	int32_t loopStart = s->loopStart;
+	int32_t loopLength = s->loopLength;
+	int32_t loopEnd = s->loopStart + s->loopLength;
+
+	/* Treat loop as disabled if loopLen == 0 (FT2 does this) */
+	if (loopType != 0 && loopLength <= 0)
+	{
+		loopType = 0;
+		loopStart = loopLength = loopEnd = 0;
+	}
+
+	/* Fix left channel (or mono) */
+	fixSampleChannel(s->dataPtr, s->leftEdgeTapSamples8, s->leftEdgeTapSamples16,
+	                 s->fixedSmp, sample16Bit, loopType, length, loopStart, loopLength, loopEnd);
+
+	/* Fix right channel for stereo */
+	if (isStereo && s->dataPtrR != NULL)
+	{
+		fixSampleChannel(s->dataPtrR, s->leftEdgeTapSamples8R, s->leftEdgeTapSamples16R,
+		                 s->fixedSmpR, sample16Bit, loopType, length, loopStart, loopLength, loopEnd);
+	}
+
+	if (loopType == FT2_LOOP_OFF)
+	{
+		s->fixedPos = 0;
+		s->isFixed = false;
+	}
+	else
+	{
+		s->fixedPos = loopEnd;
+		s->isFixed = true;
+	}
+}
+
+/**
  * @brief Restores sample data that was modified by ft2_fix_sample().
  *
  * Call this before modifying sample data to restore original values.
+ * Handles both mono and stereo samples.
  *
  * @param s The sample to unfix.
  */
@@ -1561,17 +1596,35 @@ void ft2_unfix_sample(ft2_sample_t *s)
 	if (s == NULL || s->dataPtr == NULL || !s->isFixed)
 		return;
 
+	const bool isStereo = !!(s->flags & FT2_SAMPLE_STEREO);
+
 	if (s->flags & FT2_SAMPLE_16BIT)
 	{
 		int16_t *ptr16 = (int16_t *)s->dataPtr + s->fixedPos;
 		for (int32_t i = 0; i < FT2_MAX_RIGHT_TAPS; i++)
 			ptr16[i] = s->fixedSmp[i];
+
+		/* Restore right channel for stereo */
+		if (isStereo && s->dataPtrR != NULL)
+		{
+			int16_t *ptr16R = (int16_t *)s->dataPtrR + s->fixedPos;
+			for (int32_t i = 0; i < FT2_MAX_RIGHT_TAPS; i++)
+				ptr16R[i] = s->fixedSmpR[i];
+		}
 	}
 	else
 	{
 		int8_t *ptr8 = s->dataPtr + s->fixedPos;
 		for (int32_t i = 0; i < FT2_MAX_RIGHT_TAPS; i++)
 			ptr8[i] = (int8_t)s->fixedSmp[i];
+
+		/* Restore right channel for stereo */
+		if (isStereo && s->dataPtrR != NULL)
+		{
+			int8_t *ptr8R = s->dataPtrR + s->fixedPos;
+			for (int32_t i = 0; i < FT2_MAX_RIGHT_TAPS; i++)
+				ptr8R[i] = (int8_t)s->fixedSmpR[i];
+		}
 	}
 
 	s->isFixed = false;

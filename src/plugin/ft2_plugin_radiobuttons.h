@@ -47,6 +47,7 @@ enum
 	RB_GROUP_DISKOP_TRK_SAVEAS,
 	RB_GROUP_WAV_RENDER_BITDEPTH,
 	RB_GROUP_SLICER_MODE,
+	RB_GROUP_DIALOG,
 
 	NUM_RB_GROUPS
 };
@@ -188,6 +189,7 @@ enum
 	/* Disk op module save as */
 	RB_DISKOP_MOD_MOD,
 	RB_DISKOP_MOD_XM,
+	RB_DISKOP_MOD_XM2,
 	RB_DISKOP_MOD_WAV,
 
 	/* Disk op instrument save as */
@@ -219,6 +221,12 @@ enum
 	/* Sample slicer mode */
 	RB_SLICER_SAMPLES,
 	RB_SLICER_INSTRUMENTS,
+
+	/* Dialog radio options (for DIALOG_RADIO type) */
+	RB_DIALOG_OPT_0,
+	RB_DIALOG_OPT_1,
+	RB_DIALOG_OPT_2,
+	RB_DIALOG_OPT_3,
 
 	NUM_RADIOBUTTONS
 };

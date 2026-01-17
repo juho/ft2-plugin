@@ -107,6 +107,9 @@ typedef struct ft2_plugin_config_t
 	uint16_t savedBpm;          /* Restore when BPM sync disabled */
 	uint8_t lockedSpeed;        /* Speed when Fxx locked (3 or 6) */
 
+	/* XM2 features (plugin-specific) */
+	bool enableXm2Features;     /* Enable stereo samples, XM2 format, etc. */
+
 	/* MIDI input (plugin-specific) */
 	bool midiEnabled;
 	bool midiAllChannels;       /* Listen to all vs specific channel */
@@ -199,6 +202,9 @@ void cbSyncBpmFromDAW(struct ft2_instance_t *inst);
 void cbSyncTransportFromDAW(struct ft2_instance_t *inst);
 void cbSyncPositionFromDAW(struct ft2_instance_t *inst);
 void cbAllowFxxSpeedChanges(struct ft2_instance_t *inst);
+
+/* Audio: XM2 features (plugin-specific) */
+void cbConfigEnableXm2(struct ft2_instance_t *inst);
 
 /* Layout: channel count */
 void rbConfigPatt4Chans(struct ft2_instance_t *inst);

@@ -151,6 +151,7 @@ void ft2_trigger_voice(ft2_instance_t *inst, int32_t voiceNum, ft2_sample_t *smp
 	const int32_t loopLength = smp->loopLength;
 	const int32_t loopEnd = loopStart + loopLength;
 	const bool sample16Bit = !!(smp->flags & FT2_SAMPLE_16BIT);
+	const bool sampleStereo = !!(smp->flags & FT2_SAMPLE_STEREO);
 	uint8_t loopType = smp->flags & (FT2_LOOP_FWD | FT2_LOOP_BIDI);
 
 	if (!smp->dataPtr || length < 1)
@@ -162,12 +163,30 @@ void ft2_trigger_voice(ft2_instance_t *inst, int32_t voiceNum, ft2_sample_t *smp
 	if (loopLength < 1)
 		loopType = 0;
 
+	/* Set stereo flag for mixer */
+	v->isStereo = sampleStereo && (smp->dataPtrR != NULL);
+
 	if (sample16Bit)
 	{
 		v->base16 = (const int16_t *)smp->dataPtr;
 		v->base8 = NULL;
 		v->revBase16 = &v->base16[loopStart + loopEnd];
 		v->leftEdgeTaps16 = smp->leftEdgeTapSamples16 + FT2_MAX_LEFT_TAPS;
+
+		/* Right channel for stereo */
+		if (v->isStereo)
+		{
+			v->base16R = (const int16_t *)smp->dataPtrR;
+			v->base8R = NULL;
+			v->revBase16R = &v->base16R[loopStart + loopEnd];
+			v->leftEdgeTaps16R = smp->leftEdgeTapSamples16R + FT2_MAX_LEFT_TAPS;
+		}
+		else
+		{
+			v->base16R = NULL;
+			v->base8R = NULL;
+			v->leftEdgeTaps16R = NULL;
+		}
 	}
 	else
 	{
@@ -175,6 +194,21 @@ void ft2_trigger_voice(ft2_instance_t *inst, int32_t voiceNum, ft2_sample_t *smp
 		v->base16 = NULL;
 		v->revBase8 = &v->base8[loopStart + loopEnd];
 		v->leftEdgeTaps8 = smp->leftEdgeTapSamples8 + FT2_MAX_LEFT_TAPS;
+
+		/* Right channel for stereo */
+		if (v->isStereo)
+		{
+			v->base8R = smp->dataPtrR;
+			v->base16R = NULL;
+			v->revBase8R = &v->base8R[loopStart + loopEnd];
+			v->leftEdgeTaps8R = smp->leftEdgeTapSamples8R + FT2_MAX_LEFT_TAPS;
+		}
+		else
+		{
+			v->base8R = NULL;
+			v->base16R = NULL;
+			v->leftEdgeTaps8R = NULL;
+		}
 	}
 
 	v->hasLooped = false;
@@ -208,9 +242,27 @@ void ft2_voice_update_volumes(ft2_instance_t *inst, int32_t voiceNum, uint8_t st
 
 	ft2_voice_t *v = &inst->voice[voiceNum];
 
-	/* Apply sqrt panning law */
-	v->fTargetVolumeL = v->fVolume * inst->fSqrtPanningTable[256 - v->panning];
-	v->fTargetVolumeR = v->fVolume * inst->fSqrtPanningTable[v->panning];
+	if (v->isStereo)
+	{
+		/* Stereo balance mode: center=both full, left=L full R zero, right=L zero R full */
+		/* Pan 0-128-255 maps to balance */
+		if (v->panning <= 128)
+		{
+			v->fTargetVolumeL = v->fVolume;
+			v->fTargetVolumeR = v->fVolume * (v->panning / 128.0f);
+		}
+		else
+		{
+			v->fTargetVolumeL = v->fVolume * ((255 - v->panning) / 127.0f);
+			v->fTargetVolumeR = v->fVolume;
+		}
+	}
+	else
+	{
+		/* Mono panning: apply sqrt panning law */
+		v->fTargetVolumeL = v->fVolume * inst->fSqrtPanningTable[256 - v->panning];
+		v->fTargetVolumeR = v->fVolume * inst->fSqrtPanningTable[v->panning];
+	}
 
 	if (!inst->audio.volumeRampingFlag)
 	{
@@ -2401,6 +2453,8 @@ static inline float sampleInterp16(const int16_t *s, uint64_t frac, uint8_t mode
 static void mixVoice8BitNoLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
 {
 	const int8_t *base = v->base8;
+	const int8_t *baseR = v->base8R;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
 	int32_t position = v->position;
 	uint64_t positionFrac = v->positionFrac;
 	const uint64_t delta = v->delta;
@@ -2423,9 +2477,18 @@ static void mixVoice8BitNoLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t nu
 			break;
 		}
 
-		const float fSample = sampleInterp8(&base[position], positionFrac, interpMode, tables, sincLUT);
-		fMixBufferL[i] += fSample * fVolumeL;
-		fMixBufferR[i] += fSample * fVolumeR;
+		const float fSampleL = sampleInterp8(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterp8(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
 
 		if (rampLen > 0)
 		{
@@ -2449,6 +2512,8 @@ static void mixVoice8BitNoLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t nu
 static void mixVoice16BitNoLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
 {
 	const int16_t *base = v->base16;
+	const int16_t *baseR = v->base16R;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
 	int32_t position = v->position;
 	uint64_t positionFrac = v->positionFrac;
 	const uint64_t delta = v->delta;
@@ -2471,9 +2536,18 @@ static void mixVoice16BitNoLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t n
 			break;
 		}
 
-		const float fSample = sampleInterp16(&base[position], positionFrac, interpMode, tables, sincLUT);
-		fMixBufferL[i] += fSample * fVolumeL;
-		fMixBufferR[i] += fSample * fVolumeR;
+		const float fSampleL = sampleInterp16(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterp16(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
 
 		if (rampLen > 0)
 		{
@@ -2497,6 +2571,8 @@ static void mixVoice16BitNoLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t n
 static void mixVoice8BitLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
 {
 	const int8_t *base = v->base8;
+	const int8_t *baseR = v->base8R;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
 	int32_t position = v->position;
 	uint64_t positionFrac = v->positionFrac;
 	const uint64_t delta = v->delta;
@@ -2521,9 +2597,18 @@ static void mixVoice8BitLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numS
 			v->hasLooped = true;
 		}
 
-		const float fSample = sampleInterp8(&base[position], positionFrac, interpMode, tables, sincLUT);
-		fMixBufferL[i] += fSample * fVolumeL;
-		fMixBufferR[i] += fSample * fVolumeR;
+		const float fSampleL = sampleInterp8(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterp8(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
 
 		if (rampLen > 0)
 		{
@@ -2547,6 +2632,8 @@ static void mixVoice8BitLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numS
 static void mixVoice16BitLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
 {
 	const int16_t *base = v->base16;
+	const int16_t *baseR = v->base16R;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
 	int32_t position = v->position;
 	uint64_t positionFrac = v->positionFrac;
 	const uint64_t delta = v->delta;
@@ -2571,9 +2658,18 @@ static void mixVoice16BitLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t num
 			v->hasLooped = true;
 		}
 
-		const float fSample = sampleInterp16(&base[position], positionFrac, interpMode, tables, sincLUT);
-		fMixBufferL[i] += fSample * fVolumeL;
-		fMixBufferR[i] += fSample * fVolumeR;
+		const float fSampleL = sampleInterp16(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterp16(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
 
 		if (rampLen > 0)
 		{
@@ -2597,6 +2693,8 @@ static void mixVoice16BitLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t num
 static void mixVoice8BitBidi(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
 {
 	const int8_t *base = v->base8;
+	const int8_t *baseR = v->base8R;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
 	int32_t position = v->position;
 	uint64_t positionFrac = v->positionFrac;
 	int64_t delta = v->delta;
@@ -2640,9 +2738,18 @@ static void mixVoice8BitBidi(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numS
 			}
 		}
 
-		const float fSample = sampleInterp8(&base[position], positionFrac, interpMode, tables, sincLUT);
-		fMixBufferL[i] += fSample * fVolumeL;
-		fMixBufferR[i] += fSample * fVolumeR;
+		const float fSampleL = sampleInterp8(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterp8(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
 
 		if (rampLen > 0)
 		{
@@ -2667,6 +2774,8 @@ static void mixVoice8BitBidi(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numS
 static void mixVoice16BitBidi(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
 {
 	const int16_t *base = v->base16;
+	const int16_t *baseR = v->base16R;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
 	int32_t position = v->position;
 	uint64_t positionFrac = v->positionFrac;
 	int64_t delta = v->delta;
@@ -2710,9 +2819,18 @@ static void mixVoice16BitBidi(ft2_instance_t *inst, ft2_voice_t *v, uint32_t num
 			}
 		}
 
-		const float fSample = sampleInterp16(&base[position], positionFrac, interpMode, tables, sincLUT);
-		fMixBufferL[i] += fSample * fVolumeL;
-		fMixBufferR[i] += fSample * fVolumeR;
+		const float fSampleL = sampleInterp16(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterp16(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
 
 		if (rampLen > 0)
 		{

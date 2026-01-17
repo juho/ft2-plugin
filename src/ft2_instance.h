@@ -56,7 +56,8 @@ enum ft2_diskop_save_format
 {
 	FT2_MOD_SAVE_MOD = 0,
 	FT2_MOD_SAVE_XM = 1,
-	FT2_MOD_SAVE_WAV = 2,
+	FT2_MOD_SAVE_XM2 = 2,
+	FT2_MOD_SAVE_WAV = 3,
 	FT2_SMP_SAVE_RAW = 0,
 	FT2_SMP_SAVE_IFF = 1,
 	FT2_SMP_SAVE_WAV = 2
@@ -133,12 +134,16 @@ typedef struct ft2_sample_t
 	bool isFixed;
 	int8_t finetune, relativeNote;
 	int8_t *dataPtr, *origDataPtr;
+	int8_t *dataPtrR, *origDataPtrR;  /* Right channel for stereo (NULL for mono) */
 	uint8_t volume, flags, panning;
 	int32_t length, loopStart, loopLength;
 
 	int8_t leftEdgeTapSamples8[FT2_MAX_TAPS * 2];
 	int16_t leftEdgeTapSamples16[FT2_MAX_TAPS * 2];
+	int8_t leftEdgeTapSamples8R[FT2_MAX_TAPS * 2];   /* Right channel tap samples */
+	int16_t leftEdgeTapSamples16R[FT2_MAX_TAPS * 2]; /* Right channel tap samples */
 	int16_t fixedSmp[FT2_MAX_TAPS * 2];
+	int16_t fixedSmpR[FT2_MAX_TAPS * 2];  /* Right channel fixed samples */
 	int32_t fixedPos;
 } ft2_sample_t;
 
@@ -206,6 +211,7 @@ typedef struct ft2_channel_t
 typedef struct ft2_song_t
 {
 	bool pBreakFlag, posJumpFlag, isModified;
+	bool usesXm2Features;  /* Set when stereo samples or other XM2 extensions used */
 	char name[20+1], instrName[1 + FT2_MAX_INST][22+1];
 	uint8_t curReplayerTick, curReplayerRow, curReplayerSongPos, curReplayerPattNum;
 	uint8_t pattDelTime, pattDelTime2, pBreakPos;
@@ -255,8 +261,11 @@ typedef struct ft2_audio_state_t
 typedef struct ft2_voice_t
 {
 	const int8_t *base8, *revBase8;
+	const int8_t *base8R, *revBase8R;    /* Right channel (stereo) */
 	const int16_t *base16, *revBase16;
+	const int16_t *base16R, *revBase16R; /* Right channel (stereo) */
 	bool active, samplingBackwards, isFadeOutVoice, hasLooped;
+	bool isStereo;  /* Fast check for mixer: true if sample is stereo */
 	uint8_t scopeVolume, mixFuncOffset, panning, loopType;
 	int32_t position, sampleEnd, loopStart, loopLength;
 	uint32_t volumeRampLength;
@@ -264,6 +273,8 @@ typedef struct ft2_voice_t
 
 	const int8_t *leftEdgeTaps8;
 	const int16_t *leftEdgeTaps16;
+	const int8_t *leftEdgeTaps8R;   /* Right channel tap samples */
+	const int16_t *leftEdgeTaps16R; /* Right channel tap samples */
 
 	const float *fSincLUT;
 	float fVolume, fCurrVolumeL, fCurrVolumeR, fVolumeLDelta, fVolumeRDelta;
@@ -584,6 +595,14 @@ typedef struct ft2_diskop_state_t
 	volatile int8_t requestDriveIndex;          /* -1 = none, 0-6 = drive to navigate to */
 	volatile bool requestEnumerateDrives;       /* Request JUCE to enumerate drives */
 #endif
+
+	/* Pending stereo sample load (waiting for user dialog response) */
+	bool pendingStereoLoad;
+	int16_t pendingStereoInstrNum;
+	int16_t pendingStereoSampleNum;
+	uint8_t *pendingStereoData;      /* Copy of WAV file data */
+	uint32_t pendingStereoDataSize;
+	char pendingStereoFilename[256];
 } ft2_diskop_state_t;
 
 /**

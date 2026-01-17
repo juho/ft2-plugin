@@ -87,6 +87,9 @@ void ft2_config_init(ft2_plugin_config_t *config)
 	config->savedBpm = 125;  /* Default BPM */
 	config->lockedSpeed = 6; /* Default locked speed */
 
+	/* XM2 features (disabled by default - opt-in) */
+	config->enableXm2Features = false;
+
 	/* MIDI Input */
 	config->midiEnabled = true;
 	config->midiAllChannels = true;
@@ -301,6 +304,7 @@ void hideConfigScreen(ft2_instance_t *inst)
 	hideCheckBox(widgets, CB_CONF_SYNC_TRANSPORT);
 	hideCheckBox(widgets, CB_CONF_SYNC_POSITION);
 	hideCheckBox(widgets, CB_CONF_ALLOW_FXX_SPEED);
+	hideCheckBox(widgets, CB_CONF_ENABLE_XM2);
 	hidePushButton(widgets, PB_CONFIG_AMP_DOWN);
 	hidePushButton(widgets, PB_CONFIG_AMP_UP);
 	hidePushButton(widgets, PB_CONFIG_MASTVOL_DOWN);
@@ -465,6 +469,12 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	else
 		widgets->radioButtonState[RB_CONFIG_FREQ_AMIGA] = RADIOBUTTON_CHECKED;
 	showRadioButtonGroup(widgets, video, bmp, RB_GROUP_CONFIG_FREQ_SLIDES);
+
+	/* XM2 features (plugin-specific) */
+	widgets->checkBoxChecked[CB_CONF_ENABLE_XM2] = cfg->enableXm2Features;
+	showCheckBox(widgets, video, bmp, CB_CONF_ENABLE_XM2);
+	textOutShadow(video, bmp, 422, 135, PAL_FORGRND, PAL_DSKTOP2, "Enable XM2 features");
+	textOutShadow(video, bmp, 420, 147, PAL_DSKTOP2, PAL_DSKTOP2, "(stereo samples, etc.)");
 
 	/* Amplification: 1x-32x boost applied before master volume */
 	textOutShadow(video, bmp, 252, 91, PAL_FORGRND, PAL_DSKTOP2, "Amplification:");
@@ -1304,6 +1314,14 @@ void cbConfigVolRamp(ft2_instance_t *inst)
 	if (inst == NULL) return;
 	inst->config.volumeRamp = !inst->config.volumeRamp;
 	inst->audio.volumeRampingFlag = inst->config.volumeRamp;
+}
+
+/* ---------- XM2 features ---------- */
+
+void cbConfigEnableXm2(ft2_instance_t *inst)
+{
+	if (inst == NULL) return;
+	inst->config.enableXm2Features = !inst->config.enableXm2Features;
 }
 
 /* ---------- Miscellaneous checkboxes ---------- */

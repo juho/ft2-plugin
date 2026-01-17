@@ -124,6 +124,9 @@ checkBox_t checkBoxes[NUM_CHECKBOXES] =
 	{ 114,  52, 150, 12, NULL },  /* Sync position */
 	{ 114,  68, 180, 12, NULL },  /* Allow Fxx speed changes */
 
+	/* XM2 features (plugin-specific) */
+	{ 405, 133, 180, 12, NULL },  /* Enable XM2 features */
+
 	/* WAV renderer */
 	{ 62, 157, 159, 24, NULL },
 
@@ -176,6 +179,9 @@ void initCheckBoxes(void)
 	checkBoxes[CB_CONF_SYNC_TRANSPORT].callbackFunc = cbSyncTransportFromDAW;
 	checkBoxes[CB_CONF_SYNC_POSITION].callbackFunc = cbSyncPositionFromDAW;
 	checkBoxes[CB_CONF_ALLOW_FXX_SPEED].callbackFunc = cbAllowFxxSpeedChanges;
+
+	/* Config: XM2 features (plugin-specific) */
+	checkBoxes[CB_CONF_ENABLE_XM2].callbackFunc = cbConfigEnableXm2;
 
 	/* Config: I/O routing (32 channels) */
 	for (int i = 0; i < 32; i++)

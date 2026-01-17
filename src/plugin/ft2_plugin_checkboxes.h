@@ -86,6 +86,9 @@ enum
 	CB_CONF_SYNC_POSITION,
 	CB_CONF_ALLOW_FXX_SPEED,
 
+	/* XM2 features (plugin-specific) */
+	CB_CONF_ENABLE_XM2,
+
 	/* WAV renderer */
 	CB_WAV_TRACKS,
 

@@ -877,6 +877,23 @@ independent of the current frequency. If you switch this
 one, on a finished song, it might sound strange if the song uses
 portamentoes.
 
+>@X040@C001Enable XM2 features:
+>@X060@C002
+Enables extended XM2 format features including native stereo sample support.
+>
+When disabled, loading a stereo sample shows a dialog asking you to choose:
+"Read left" (keep left channel), "Read right" (keep right channel), or
+"Convert" (mix to mono). This matches the original FT2 standalone behavior.
+>
+When enabled, you can also choose "Load as stereo" to preserve both channels.
+Stereo samples are displayed with separate L/R waveforms in the sample editor
+and panning acts as a balance control. Modules using stereo samples are saved
+as XM2 format, which is not compatible with standard XM players.
+>
+The XM2 save format option in Disk Operations is only visible when this
+setting is enabled. If you have a module with stereo samples and disable
+this setting, saving as XM will automatically convert stereo samples to mono.
+
 @X020@C001Configuration, Layout:
 >
 >@X040@C001Pattern layout, hex numbering:

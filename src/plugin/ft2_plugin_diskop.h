@@ -66,6 +66,7 @@ void rbDiskOpTrack(ft2_instance_t *inst);
 /* Save format selection */
 void rbDiskOpModSaveMod(ft2_instance_t *inst);
 void rbDiskOpModSaveXm(ft2_instance_t *inst);
+void rbDiskOpModSaveXm2(ft2_instance_t *inst);
 void rbDiskOpModSaveWav(ft2_instance_t *inst);
 void rbDiskOpSmpSaveRaw(ft2_instance_t *inst);
 void rbDiskOpSmpSaveIff(ft2_instance_t *inst);

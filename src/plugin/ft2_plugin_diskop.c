@@ -103,6 +103,7 @@ static void drawSaveAsElements(ft2_instance_t *inst, ft2_video_t *video, const f
 {
 	if (inst == NULL || video == NULL || bmp == NULL) return;
 
+	/* Clear area for radio button labels. Height=42 to stay within framework (y=99 to y=141) */
 	fillRect(video, 5, 99, 60, 42, PAL_DESKTOP);
 
 	switch (inst->diskop.itemType) {
@@ -110,6 +111,8 @@ static void drawSaveAsElements(ft2_instance_t *inst, ft2_video_t *video, const f
 		case FT2_DISKOP_ITEM_MODULE:
 			textOutShadow(video, bmp, 19, 101, PAL_FORGRND, PAL_DSKTOP2, "MOD");
 			textOutShadow(video, bmp, 19, 115, PAL_FORGRND, PAL_DSKTOP2, "XM");
+			if (inst->config.enableXm2Features)
+				textOutShadow(video, bmp, 19, 129, PAL_FORGRND, PAL_DSKTOP2, "XM2");
 			break;
 		case FT2_DISKOP_ITEM_INSTR:
 			textOutShadow(video, bmp, 19, 101, PAL_FORGRND, PAL_DSKTOP2, "XI");
@@ -148,7 +151,29 @@ static void setDiskOpItemRadioButtons(ft2_instance_t *inst, ft2_video_t *video, 
 	hideRadioButtonGroup(widgets, RB_GROUP_DISKOP_TRK_SAVEAS);
 
 	/* Apply saved format selections */
-	widgets->radioButtonState[RB_DISKOP_MOD_MOD + inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE]] = RADIOBUTTON_CHECKED;
+	int32_t modFormat = inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE];
+
+	/* XM2 handling based on config */
+	if (inst->config.enableXm2Features)
+	{
+		/* XM2 enabled: auto-select XM2 when module uses XM2 features */
+		if (inst->replayer.song.usesXm2Features && modFormat == FT2_MOD_SAVE_XM)
+		{
+			modFormat = FT2_MOD_SAVE_XM2;
+			inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_XM2;
+		}
+	}
+	else
+	{
+		/* XM2 disabled: force XM2 back to XM (will downmix stereo on save) */
+		if (modFormat == FT2_MOD_SAVE_XM2)
+		{
+			modFormat = FT2_MOD_SAVE_XM;
+			inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_XM;
+		}
+	}
+
+	widgets->radioButtonState[RB_DISKOP_MOD_MOD + modFormat] = RADIOBUTTON_CHECKED;
 	widgets->radioButtonState[RB_DISKOP_SMP_RAW + inst->diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE]] = RADIOBUTTON_CHECKED;
 	widgets->radioButtonState[RB_DISKOP_INS_XI] = RADIOBUTTON_CHECKED;
 	widgets->radioButtonState[RB_DISKOP_PAT_XP] = RADIOBUTTON_CHECKED;
@@ -158,7 +183,13 @@ static void setDiskOpItemRadioButtons(ft2_instance_t *inst, ft2_video_t *video, 
 	if (inst->uiState.diskOpShown && video != NULL && bmp != NULL) {
 		switch (inst->diskop.itemType) {
 			default:
-			case FT2_DISKOP_ITEM_MODULE:  showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_MOD_SAVEAS); break;
+			case FT2_DISKOP_ITEM_MODULE:
+				/* Show MOD and XM always, XM2 only if enabled */
+				showRadioButton(widgets, video, bmp, RB_DISKOP_MOD_MOD);
+				showRadioButton(widgets, video, bmp, RB_DISKOP_MOD_XM);
+				if (inst->config.enableXm2Features)
+					showRadioButton(widgets, video, bmp, RB_DISKOP_MOD_XM2);
+				break;
 			case FT2_DISKOP_ITEM_INSTR:   showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_INS_SAVEAS); break;
 			case FT2_DISKOP_ITEM_SAMPLE:  showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_SMP_SAVEAS); break;
 			case FT2_DISKOP_ITEM_PATTERN: showRadioButtonGroup(widgets, video, bmp, RB_GROUP_DISKOP_PAT_SAVEAS); break;
@@ -650,6 +681,7 @@ void rbDiskOpTrack(ft2_instance_t *inst)   { setDiskOpItem(inst, FT2_DISKOP_ITEM
 
 void rbDiskOpModSaveMod(ft2_instance_t *inst) { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_MOD; }
 void rbDiskOpModSaveXm(ft2_instance_t *inst)  { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_XM; }
+void rbDiskOpModSaveXm2(ft2_instance_t *inst) { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_XM2; }
 void rbDiskOpModSaveWav(ft2_instance_t *inst) { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE] = FT2_MOD_SAVE_WAV; }
 void rbDiskOpSmpSaveRaw(ft2_instance_t *inst) { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE] = FT2_SMP_SAVE_RAW; }
 void rbDiskOpSmpSaveIff(ft2_instance_t *inst) { if (inst) inst->diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE] = FT2_SMP_SAVE_IFF; }
@@ -755,6 +787,10 @@ ft2_file_format ft2_detect_format_by_ext(const char *filename)
 	/* Manual case-insensitive comparison (no strcasecmp on MSVC) */
 	if ((ext[0] == 'x' || ext[0] == 'X') && (ext[1] == 'm' || ext[1] == 'M') && ext[2] == '\0')
 		return FT2_FORMAT_XM;
+	/* XM2 extension for modules with stereo samples */
+	if ((ext[0] == 'x' || ext[0] == 'X') && (ext[1] == 'm' || ext[1] == 'M') &&
+	    (ext[2] == '2') && ext[3] == '\0')
+		return FT2_FORMAT_XM;  /* XM2 uses same format code, loaded by XM loader */
 	if ((ext[0] == 'm' || ext[0] == 'M') && (ext[1] == 'o' || ext[1] == 'O') &&
 	    (ext[2] == 'd' || ext[2] == 'D') && ext[3] == '\0')
 		return FT2_FORMAT_MOD;
@@ -786,6 +822,8 @@ ft2_file_format ft2_detect_format_by_header(const uint8_t *data, uint32_t dataSi
 
 	if (dataSize >= 17 && memcmp(data, "Extended Module: ", 17) == 0)
 		return FT2_FORMAT_XM;
+	if (dataSize >= 17 && memcmp(data, "Extended Module2:", 17) == 0)
+		return FT2_FORMAT_XM;  /* XM2 uses same format code, loaded by XM loader */
 	if (dataSize >= 21 && memcmp(data, "Extended Instrument: ", 21) == 0)
 		return FT2_FORMAT_XI;
 	if (dataSize >= 12 && memcmp(data, "RIFF", 4) == 0 && memcmp(data + 8, "WAVE", 4) == 0)
@@ -993,6 +1031,25 @@ bool ft2_save_module(ft2_instance_t *inst, uint8_t **outData, uint32_t *outSize)
 		numInstruments--;
 	}
 
+	/* Determine save format: XM2 only if user selected XM2, otherwise standard XM */
+	int32_t saveFormat = inst->diskop.saveFormat[FT2_DISKOP_ITEM_MODULE];
+	bool needsXm2 = (saveFormat == FT2_MOD_SAVE_XM2);
+
+	/* Check if any stereo samples exist (for downmix warning or auto-format) */
+	bool hasStereoSamples = false;
+	for (int32_t i = 1; i <= numInstruments && !hasStereoSamples; i++)
+	{
+		ft2_instr_t *instr = rep->instr[i];
+		if (instr != NULL)
+		{
+			for (int32_t s = 0; s < FT2_MAX_SMP_PER_INST && !hasStereoSamples; s++)
+			{
+				if ((instr->smp[s].flags & FT2_SAMPLE_STEREO) && instr->smp[s].dataPtrR != NULL)
+					hasStereoSamples = true;
+			}
+		}
+	}
+
 	/* Allocate temporary buffer for packed pattern data */
 	uint8_t *packedPattData = (uint8_t *)malloc(65536);
 	if (packedPattData == NULL)
@@ -1028,6 +1085,9 @@ bool ft2_save_module(ft2_instance_t *inst, uint8_t **outData, uint32_t *outSize)
 					int32_t smpBytes = smp->length;
 					if (smp->flags & FT2_SAMPLE_16BIT)
 						smpBytes *= 2;
+					/* For stereo in XM2: L and R channels stored sequentially */
+					if (needsXm2 && (smp->flags & FT2_SAMPLE_STEREO) && smp->dataPtrR != NULL)
+						smpBytes *= 2;
 					instrumentSize += smpBytes;
 				}
 			}
@@ -1052,7 +1112,10 @@ bool ft2_save_module(ft2_instance_t *inst, uint8_t **outData, uint32_t *outSize)
 	uint8_t *p = *outData;
 
 	/* ===== XM HEADER (60 bytes) ===== */
-	memcpy(p, "Extended Module: ", 17);
+	if (needsXm2)
+		memcpy(p, "Extended Module2:", 17);
+	else
+		memcpy(p, "Extended Module: ", 17);
 	p += 17;
 
 	/* Module name (20 chars, space-padded like FT2) */
@@ -1068,9 +1131,17 @@ bool ft2_save_module(ft2_instance_t *inst, uint8_t **outData, uint32_t *outSize)
 	memcpy(p, "FT2Clone Plugin     ", 20);
 	p += 20;
 
-	/* Version 1.04 (little-endian) */
-	*p++ = 0x04;
-	*p++ = 0x01;
+	/* Version: 2.00 for XM2, 1.04 for standard XM (little-endian) */
+	if (needsXm2)
+	{
+		*p++ = 0x00;
+		*p++ = 0x02;
+	}
+	else
+	{
+		*p++ = 0x04;
+		*p++ = 0x01;
+	}
 
 	/* ===== XM HEADER DATA (276 bytes) ===== */
 	uint32_t hdrSize = 20 + 256;  /* 276 bytes after this field */
@@ -1205,6 +1276,7 @@ bool ft2_save_module(ft2_instance_t *inst, uint8_t **outData, uint32_t *outSize)
 				xm_smp_hdr_t *dst = &ih.smp[s];
 
 				bool sample16Bit = !!(smp->flags & FT2_SAMPLE_16BIT);
+				bool sampleStereo = needsXm2 && (smp->flags & FT2_SAMPLE_STEREO) && smp->dataPtrR != NULL;
 
 				dst->length = smp->length;
 				dst->loopStart = smp->loopStart;
@@ -1217,9 +1289,14 @@ bool ft2_save_module(ft2_instance_t *inst, uint8_t **outData, uint32_t *outSize)
 					dst->loopLength *= 2;
 				}
 
+				/* For stereo in XM2: double the length for L+R data */
+				if (sampleStereo)
+					dst->length *= 2;
+
 				dst->volume = smp->volume;
 				dst->finetune = smp->finetune;
-				dst->flags = smp->flags;
+				/* Clear stereo flag when saving as standard XM (downmixing to mono) */
+				dst->flags = sampleStereo ? smp->flags : (smp->flags & ~FT2_SAMPLE_STEREO);
 				dst->panning = smp->panning;
 				dst->relativeNote = smp->relativeNote;
 
@@ -1247,15 +1324,63 @@ bool ft2_save_module(ft2_instance_t *inst, uint8_t **outData, uint32_t *outSize)
 					if (smp->flags & FT2_SAMPLE_16BIT)
 						smpBytes *= 2;
 
-					/* Unfix, delta encode, copy, undo */
+					bool sampleIsStereo = (smp->flags & FT2_SAMPLE_STEREO) && smp->dataPtrR != NULL;
+					bool writeStereo = needsXm2 && sampleIsStereo;
+
+					/* Unfix sample before processing */
 					ft2_unfix_sample(smp);
-					sample_to_delta(smp->dataPtr, smp->length, smp->flags);
 
-					memcpy(p, smp->dataPtr, smpBytes);
-					p += smpBytes;
+					if (sampleIsStereo && !needsXm2)
+					{
+						/* Downmix stereo to mono for standard XM format */
+						int8_t *monoData = (int8_t *)malloc(smpBytes);
+						if (monoData != NULL)
+						{
+							if (smp->flags & FT2_SAMPLE_16BIT)
+							{
+								int16_t *dstMono = (int16_t *)monoData;
+								int16_t *srcL = (int16_t *)smp->dataPtr;
+								int16_t *srcR = (int16_t *)smp->dataPtrR;
+								for (int32_t j = 0; j < smp->length; j++)
+									dstMono[j] = (srcL[j] + srcR[j]) / 2;
+							}
+							else
+							{
+								int8_t *dstMono = monoData;
+								int8_t *srcL = smp->dataPtr;
+								int8_t *srcR = smp->dataPtrR;
+								for (int32_t j = 0; j < smp->length; j++)
+									dstMono[j] = (srcL[j] + srcR[j]) / 2;
+							}
 
-					/* Restore sample for playback */
-					delta_to_sample(smp->dataPtr, smp->length, smp->flags);
+							/* Delta encode the downmixed mono data */
+							sample_to_delta(monoData, smp->length, smp->flags & ~FT2_SAMPLE_STEREO);
+							memcpy(p, monoData, smpBytes);
+							p += smpBytes;
+							free(monoData);
+						}
+					}
+					else
+					{
+						/* Write left channel (or mono) */
+						sample_to_delta(smp->dataPtr, smp->length, smp->flags);
+						memcpy(p, smp->dataPtr, smpBytes);
+						p += smpBytes;
+
+						/* Write right channel for stereo samples in XM2 */
+						if (writeStereo)
+						{
+							sample_to_delta(smp->dataPtrR, smp->length, smp->flags);
+							memcpy(p, smp->dataPtrR, smpBytes);
+							p += smpBytes;
+							delta_to_sample(smp->dataPtrR, smp->length, smp->flags);
+						}
+
+						/* Restore left channel */
+						delta_to_sample(smp->dataPtr, smp->length, smp->flags);
+					}
+
+					/* Refix sample for playback */
 					ft2_fix_sample(smp);
 				}
 			}

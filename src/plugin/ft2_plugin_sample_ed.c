@@ -35,8 +35,9 @@ static ft2_sample_t *getCurrentSampleWithInst(ft2_sample_editor_t *editor, ft2_i
 /*                         WAVEFORM DRAWING                                  */
 /* ------------------------------------------------------------------------- */
 
-/* Bresenham line drawing for waveform display */
-static void sampleLine(ft2_video_t *video, int32_t x1, int32_t x2, int32_t y1, int32_t y2)
+/* Bresenham line drawing for waveform display with Y clipping */
+static void sampleLineClipped(ft2_video_t *video, int32_t x1, int32_t x2, int32_t y1, int32_t y2,
+                               int32_t yMin, int32_t yMax)
 {
 	if (!video || !video->frameBuffer)
 		return;
@@ -52,11 +53,8 @@ static void sampleLine(ft2_video_t *video, int32_t x1, int32_t x2, int32_t y1, i
 		d = ay - (ax / 2);
 		while (true)
 		{
-			if (y >= 0 && y < SCREEN_H && x >= 0 && x < SAMPLE_AREA_WIDTH)
-			{
-				if (y >= SAMPLE_AREA_Y_START && y < SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT)
-					video->frameBuffer[(y * SCREEN_W) + x] = pixVal;
-			}
+			if (y >= yMin && y < yMax && x >= 0 && x < SAMPLE_AREA_WIDTH)
+				video->frameBuffer[(y * SCREEN_W) + x] = pixVal;
 
 			if (x == x2)
 				break;
@@ -76,11 +74,8 @@ static void sampleLine(ft2_video_t *video, int32_t x1, int32_t x2, int32_t y1, i
 		d = ax - (ay / 2);
 		while (true)
 		{
-			if (y >= 0 && y < SCREEN_H && x >= 0 && x < SAMPLE_AREA_WIDTH)
-			{
-				if (y >= SAMPLE_AREA_Y_START && y < SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT)
-					video->frameBuffer[(y * SCREEN_W) + x] = pixVal;
-			}
+			if (y >= yMin && y < yMax && x >= 0 && x < SAMPLE_AREA_WIDTH)
+				video->frameBuffer[(y * SCREEN_W) + x] = pixVal;
 
 			if (y == y2)
 				break;
@@ -97,25 +92,41 @@ static void sampleLine(ft2_video_t *video, int32_t x1, int32_t x2, int32_t y1, i
 	}
 }
 
-/* Scales sample value to display Y coordinate */
-static int32_t getScaledSample(ft2_sample_editor_t *ed, ft2_sample_t *s, int32_t pos)
+/* Wrapper for mono/full-height display */
+static void sampleLine(ft2_video_t *video, int32_t x1, int32_t x2, int32_t y1, int32_t y2)
 {
-	(void)ed;
+	sampleLineClipped(video, x1, x2, y1, y2, SAMPLE_AREA_Y_START, SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT);
+}
+
+/* Scales sample value to display Y coordinate for a specific channel and Y range */
+static int32_t getScaledSampleChannel(ft2_sample_t *s, int32_t pos, bool rightChannel,
+                                       int32_t yCenter, int32_t halfHeight)
+{
 	if (!s || !s->dataPtr || pos < 0 || pos >= s->length)
-		return SAMPLE_AREA_Y_CENTER;
+		return yCenter;
+
+	int8_t *dataPtr = rightChannel ? s->dataPtrR : s->dataPtr;
+	if (!dataPtr) dataPtr = s->dataPtr;
 
 	int32_t sample;
 	if (s->flags & SAMPLE_16BIT)
 	{
-		sample = ((int16_t *)s->dataPtr)[pos];
-		sample = SAMPLE_AREA_Y_CENTER - ((sample * (SAMPLE_AREA_HEIGHT / 2)) / 32768);
+		sample = ((int16_t *)dataPtr)[pos];
+		sample = yCenter - ((sample * halfHeight) / 32768);
 	}
 	else
 	{
-		sample = ((int8_t *)s->dataPtr)[pos];
-		sample = SAMPLE_AREA_Y_CENTER - ((sample * (SAMPLE_AREA_HEIGHT / 2)) / 128);
+		sample = ((int8_t *)dataPtr)[pos];
+		sample = yCenter - ((sample * halfHeight) / 128);
 	}
-	return CLAMP(sample, SAMPLE_AREA_Y_START, SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT - 1);
+	return CLAMP(sample, yCenter - halfHeight, yCenter + halfHeight - 1);
+}
+
+/* Scales sample value to display Y coordinate (mono or combined for stereo) */
+static int32_t getScaledSample(ft2_sample_editor_t *ed, ft2_sample_t *s, int32_t pos)
+{
+	(void)ed;
+	return getScaledSampleChannel(s, pos, false, SAMPLE_AREA_Y_CENTER, SAMPLE_AREA_HEIGHT / 2);
 }
 
 /* Converts mouse Y to sample value (0-255) for draw mode */
@@ -126,44 +137,55 @@ static int32_t mouseYToSampleY(int32_t my)
 	return 255 - CLAMP(tmp32, 0, 255);
 }
 
-/* Gets min/max sample values for a range (zoomed-out display) */
-static void getSampleDataPeak(ft2_sample_t *s, int32_t start, int32_t count, int16_t *outMin, int16_t *outMax)
+/* Gets min/max sample values for a range with channel selection and Y range */
+static void getSampleDataPeakChannel(ft2_sample_t *s, int32_t start, int32_t count,
+                                      bool rightChannel, int32_t yCenter, int32_t halfHeight,
+                                      int16_t *outMin, int16_t *outMax)
 {
 	if (!s || !s->dataPtr || count <= 0)
 	{
-		*outMin = *outMax = SAMPLE_AREA_Y_CENTER;
+		*outMin = *outMax = (int16_t)yCenter;
 		return;
 	}
+
+	int8_t *dataPtr = rightChannel ? s->dataPtrR : s->dataPtr;
+	if (!dataPtr) dataPtr = s->dataPtr;
 
 	int32_t min = 0x7FFFFFFF, max = -0x7FFFFFFF;
 
 	if (s->flags & SAMPLE_16BIT)
 	{
-		int16_t *ptr16 = (int16_t *)s->dataPtr;
+		int16_t *ptr16 = (int16_t *)dataPtr;
 		for (int32_t i = 0; i < count && start + i < s->length; i++)
 		{
 			int32_t sample = ptr16[start + i];
 			if (sample < min) min = sample;
 			if (sample > max) max = sample;
 		}
-		min = SAMPLE_AREA_Y_CENTER - ((min * (SAMPLE_AREA_HEIGHT / 2)) / 32768);
-		max = SAMPLE_AREA_Y_CENTER - ((max * (SAMPLE_AREA_HEIGHT / 2)) / 32768);
+		min = yCenter - ((min * halfHeight) / 32768);
+		max = yCenter - ((max * halfHeight) / 32768);
 	}
 	else
 	{
-		int8_t *ptr8 = (int8_t *)s->dataPtr;
+		int8_t *ptr8 = dataPtr;
 		for (int32_t i = 0; i < count && start + i < s->length; i++)
 		{
 			int32_t sample = ptr8[start + i];
 			if (sample < min) min = sample;
 			if (sample > max) max = sample;
 		}
-		min = SAMPLE_AREA_Y_CENTER - ((min * (SAMPLE_AREA_HEIGHT / 2)) / 128);
-		max = SAMPLE_AREA_Y_CENTER - ((max * (SAMPLE_AREA_HEIGHT / 2)) / 128);
+		min = yCenter - ((min * halfHeight) / 128);
+		max = yCenter - ((max * halfHeight) / 128);
 	}
 
-	*outMin = (int16_t)CLAMP(min, SAMPLE_AREA_Y_START, SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT - 1);
-	*outMax = (int16_t)CLAMP(max, SAMPLE_AREA_Y_START, SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT - 1);
+	*outMin = (int16_t)CLAMP(min, yCenter - halfHeight, yCenter + halfHeight - 1);
+	*outMax = (int16_t)CLAMP(max, yCenter - halfHeight, yCenter + halfHeight - 1);
+}
+
+/* Gets min/max sample values for a range (zoomed-out display) - mono wrapper */
+static void getSampleDataPeak(ft2_sample_t *s, int32_t start, int32_t count, int16_t *outMin, int16_t *outMax)
+{
+	getSampleDataPeakChannel(s, start, count, false, SAMPLE_AREA_Y_CENTER, SAMPLE_AREA_HEIGHT / 2, outMin, outMax);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -316,28 +338,14 @@ void ft2_sample_ed_set_sample(ft2_instance_t *inst, int instr, int sample)
 /*                        WAVEFORM RENDERING                                 */
 /* ------------------------------------------------------------------------- */
 
-void ft2_sample_ed_draw_waveform(ft2_instance_t *inst)
+/* Draw waveform for a single channel in specified Y region */
+static void drawWaveformChannel(ft2_instance_t *inst, ft2_sample_t *s, ft2_video_t *video,
+                                 bool rightChannel, int32_t yStart, int32_t yHeight, int32_t yCenter)
 {
 	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
-	if (!ed || !ed->video || !inst) return;
-
-	ft2_video_t *video = ed->video;
-
-	/* Clear sample area */
-	for (int32_t y = SAMPLE_AREA_Y_START; y < SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT; y++)
-		memset(&video->frameBuffer[y * SCREEN_W], 0, SAMPLE_AREA_WIDTH * sizeof(uint32_t));
-
-	hLine(video, 0, SAMPLE_AREA_Y_CENTER, SAMPLE_AREA_WIDTH, PAL_DESKTOP);
-
-	if (ed->currInstr <= 0 || ed->currInstr >= 128) return;
-	ft2_instr_t *instr = inst->replayer.instr[ed->currInstr];
-	if (!instr) return;
-	if (ed->currSample < 0 || ed->currSample >= 16) return;
-
-	ft2_sample_t *s = &instr->smp[ed->currSample];
-	if (!s->dataPtr || s->length <= 0 || ed->viewSize <= 0) return;
-
-	updateScalingFactors(ed);
+	const int32_t halfHeight = yHeight / 2;
+	const int32_t yMin = yStart;
+	const int32_t yMax = yStart + yHeight;
 
 	if (ed->viewSize <= SAMPLE_AREA_WIDTH)
 	{
@@ -352,23 +360,23 @@ void ft2_sample_ed_draw_waveform(ft2_instance_t *inst)
 
 			int32_t x1 = ft2_sample_smpPos2Scr(inst, currSmpPos);
 			int32_t x2 = ft2_sample_smpPos2Scr(inst, nextSmpPos);
-			int32_t y1 = getScaledSample(ed, s, currSmpPos);
-			int32_t y2 = getScaledSample(ed, s, nextSmpPos);
+			int32_t y1 = getScaledSampleChannel(s, currSmpPos, rightChannel, yCenter, halfHeight);
+			int32_t y2 = getScaledSampleChannel(s, nextSmpPos, rightChannel, yCenter, halfHeight);
 
 			x1 = CLAMP(x1, 0, SAMPLE_AREA_WIDTH - 1);
 			x2 = CLAMP(x2, 0, SAMPLE_AREA_WIDTH - 1);
 
-			/* Kludge: sometimes the last point wouldn't reach the end of the sample window */
 			if (x == SAMPLE_AREA_WIDTH)
 				x2 = SAMPLE_AREA_WIDTH - 1;
 
-			sampleLine(video, x1, x2, y1, y2);
+			sampleLineClipped(video, x1, x2, y1, y2, yMin, yMax);
 		}
 	}
 	else
 	{
 		/* Zoomed out */
-		const int32_t firstSamplePoint = getScaledSample(ed, s, ft2_sample_scr2SmpPos(inst, 0));
+		const int32_t firstSamplePoint = getScaledSampleChannel(s, ft2_sample_scr2SmpPos(inst, 0),
+		                                                         rightChannel, yCenter, halfHeight);
 
 		int32_t oldMin = firstSamplePoint;
 		int32_t oldMax = firstSamplePoint;
@@ -378,27 +386,79 @@ void ft2_sample_ed_draw_waveform(ft2_instance_t *inst)
 			int32_t smpIdx = ft2_sample_scr2SmpPos(inst, x);
 			int32_t smpNum = ft2_sample_scr2SmpPos(inst, x + 1) - smpIdx;
 
-			/* Prevent look-up overflow */
 			if (smpIdx + smpNum > s->length)
 				smpNum = s->length - smpIdx;
 
 			if (smpNum > 0)
 			{
 				int16_t min, max;
-				getSampleDataPeak(s, smpIdx, smpNum, &min, &max);
+				getSampleDataPeakChannel(s, smpIdx, smpNum, rightChannel, yCenter, halfHeight, &min, &max);
 
 				if (x != 0)
 				{
-					if (min > oldMax) sampleLine(video, x - 1, x, oldMax, min);
-					if (max < oldMin) sampleLine(video, x - 1, x, oldMin, max);
+					if (min > oldMax) sampleLineClipped(video, x - 1, x, oldMax, min, yMin, yMax);
+					if (max < oldMin) sampleLineClipped(video, x - 1, x, oldMin, max, yMin, yMax);
 				}
 
-				sampleLine(video, x, x, max, min);
+				sampleLineClipped(video, x, x, max, min, yMin, yMax);
 
 				oldMin = min;
 				oldMax = max;
 			}
 		}
+	}
+}
+
+void ft2_sample_ed_draw_waveform(ft2_instance_t *inst)
+{
+	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
+	if (!ed || !ed->video || !inst) return;
+
+	ft2_video_t *video = ed->video;
+
+	/* Clear sample area */
+	for (int32_t y = SAMPLE_AREA_Y_START; y < SAMPLE_AREA_Y_START + SAMPLE_AREA_HEIGHT; y++)
+		memset(&video->frameBuffer[y * SCREEN_W], 0, SAMPLE_AREA_WIDTH * sizeof(uint32_t));
+
+	if (ed->currInstr <= 0 || ed->currInstr >= 128) return;
+	ft2_instr_t *instr = inst->replayer.instr[ed->currInstr];
+	if (!instr) return;
+	if (ed->currSample < 0 || ed->currSample >= 16) return;
+
+	ft2_sample_t *s = &instr->smp[ed->currSample];
+	if (!s->dataPtr || s->length <= 0 || ed->viewSize <= 0) return;
+
+	updateScalingFactors(ed);
+
+	bool isStereo = (s->flags & FT2_SAMPLE_STEREO) && s->dataPtrR != NULL;
+
+	if (isStereo)
+	{
+		/* Draw separator line between L and R channels */
+		hLine(video, 0, SAMPLE_AREA_SEPARATOR, SAMPLE_AREA_WIDTH, PAL_DESKTOP);
+
+		/* Draw center lines for L and R */
+		hLine(video, 0, SAMPLE_AREA_L_CENTER, SAMPLE_AREA_WIDTH, PAL_DESKTOP);
+		hLine(video, 0, SAMPLE_AREA_R_CENTER, SAMPLE_AREA_WIDTH, PAL_DESKTOP);
+
+		/* Draw L channel in top half */
+		drawWaveformChannel(inst, s, video, false, SAMPLE_AREA_L_START, SAMPLE_AREA_L_HEIGHT, SAMPLE_AREA_L_CENTER);
+
+		/* Draw R channel in bottom half */
+		drawWaveformChannel(inst, s, video, true, SAMPLE_AREA_R_START, SAMPLE_AREA_R_HEIGHT, SAMPLE_AREA_R_CENTER);
+
+		/* Draw "L" and "R" labels */
+		if (ed->bmp)
+		{
+			textOutShadow(video, ed->bmp, 2, SAMPLE_AREA_L_START + 2, PAL_FORGRND, PAL_DSKTOP2, "L");
+			textOutShadow(video, ed->bmp, 2, SAMPLE_AREA_R_START + 2, PAL_FORGRND, PAL_DSKTOP2, "R");
+		}
+	}
+	else
+	{
+		/* Mono: draw single waveform using full height */
+		hLine(video, 0, SAMPLE_AREA_Y_CENTER, SAMPLE_AREA_WIDTH, PAL_DESKTOP);
+		drawWaveformChannel(inst, s, video, false, SAMPLE_AREA_Y_START, SAMPLE_AREA_HEIGHT, SAMPLE_AREA_Y_CENTER);
 	}
 }
 
@@ -1431,15 +1491,29 @@ void ft2_sample_ed_copy(ft2_instance_t *inst)
 	int32_t len = end - start;
 	if (len <= 0) return;
 
+	/* Free existing clipboard data */
 	if (clip->data) { free(clip->data); clip->data = NULL; }
+	if (clip->dataR) { free(clip->dataR); clip->dataR = NULL; }
 
 	int32_t bytesPerSample = (s->flags & SAMPLE_16BIT) ? 2 : 1;
+	bool isStereo = (s->flags & FT2_SAMPLE_STEREO) && s->dataPtrR != NULL;
+
 	clip->length = len;
 	clip->is16Bit = (s->flags & SAMPLE_16BIT) != 0;
+	clip->isStereo = isStereo;
 
+	/* Copy left channel */
 	clip->data = (int8_t *)malloc((size_t)(len * bytesPerSample));
 	if (clip->data)
 		memcpy(clip->data, s->dataPtr + (start * bytesPerSample), (size_t)(len * bytesPerSample));
+
+	/* Copy right channel for stereo */
+	if (isStereo)
+	{
+		clip->dataR = (int8_t *)malloc((size_t)(len * bytesPerSample));
+		if (clip->dataR)
+			memcpy(clip->dataR, s->dataPtrR + (start * bytesPerSample), (size_t)(len * bytesPerSample));
+	}
 
 	if (start == 0 && end == s->length)
 	{
@@ -1505,6 +1579,12 @@ static void pasteOverwrite(ft2_sample_editor_t *editor, ft2_sample_t *s, ft2_ins
 		s->dataPtr = NULL;
 		s->origDataPtr = NULL;
 	}
+	if (s->origDataPtrR != NULL)
+	{
+		free(s->origDataPtrR);
+		s->dataPtrR = NULL;
+		s->origDataPtrR = NULL;
+	}
 	
 	/* Allocate new buffer with extra space for interpolation */
 	size_t allocSize = (size_t)(clip->length * bytesPerSample) + 256;
@@ -1516,6 +1596,18 @@ static void pasteOverwrite(ft2_sample_editor_t *editor, ft2_sample_t *s, ft2_ins
 	s->dataPtr = s->origDataPtr + 128;
 	
 	memcpy(s->dataPtr, clip->data, (size_t)(clip->length * bytesPerSample));
+
+	/* Copy right channel for stereo */
+	if (clip->isStereo && clip->dataR != NULL)
+	{
+		s->origDataPtrR = (int8_t *)malloc(allocSize);
+		if (s->origDataPtrR != NULL)
+		{
+			memset(s->origDataPtrR, 0, allocSize);
+			s->dataPtrR = s->origDataPtrR + 128;
+			memcpy(s->dataPtrR, clip->dataR, (size_t)(clip->length * bytesPerSample));
+		}
+	}
 	
 	/* Restore sample info if we copied a whole sample */
 	if (clip->didCopyWholeSample && clip->hasInfo)
@@ -2307,6 +2399,16 @@ bool allocateSmpData(ft2_instance_t *inst, int instrNum, int smpNum, int32_t len
 		s->origDataPtr = s->dataPtr = NULL;
 	}
 
+	/* Free right channel if exists */
+	if (s->origDataPtrR)
+	{
+		free(s->origDataPtrR);
+		s->origDataPtrR = s->dataPtrR = NULL;
+	}
+
+	/* Clear stereo flag (allocateSmpDataStereo sets it) */
+	s->flags &= ~FT2_SAMPLE_STEREO;
+
 	if (length <= 0) { s->length = 0; return true; }
 
 	int32_t bytesPerSample = sample16Bit ? 2 : 1;
@@ -2317,6 +2419,59 @@ bool allocateSmpData(ft2_instance_t *inst, int instrNum, int smpNum, int32_t len
 	if (!s->origDataPtr) return false;
 
 	s->dataPtr = s->origDataPtr + padding;
+	return true;
+}
+
+/* Allocates stereo sample data with interpolation padding on both sides for both channels */
+bool allocateSmpDataStereo(ft2_instance_t *inst, int instrNum, int smpNum, int32_t length, bool sample16Bit)
+{
+	if (!inst || instrNum < 1 || instrNum > 128 || smpNum < 0 || smpNum >= 16)
+		return false;
+
+	ft2_instr_t *instr = inst->replayer.instr[instrNum];
+	if (!instr) return false;
+
+	ft2_sample_t *s = &instr->smp[smpNum];
+
+	/* Free existing data */
+	if (s->origDataPtr)
+	{
+		free(s->origDataPtr);
+		s->origDataPtr = s->dataPtr = NULL;
+	}
+	if (s->origDataPtrR)
+	{
+		free(s->origDataPtrR);
+		s->origDataPtrR = s->dataPtrR = NULL;
+	}
+
+	if (length <= 0)
+	{
+		s->length = 0;
+		s->flags &= ~FT2_SAMPLE_STEREO;
+		return true;
+	}
+
+	int32_t bytesPerSample = sample16Bit ? 2 : 1;
+	int32_t padding = FT2_MAX_TAPS * bytesPerSample;
+	int32_t allocLen = padding + (length * bytesPerSample) + padding;
+
+	/* Allocate left channel */
+	s->origDataPtr = (int8_t *)calloc(allocLen, 1);
+	if (!s->origDataPtr) return false;
+	s->dataPtr = s->origDataPtr + padding;
+
+	/* Allocate right channel */
+	s->origDataPtrR = (int8_t *)calloc(allocLen, 1);
+	if (!s->origDataPtrR)
+	{
+		free(s->origDataPtr);
+		s->origDataPtr = s->dataPtr = NULL;
+		return false;
+	}
+	s->dataPtrR = s->origDataPtrR + padding;
+
+	s->flags |= FT2_SAMPLE_STEREO;
 	return true;
 }
 
@@ -2331,6 +2486,12 @@ void freeSmpData(ft2_instance_t *inst, int instrNum, int smpNum)
 	ft2_sample_t *s = &instr->smp[smpNum];
 	if (s->origDataPtr) { free(s->origDataPtr); s->origDataPtr = NULL; }
 	s->dataPtr = NULL;
+
+	/* Free right channel for stereo samples */
+	if (s->origDataPtrR) { free(s->origDataPtrR); s->origDataPtrR = NULL; }
+	s->dataPtrR = NULL;
+	s->flags &= ~FT2_SAMPLE_STEREO;
+
 	s->length = s->loopStart = s->loopLength = 0;
 	s->isFixed = false;
 }
@@ -2422,8 +2583,10 @@ void clearCopyBuffer(ft2_instance_t *inst)
 	if (!inst || !inst->ui) return;
 	smp_clipboard_t *clip = &FT2_SAMPLE_ED(inst)->clipboard;
 	if (clip->data) { free(clip->data); clip->data = NULL; }
+	if (clip->dataR) { free(clip->dataR); clip->dataR = NULL; }
 	clip->length = 0;
 	clip->is16Bit = false;
+	clip->isStereo = false;
 	clip->didCopyWholeSample = false;
 	clip->hasInfo = false;
 }
@@ -2432,31 +2595,58 @@ void clearCopyBuffer(ft2_instance_t *inst)
 /*                      COPY/EXCHANGE OPERATIONS                             */
 /* ------------------------------------------------------------------------- */
 
-/* Deep copies sample including data allocation */
+/* Deep copies sample including data allocation (handles stereo) */
 bool cloneSample(ft2_sample_t *src, ft2_sample_t *dst)
 {
 	if (!dst) return false;
 
+	/* Free existing data */
 	if (dst->origDataPtr) { free(dst->origDataPtr); dst->origDataPtr = dst->dataPtr = NULL; }
+	if (dst->origDataPtrR) { free(dst->origDataPtrR); dst->origDataPtrR = dst->dataPtrR = NULL; }
+
 	if (!src) { memset(dst, 0, sizeof(ft2_sample_t)); return true; }
 
 	memcpy(dst, src, sizeof(ft2_sample_t));
 	dst->origDataPtr = dst->dataPtr = NULL;
+	dst->origDataPtrR = dst->dataPtrR = NULL;
 	dst->isFixed = false;
 	dst->fixedPos = 0;
 
 	if (src->length > 0 && src->dataPtr)
 	{
 		bool is16Bit = (src->flags & SAMPLE_16BIT) != 0;
+		bool isStereo = (src->flags & FT2_SAMPLE_STEREO) != 0;
 		int32_t bytesPerSample = is16Bit ? 2 : 1;
 		int32_t padding = FT2_MAX_TAPS * bytesPerSample;
 		int32_t dataLen = src->length * bytesPerSample;
 
+		/* Allocate and copy left channel */
 		dst->origDataPtr = (int8_t *)calloc(padding + dataLen + padding, 1);
-		if (!dst->origDataPtr) { dst->length = 0; return false; }
+		if (!dst->origDataPtr) { dst->length = 0; dst->flags &= ~FT2_SAMPLE_STEREO; return false; }
 
 		dst->dataPtr = dst->origDataPtr + padding;
 		memcpy(dst->dataPtr, src->dataPtr, dataLen);
+
+		/* Allocate and copy right channel for stereo */
+		if (isStereo && src->dataPtrR)
+		{
+			dst->origDataPtrR = (int8_t *)calloc(padding + dataLen + padding, 1);
+			if (!dst->origDataPtrR)
+			{
+				free(dst->origDataPtr);
+				dst->origDataPtr = dst->dataPtr = NULL;
+				dst->length = 0;
+				dst->flags &= ~FT2_SAMPLE_STEREO;
+				return false;
+			}
+			dst->dataPtrR = dst->origDataPtrR + padding;
+			memcpy(dst->dataPtrR, src->dataPtrR, dataLen);
+		}
+		else
+		{
+			dst->flags &= ~FT2_SAMPLE_STEREO;
+		}
+
 		ft2_fix_sample(dst);
 	}
 	return true;
@@ -2729,7 +2919,7 @@ void sampleByteSwap(ft2_instance_t *inst)
 	inst->uiState.updateSampleEditor = true;
 }
 
-/* Resizes sample allocation preserving existing data */
+/* Resizes sample allocation preserving existing data (handles stereo) */
 static bool reallocateSmpData(ft2_sample_t *s, int32_t newLength, bool is16Bit)
 {
 	if (!s) return false;
@@ -2737,19 +2927,41 @@ static bool reallocateSmpData(ft2_sample_t *s, int32_t newLength, bool is16Bit)
 	int32_t bytesPerSample = is16Bit ? 2 : 1;
 	int32_t padding = FT2_MAX_TAPS * bytesPerSample;
 	size_t allocSize = padding + (newLength * bytesPerSample) + padding;
+	bool isStereo = (s->flags & FT2_SAMPLE_STEREO) != 0;
 
+	/* Left channel (or mono) */
 	if (!s->origDataPtr)
 	{
 		s->origDataPtr = (int8_t *)calloc(allocSize, 1);
 		if (!s->origDataPtr) return false;
 		s->dataPtr = s->origDataPtr + padding;
-		return true;
+	}
+	else
+	{
+		int8_t *newPtr = (int8_t *)realloc(s->origDataPtr, allocSize);
+		if (!newPtr) return false;
+		s->origDataPtr = newPtr;
+		s->dataPtr = s->origDataPtr + padding;
 	}
 
-	int8_t *newPtr = (int8_t *)realloc(s->origDataPtr, allocSize);
-	if (!newPtr) return false;
-	s->origDataPtr = newPtr;
-	s->dataPtr = s->origDataPtr + padding;
+	/* Right channel for stereo */
+	if (isStereo)
+	{
+		if (!s->origDataPtrR)
+		{
+			s->origDataPtrR = (int8_t *)calloc(allocSize, 1);
+			if (!s->origDataPtrR) return false;
+			s->dataPtrR = s->origDataPtrR + padding;
+		}
+		else
+		{
+			int8_t *newPtrR = (int8_t *)realloc(s->origDataPtrR, allocSize);
+			if (!newPtrR) return false;
+			s->origDataPtrR = newPtrR;
+			s->dataPtrR = s->origDataPtrR + padding;
+		}
+	}
+
 	return true;
 }
 

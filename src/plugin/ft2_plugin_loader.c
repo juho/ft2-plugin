@@ -109,6 +109,7 @@ typedef struct xm_loader_state_t {
 	ft2_instance_t *inst;
 	xm_header_t header;
 	bool linearPeriodsFlag;
+	bool isXm2;  /* True for XM2 format (stereo samples preserved) */
 } xm_loader_state_t;
 
 /* ---------- Pattern unpacking ---------- */
@@ -164,30 +165,57 @@ static void unpack_pattern(ft2_note_t *dst, const uint8_t *src, uint32_t srcLen,
 
 /* ---------- Sample decoding ---------- */
 
-/* Delta decode sample data, downmixing stereo to mono if needed.
- * XM samples are stored as deltas from previous sample value. */
-static void delta_to_sample(int8_t *p, int32_t length, uint8_t smpFlags)
+/* Delta decode sample data, downmixing stereo to mono unless keepStereo is true.
+ * XM samples are stored as deltas from previous sample value.
+ * For XM2 format, stereo samples are preserved with L and R data in separate buffers. */
+static void delta_to_sample(int8_t *p, int8_t *pR, int32_t length, uint8_t smpFlags, bool keepStereo)
 {
 	bool sample16Bit = !!(smpFlags & SAMPLE_16BIT);
 	bool stereo = !!(smpFlags & SAMPLE_STEREO);
 
 	if (stereo) {
-		length >>= 1;
-		if (sample16Bit) {
-			int16_t *p16L = (int16_t *)p, *p16R = (int16_t *)p + length;
-			int16_t olds16L = 0, olds16R = 0;
-			for (int32_t i = 0; i < length; i++) {
-				olds16L = p16L[i] += olds16L;
-				olds16R = p16R[i] += olds16R;
-				p16L[i] = (int16_t)((olds16L + olds16R) >> 1);
+		int32_t halfLength = length >> 1;
+		if (keepStereo && pR != NULL) {
+			/* XM2: Keep stereo - decode L and R channels to separate buffers */
+			if (sample16Bit) {
+				int16_t *p16L = (int16_t *)p;
+				int16_t *srcR = (int16_t *)p + halfLength;
+				int16_t *p16R = (int16_t *)pR;
+				int16_t olds16L = 0, olds16R = 0;
+				for (int32_t i = 0; i < halfLength; i++) {
+					olds16L = p16L[i] += olds16L;
+					olds16R = srcR[i] += olds16R;
+					p16R[i] = olds16R;
+				}
+			} else {
+				int8_t *p8L = p;
+				int8_t *srcR = p + halfLength;
+				int8_t *p8R = pR;
+				int8_t olds8L = 0, olds8R = 0;
+				for (int32_t i = 0; i < halfLength; i++) {
+					olds8L = p8L[i] += olds8L;
+					olds8R = srcR[i] += olds8R;
+					p8R[i] = olds8R;
+				}
 			}
 		} else {
-			int8_t *p8L = p, *p8R = p + length;
-			int8_t olds8L = 0, olds8R = 0;
-			for (int32_t i = 0; i < length; i++) {
-				olds8L = p8L[i] += olds8L;
-				olds8R = p8R[i] += olds8R;
-				p8L[i] = (int8_t)((olds8L + olds8R) >> 1);
+			/* Standard XM: Downmix stereo to mono */
+			if (sample16Bit) {
+				int16_t *p16L = (int16_t *)p, *p16R = (int16_t *)p + halfLength;
+				int16_t olds16L = 0, olds16R = 0;
+				for (int32_t i = 0; i < halfLength; i++) {
+					olds16L = p16L[i] += olds16L;
+					olds16R = p16R[i] += olds16R;
+					p16L[i] = (int16_t)((olds16L + olds16R) >> 1);
+				}
+			} else {
+				int8_t *p8L = p, *p8R = p + halfLength;
+				int8_t olds8L = 0, olds8R = 0;
+				for (int32_t i = 0; i < halfLength; i++) {
+					olds8L = p8L[i] += olds8L;
+					olds8R = p8R[i] += olds8R;
+					p8L[i] = (int8_t)((olds8L + olds8R) >> 1);
+				}
 			}
 		}
 	} else {
@@ -329,6 +357,7 @@ static bool load_instr_sample(xm_loader_state_t *state, uint16_t instrNum)
 	mem_reader_t *r = &state->reader;
 	ft2_instance_t *inst = state->inst;
 	ft2_replayer_state_t *rep = &inst->replayer;
+	const bool isXm2 = state->isXm2;
 
 	if (rep->instr[instrNum] == NULL) return true;
 
@@ -352,32 +381,57 @@ static bool load_instr_sample(xm_loader_state_t *state, uint16_t instrNum)
 		bool sample16Bit = !!(s->flags & SAMPLE_16BIT);
 		bool stereoSample = !!(s->flags & SAMPLE_STEREO);
 		bool adpcmSample = !!(s->flags & SAMPLE_ADPCM);
+		bool keepStereo = isXm2 && stereoSample;
 
 		/* Length in file is bytes; convert to samples for 16-bit */
 		if (sample16Bit) { s->length >>= 1; s->loopStart >>= 1; s->loopLength >>= 1; }
 		if (s->length > FT2_MAX_SAMPLE_LEN) s->length = FT2_MAX_SAMPLE_LEN;
 
+		/* For stereo in XM2, length in file includes both channels */
+		int32_t sampleLength = s->length;
+		if (keepStereo)
+			sampleLength >>= 1;  /* Actual sample length is half (L and R stored sequentially) */
+
 		/* Allocate with padding for interpolation taps */
-		const uint32_t allocLen = (s->length + FT2_MAX_TAPS * 2) * (sample16Bit ? 2 : 1);
+		const int32_t bytesPerSample = sample16Bit ? 2 : 1;
+		const uint32_t allocLen = (sampleLength + FT2_MAX_TAPS * 2) * bytesPerSample;
 		s->origDataPtr = (int8_t *)malloc(allocLen + FT2_MAX_TAPS * 2);
 		if (s->origDataPtr == NULL) return false;
-		s->dataPtr = s->origDataPtr + FT2_MAX_TAPS * (sample16Bit ? 2 : 1);
+		s->dataPtr = s->origDataPtr + FT2_MAX_TAPS * bytesPerSample;
 		memset(s->origDataPtr, 0, allocLen + FT2_MAX_TAPS * 2);
+
+		/* Allocate right channel for stereo in XM2 */
+		if (keepStereo) {
+			s->origDataPtrR = (int8_t *)malloc(allocLen + FT2_MAX_TAPS * 2);
+			if (s->origDataPtrR == NULL) {
+				free(s->origDataPtr);
+				s->origDataPtr = s->dataPtr = NULL;
+				return false;
+			}
+			s->dataPtrR = s->origDataPtrR + FT2_MAX_TAPS * bytesPerSample;
+			memset(s->origDataPtrR, 0, allocLen + FT2_MAX_TAPS * 2);
+		} else {
+			s->origDataPtrR = NULL;
+			s->dataPtrR = NULL;
+		}
 
 		if (adpcmSample) {
 			if (!load_adpcm_sample(r, s)) return false;
 		} else {
-			const int32_t sampleLengthInBytes = s->length * (sample16Bit ? 2 : 1);
+			const int32_t sampleLengthInBytes = s->length * bytesPerSample;
 			if (!mem_read(r, s->dataPtr, sampleLengthInBytes)) return false;
 			if (sampleLengthInBytes < lengthInFile)
 				if (!mem_skip(r, lengthInFile - sampleLengthInBytes)) return false;
 
-			delta_to_sample(s->dataPtr, s->length, s->flags);
+			delta_to_sample(s->dataPtr, s->dataPtrR, s->length, s->flags, keepStereo);
 
 			if (stereoSample) { s->length >>= 1; s->loopStart >>= 1; s->loopLength >>= 1; }
 		}
 
-		if (s->flags & SAMPLE_STEREO) s->flags &= ~SAMPLE_STEREO;
+		/* Clear stereo flag for standard XM (downmixed), keep for XM2 */
+		if (!keepStereo && (s->flags & SAMPLE_STEREO))
+			s->flags &= ~SAMPLE_STEREO;
+
 		ft2_sanitize_sample(s);
 		ft2_fix_sample(s);
 	}
@@ -456,8 +510,16 @@ bool ft2_load_xm_from_memory(ft2_instance_t *inst, const uint8_t *data, uint32_t
 	if (!mem_read(&state.reader, &state.header, sizeof(xm_header_t))) return false;
 	xm_header_t *h = &state.header;
 
-	if (memcmp(h->id, "Extended Module: ", 17) != 0) return false;
-	if (h->version < 0x0102 || h->version > 0x0104) return false;
+	/* Detect XM2 format: "Extended Module2:" or version 0x0200+ */
+	state.isXm2 = (memcmp(h->id, "Extended Module2:", 17) == 0) || (h->version >= 0x0200);
+
+	/* Accept both standard XM and XM2 headers */
+	if (memcmp(h->id, "Extended Module: ", 17) != 0 && memcmp(h->id, "Extended Module2:", 17) != 0)
+		return false;
+
+	/* Standard XM: v1.02-v1.04, XM2: v2.00+ */
+	if (!state.isXm2 && (h->version < 0x0102 || h->version > 0x0104))
+		return false;
 	if (h->numOrders > FT2_MAX_ORDERS) return false;
 	if (h->numPatterns > FT2_MAX_PATTERNS) return false;
 	if (h->numChannels == 0) return false;
@@ -536,6 +598,11 @@ bool ft2_load_xm_from_memory(ft2_instance_t *inst, const uint8_t *data, uint32_t
 
 	song->songPos = 0;
 	song->row = 0;
+
+	/* Mark as using XM2 features if loaded from XM2 format */
+	if (state.isXm2)
+		song->usesXm2Features = true;
+
 	inst->uiState.updatePosEdScrollBar = true;
 	inst->uiState.updatePosSections = true;
 	hideAllTopLeftPanelOverlays(inst);
@@ -551,6 +618,7 @@ static int detect_module_format(const uint8_t *data, uint32_t dataSize)
 {
 	if (data == NULL || dataSize < 48) return FORMAT_UNKNOWN;
 	if (dataSize >= 17 && memcmp(data, "Extended Module: ", 17) == 0) return FORMAT_XM;
+	if (dataSize >= 17 && memcmp(data, "Extended Module2:", 17) == 0) return FORMAT_XM;  /* XM2 uses same loader */
 	if (dataSize >= 48 && memcmp(&data[0x2C], "SCRM", 4) == 0 && data[0x1D] == 16) return FORMAT_S3M;
 	if (dataSize >= 1084 && detect_mod_format(data, dataSize)) return FORMAT_MOD;
 	return FORMAT_UNKNOWN;

@@ -26,7 +26,9 @@ typedef enum ft2_dialog_type_t {
 	DIALOG_YES_NO,         /* [Yes] [No] */
 	DIALOG_INPUT,          /* Text input + [OK] [Cancel] */
 	DIALOG_INPUT_PREVIEW,  /* Text input + [OK] [Preview] [Cancel] (sample effects) */
-	DIALOG_ZAP             /* [All] [Song] [Instrs.] [Cancel] */
+	DIALOG_ZAP,            /* [All] [Song] [Instrs.] [Cancel] */
+	DIALOG_STEREO,         /* [Read left] [Read right] [Convert] - stereo sample loading */
+	DIALOG_RADIO           /* Radio button selection + [OK] [Cancel] */
 } ft2_dialog_type_t;
 
 typedef enum ft2_dialog_result_t {
@@ -38,7 +40,16 @@ typedef enum ft2_dialog_result_t {
 	DIALOG_RESULT_NO = 2,      /* Alias for Cancel */
 	DIALOG_RESULT_ZAP_ALL = 10,
 	DIALOG_RESULT_ZAP_SONG = 11,
-	DIALOG_RESULT_ZAP_INSTR = 12
+	DIALOG_RESULT_ZAP_INSTR = 12,
+	/* Radio dialog results */
+	DIALOG_RESULT_RADIO_0 = 20,
+	DIALOG_RESULT_RADIO_1 = 21,
+	DIALOG_RESULT_RADIO_2 = 22,
+	DIALOG_RESULT_RADIO_3 = 23,
+	/* Stereo sample loading dialog results */
+	DIALOG_RESULT_STEREO_LEFT = 30,
+	DIALOG_RESULT_STEREO_RIGHT = 31,
+	DIALOG_RESULT_STEREO_CONVERT = 32
 } ft2_dialog_result_t;
 
 /* Preview callback: invoked when Preview button clicked (dialog stays open) */
@@ -65,6 +76,11 @@ typedef struct ft2_dialog_t
 	char inputBuffer[256];
 	int inputMaxLen;
 	int inputCursorPos;
+
+	/* Radio button dialogs */
+	int radioCount;              /* Number of options (1-4) */
+	int radioSelected;           /* Currently selected option (0-based) */
+	char radioLabels[4][64];     /* Option labels */
 
 	/* Button press states (for visual feedback) */
 	bool button1Pressed, button2Pressed, button3Pressed, button4Pressed;
@@ -110,6 +126,17 @@ void ft2_dialog_show_input_preview_cb(ft2_dialog_t *dlg, const char *headline, c
                                       struct ft2_instance_t *inst,
                                       ft2_dialog_preview_callback_t previewCallback,
                                       ft2_dialog_callback_t onComplete, void *userData);
+
+/* Stereo sample loading dialog (3 buttons: Read left, Read right, Convert) */
+void ft2_dialog_show_stereo_cb(ft2_dialog_t *dlg, const char *headline, const char *text,
+                               struct ft2_instance_t *inst,
+                               ft2_dialog_callback_t onComplete, void *userData);
+
+/* Radio button dialog (1-4 options + OK/Cancel) */
+void ft2_dialog_show_radio_cb(ft2_dialog_t *dlg, const char *headline,
+                              const char **options, int optionCount, int defaultOption,
+                              struct ft2_instance_t *inst,
+                              ft2_dialog_callback_t onComplete, void *userData);
 
 /* Query */
 bool ft2_dialog_is_active(const ft2_dialog_t *dlg);

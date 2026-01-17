@@ -173,10 +173,11 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 	{ 4, 58, 59, RB_GROUP_DISKOP_ITEM, NULL },
 	{ 4, 72, 50, RB_GROUP_DISKOP_ITEM, NULL },
 
-	/* Disk op module save as (MOD and XM only - no WAV export for plugins) */
+	/* Disk op module save as (MOD, XM, XM2 - no WAV export for plugins) */
 	/*x, y,  w,   group,                      callback */
-	{ 4, 100, 40, RB_GROUP_DISKOP_MOD_SAVEAS, NULL },
-	{ 4, 114, 33, RB_GROUP_DISKOP_MOD_SAVEAS, NULL },
+	{ 4, 100, 40, RB_GROUP_DISKOP_MOD_SAVEAS, NULL },  /* RB_DISKOP_MOD_MOD */
+	{ 4, 114, 33, RB_GROUP_DISKOP_MOD_SAVEAS, NULL },  /* RB_DISKOP_MOD_XM */
+	{ 4, 128, 40, RB_GROUP_DISKOP_MOD_SAVEAS, NULL },  /* RB_DISKOP_MOD_XM2 */
 	{ 0,   0,  0, NUM_RB_GROUPS, NULL },  /* RB_DISKOP_MOD_WAV - disabled in plugin */
 
 	/* Disk op instrument save as */
@@ -214,7 +215,16 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 	/* Sample slicer mode */
 	/*x,   y,   w,  group,                callback */
 	{ 137, 366, 60, RB_GROUP_SLICER_MODE, NULL },  /* RB_SLICER_SAMPLES */
-	{ 137, 383, 80, RB_GROUP_SLICER_MODE, NULL }   /* RB_SLICER_INSTRUMENTS */
+	{ 137, 383, 80, RB_GROUP_SLICER_MODE, NULL },  /* RB_SLICER_INSTRUMENTS */
+
+	/* Dialog radio options (for DIALOG_RADIO type)
+	   Dialog is fixed width 300 at x=166, y=210, height=120
+	   Radio buttons at x+16=182, y+24/40/56/72 = 234/250/266/282 */
+	/*x,   y,   w,   group,           callback */
+	{ 182, 234, 260, RB_GROUP_DIALOG, NULL },  /* RB_DIALOG_OPT_0 */
+	{ 182, 250, 260, RB_GROUP_DIALOG, NULL },  /* RB_DIALOG_OPT_1 */
+	{ 182, 266, 260, RB_GROUP_DIALOG, NULL },  /* RB_DIALOG_OPT_2 */
+	{ 182, 282, 260, RB_GROUP_DIALOG, NULL }   /* RB_DIALOG_OPT_3 */
 };
 
 /* ------------------------------------------------------------------------- */

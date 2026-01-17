@@ -21,9 +21,11 @@ struct ft2_instance_t;
 
 /* Sample clipboard state (per-instance) */
 typedef struct smp_clipboard_t {
-	int8_t *data;              /* Clipboard sample data */
+	int8_t *data;              /* Clipboard sample data (left channel for stereo) */
+	int8_t *dataR;             /* Right channel clipboard data (NULL for mono) */
 	int32_t length;            /* Clipboard sample length */
 	bool is16Bit;              /* Clipboard sample bit depth */
+	bool isStereo;             /* Clipboard sample is stereo */
 	bool didCopyWholeSample;   /* True if entire sample was copied */
 	bool hasInfo;              /* True if sampleInfo is valid */
 	ft2_sample_t sampleInfo;   /* Embedded sample metadata for whole-sample copies */
@@ -43,6 +45,15 @@ typedef struct smp_undo_t {
 #define SAMPLE_AREA_WIDTH 632
 #define SAMPLE_AREA_Y_CENTER 250
 #define SAMPLE_AREA_Y_START 174
+
+/* Stereo display: split area into top (L) and bottom (R) halves */
+#define SAMPLE_AREA_L_START   174
+#define SAMPLE_AREA_L_HEIGHT  75
+#define SAMPLE_AREA_L_CENTER  211
+#define SAMPLE_AREA_SEPARATOR 249
+#define SAMPLE_AREA_R_START   251
+#define SAMPLE_AREA_R_HEIGHT  77
+#define SAMPLE_AREA_R_CENTER  289
 
 /* Sample flags */
 #define SAMPLE_16BIT (1 << 4)

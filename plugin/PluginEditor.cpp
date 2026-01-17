@@ -804,8 +804,17 @@ void FT2PluginEditor::loadDiskOpFile(const juce::File& file)
             success = ft2_load_sample(inst, inst->editor.curInstr, inst->editor.curSmp, data, dataSize);
             if (success)
             {
-                ft2_set_sample_name_from_filename(inst, inst->editor.curInstr, inst->editor.curSmp,
-                                                   file.getFileName().toRawUTF8());
+                if (ft2_is_stereo_load_pending(inst))
+                {
+                    /* Stereo sample - dialog is showing, save filename for later */
+                    ft2_set_pending_stereo_filename(inst, file.getFileName().toRawUTF8());
+                }
+                else
+                {
+                    /* Mono sample loaded immediately - set name now */
+                    ft2_set_sample_name_from_filename(inst, inst->editor.curInstr, inst->editor.curSmp,
+                                                       file.getFileName().toRawUTF8());
+                }
                 inst->uiState.updateSampleEditor = true;
                 inst->uiState.needsFullRedraw = true;
             }
@@ -1219,9 +1228,17 @@ void FT2PluginEditor::filesDropped(const juce::StringArray& files, int x, int y)
         
         if (ft2_load_sample(inst, instrNum, sampleNum, data, dataSize))
         {
-            // Set sample name from filename
-            ft2_set_sample_name_from_filename(inst, instrNum, sampleNum,
-                                               file.getFileName().toRawUTF8());
+            if (ft2_is_stereo_load_pending(inst))
+            {
+                // Stereo sample - dialog is showing, save filename for later
+                ft2_set_pending_stereo_filename(inst, file.getFileName().toRawUTF8());
+            }
+            else
+            {
+                // Set sample name from filename
+                ft2_set_sample_name_from_filename(inst, instrNum, sampleNum,
+                                                   file.getFileName().toRawUTF8());
+            }
             
             // Sample loaded successfully - update UI
             inst->uiState.updateSampleEditor = true;

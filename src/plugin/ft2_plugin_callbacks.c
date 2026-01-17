@@ -2615,6 +2615,7 @@ void initCallbacks(ft2_widgets_t *widgets)
 
 	radioButtons[RB_DISKOP_MOD_MOD].callbackFunc = rbDiskOpModSaveMod;
 	radioButtons[RB_DISKOP_MOD_XM].callbackFunc = rbDiskOpModSaveXm;
+	radioButtons[RB_DISKOP_MOD_XM2].callbackFunc = rbDiskOpModSaveXm2;
 	radioButtons[RB_DISKOP_SMP_RAW].callbackFunc = rbDiskOpSmpSaveRaw;
 	radioButtons[RB_DISKOP_SMP_IFF].callbackFunc = rbDiskOpSmpSaveIff;
 	radioButtons[RB_DISKOP_SMP_WAV].callbackFunc = rbDiskOpSmpSaveWav;
