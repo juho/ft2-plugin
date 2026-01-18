@@ -68,6 +68,8 @@ void rbDiskOpModSaveMod(ft2_instance_t *inst);
 void rbDiskOpModSaveXm(ft2_instance_t *inst);
 void rbDiskOpModSaveXm2(ft2_instance_t *inst);
 void rbDiskOpModSaveWav(ft2_instance_t *inst);
+void rbDiskOpInsSaveXi(ft2_instance_t *inst);
+void rbDiskOpInsSaveXi2(ft2_instance_t *inst);
 void rbDiskOpSmpSaveRaw(ft2_instance_t *inst);
 void rbDiskOpSmpSaveIff(ft2_instance_t *inst);
 void rbDiskOpSmpSaveWav(ft2_instance_t *inst);
@@ -92,6 +94,8 @@ typedef enum ft2_file_format {
 	FT2_FORMAT_XI,    /* FastTracker 2 Instrument */
 	FT2_FORMAT_WAV,   /* WAV Audio */
 	FT2_FORMAT_AIFF,  /* AIFF Audio */
+	FT2_FORMAT_IFF,   /* IFF Audio (8SVX/16SV) */
+	FT2_FORMAT_FLAC,  /* FLAC Audio */
 	FT2_FORMAT_RAW,   /* Raw sample data */
 	FT2_FORMAT_PAT    /* Pattern data */
 } ft2_file_format;
@@ -106,13 +110,19 @@ bool ft2_save_module(ft2_instance_t *inst, uint8_t **outData, uint32_t *outSize)
 bool ft2_load_instrument(ft2_instance_t *inst, int16_t instrNum,
                           const uint8_t *data, uint32_t dataSize);
 bool ft2_save_instrument(ft2_instance_t *inst, int16_t instrNum,
-                          uint8_t **outData, uint32_t *outSize);
+                          uint8_t **outData, uint32_t *outSize, uint8_t saveFormat);
 
 /* Pattern load/save (XP format) */
 bool ft2_load_pattern(ft2_instance_t *inst, int16_t pattNum,
                        const uint8_t *data, uint32_t dataSize);
 bool ft2_save_pattern(ft2_instance_t *inst, int16_t pattNum,
                        uint8_t **outData, uint32_t *outSize);
+
+/* Track load/save (XT format) */
+bool ft2_load_track(ft2_instance_t *inst, int16_t pattNum,
+                     const uint8_t *data, uint32_t dataSize);
+bool ft2_save_track(ft2_instance_t *inst, int16_t pattNum,
+                     uint8_t **outData, uint32_t *outSize);
 
 /* Drag-and-drop: confirms if unsaved changes, then sets requestDropLoad */
 void ft2_diskop_request_drop_load(ft2_instance_t *inst, const char *path);

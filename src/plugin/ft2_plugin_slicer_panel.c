@@ -17,8 +17,10 @@
 #include "ft2_plugin_pushbuttons.h"
 #include "ft2_plugin_radiobuttons.h"
 #include "ft2_plugin_sample_ed.h"
+#include "ft2_plugin_sample_utils.h"
 #include "ft2_plugin_smpfx.h"
 #include "ft2_plugin_replayer.h"
+#include "ft2_plugin_xm2_convert.h"
 #include "ft2_plugin_ui.h"
 #include "ft2_plugin_dialog.h"
 #include "../ft2_instance.h"
@@ -43,6 +45,47 @@ static const char *dec3StrTab[101] = {
 	"100"
 };
 
+static void buildSliceSampleName(char *dst, size_t dstSize, const char *srcName, int sliceNumber)
+{
+	if (!dst || dstSize == 0)
+		return;
+
+	char baseName[22 + 1];
+	strncpy(baseName, (srcName != NULL) ? srcName : "", sizeof(baseName) - 1);
+	baseName[sizeof(baseName) - 1] = '\0';
+
+	int nameLen = (int)strlen(baseName);
+	while (nameLen > 0 && baseName[nameLen - 1] == ' ')
+		baseName[--nameLen] = '\0';
+
+	int end = nameLen;
+	while (end > 0 && baseName[end - 1] >= '0' && baseName[end - 1] <= '9')
+		end--;
+	if (end < nameLen && end > 0 && baseName[end - 1] == ' ')
+	{
+		baseName[end - 1] = '\0';
+		nameLen = end - 1;
+		while (nameLen > 0 && baseName[nameLen - 1] == ' ')
+			baseName[--nameLen] = '\0';
+	}
+
+	int digits = 1;
+	int tmp = sliceNumber;
+	while (tmp >= 10)
+	{
+		digits++;
+		tmp /= 10;
+	}
+
+	int maxBaseLen = (int)dstSize - 1 - 1 - digits;
+	if (maxBaseLen < 0)
+		maxBaseLen = 0;
+	if (nameLen > maxBaseLen)
+		nameLen = maxBaseLen;
+
+	snprintf(dst, dstSize, "%.*s %d", nameLen, baseName, sliceNumber);
+}
+
 /* Get current sample from sample editor */
 static ft2_sample_t *getCurrentSample(ft2_instance_t *inst)
 {
@@ -51,7 +94,8 @@ static ft2_sample_t *getCurrentSample(ft2_instance_t *inst)
 	if (!ed) return NULL;
 	if (ed->currInstr <= 0 || ed->currInstr >= 128) return NULL;
 	ft2_instr_t *instr = inst->replayer.instr[ed->currInstr];
-	if (!instr || ed->currSample < 0 || ed->currSample >= 16) return NULL;
+	const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+	if (!instr || ed->currSample < 0 || ed->currSample >= maxSamples) return NULL;
 	return &instr->smp[ed->currSample];
 }
 
@@ -74,6 +118,11 @@ static void initSlicerState(ft2_instance_t *inst)
 	state->draggedMarker = -1;
 	state->selectedSlice = -1;
 	memset(state->slicePos, 0, sizeof(state->slicePos));
+}
+
+static int32_t getMaxSlices(ft2_instance_t *inst)
+{
+	return ft2_get_max_samples_per_instr(inst);
 }
 
 /* Setup slicer panel widgets */
@@ -365,7 +414,8 @@ void slicerDetectTransients(ft2_instance_t *inst)
 
 	ft2_slicer_state_t *state = SLICER_STATE(inst);
 	ft2_sample_t *s = getCurrentSample(inst);
-	if (!s || !s->dataPtr || s->length <= 0)
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format) || s->length <= 0)
 	{
 		for (int i = 0; i <= state->numSlices; i++)
 			state->slicePos[i] = 0;
@@ -373,7 +423,7 @@ void slicerDetectTransients(ft2_instance_t *inst)
 	}
 
 	int32_t smpLen = s->length;
-	bool is16Bit = (s->flags & SAMPLE_16BIT) != 0;
+	const bool isStereo = ft2_sample_is_stereo(s, format);
 
 	/* Parameters for onset detection */
 	int32_t windowSize = 512;
@@ -405,27 +455,14 @@ void slicerDetectTransients(ft2_instance_t *inst)
 		int32_t start = f * hopSize;
 		double sum = 0.0;
 
-		if (is16Bit)
+		int32_t end = start + windowSize;
+		if (end > smpLen) end = smpLen;
+		for (int32_t j = start; j < end; j++)
 		{
-			int16_t *ptr = (int16_t *)s->dataPtr;
-			int32_t end = start + windowSize;
-			if (end > smpLen) end = smpLen;
-			for (int32_t j = start; j < end; j++)
-			{
-				double val = ptr[j] / 32768.0;
-				sum += val * val;
-			}
-		}
-		else
-		{
-			int8_t *ptr = s->dataPtr;
-			int32_t end = start + windowSize;
-			if (end > smpLen) end = smpLen;
-			for (int32_t j = start; j < end; j++)
-			{
-				double val = ptr[j] / 128.0;
-				sum += val * val;
-			}
+			float v = ft2_sample_get_float(s, format, false, j);
+			if (isStereo)
+				v = 0.5f * (v + ft2_sample_get_float(s, format, true, j));
+			sum += (double)v * (double)v;
 		}
 
 		energy[f] = (float)sqrt(sum / windowSize);
@@ -475,7 +512,14 @@ void slicerDetectTransients(ft2_instance_t *inst)
 	state->slicePos[state->numSlices] = smpLen;
 
 	/* Calculate ideal positions for even distribution */
-	int32_t idealPos[17];
+	int32_t *idealPos = (int32_t *)malloc((size_t)(state->numSlices + 1) * sizeof(int32_t));
+	if (!idealPos)
+	{
+		free(energy);
+		if (diff) free(diff);
+		if (candidates) free(candidates);
+		return;
+	}
 	for (int i = 1; i < state->numSlices; i++)
 		idealPos[i] = (i * smpLen) / state->numSlices;
 
@@ -570,11 +614,12 @@ void slicerDetectTransients(ft2_instance_t *inst)
 			state->slicePos[i] = smpLen;
 	}
 
+	free(idealPos);
 	free(energy);
 	if (diff) free(diff);
 	if (candidates) free(candidates);
 
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_overlay_dirty(inst);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -585,7 +630,8 @@ void pbSlicerSlicesUp(ft2_instance_t *inst)
 {
 	if (!inst) return;
 	ft2_slicer_state_t *state = SLICER_STATE(inst);
-	if (state->numSlices < 16)
+	const int32_t maxSlices = getMaxSlices(inst);
+	if (state->numSlices < maxSlices)
 	{
 		state->numSlices++;
 		slicerDetectTransients(inst);
@@ -633,7 +679,9 @@ void pbSlicerRootUp(ft2_instance_t *inst)
 {
 	if (!inst) return;
 	ft2_slicer_state_t *state = SLICER_STATE(inst);
-	if (state->rootNote < 95 - state->numSlices)
+	int32_t maxRoot = 96 - (int32_t)state->numSlices;
+	if (maxRoot < 0) maxRoot = 0;
+	if (state->rootNote < maxRoot)
 		state->rootNote++;
 	inst->uiState.needsFullRedraw = true;
 }
@@ -650,6 +698,10 @@ void pbSlicerRootDown(ft2_instance_t *inst)
 void pbSlicerDetect(ft2_instance_t *inst)
 {
 	if (!inst) return;
+	ft2_slicer_state_t *state = SLICER_STATE(inst);
+	const int32_t maxSlices = getMaxSlices(inst);
+	if (state->numSlices > maxSlices)
+		state->numSlices = (uint8_t)maxSlices;
 	slicerDetectTransients(inst);
 	inst->uiState.needsFullRedraw = true;
 }
@@ -663,17 +715,27 @@ static void slicerProcessSamples(ft2_instance_t *inst)
 	ft2_instr_t *instr = getCurrentInstrument(inst);
 	ft2_sample_t *src = getCurrentSample(inst);
 
-	if (!instr || !src || !src->dataPtr || src->length <= 0)
+	ft2_sample_format_t format = ft2_sample_get_format(src);
+	if (!instr || !src || !ft2_sample_has_data(src, format) || src->length <= 0)
 		return;
 
-	bool is16Bit = (src->flags & SAMPLE_16BIT) != 0;
-	int bytesPerSample = is16Bit ? 2 : 1;
+	const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+	const bool isStereo = ft2_sample_is_stereo(src, format);
+	const uint32_t bytesPerSample = ft2_sample_format_bytes(format);
 	int32_t srcLen = src->length;
 
 	/* Make a copy of the source sample data since we'll overwrite slot 0 */
-	int8_t *srcCopy = (int8_t *)malloc(srcLen * bytesPerSample);
+	uint8_t *srcCopy = (uint8_t *)malloc((size_t)srcLen * bytesPerSample);
 	if (!srcCopy) return;
-	memcpy(srcCopy, src->dataPtr, srcLen * bytesPerSample);
+	memcpy(srcCopy, ft2_sample_get_data_ptr_const(src, format, false), (size_t)srcLen * bytesPerSample);
+
+	uint8_t *srcCopyR = NULL;
+	if (isStereo)
+	{
+		srcCopyR = (uint8_t *)malloc((size_t)srcLen * bytesPerSample);
+		if (!srcCopyR) { free(srcCopy); return; }
+		memcpy(srcCopyR, ft2_sample_get_data_ptr_const(src, format, true), (size_t)srcLen * bytesPerSample);
+	}
 
 	/* Save source sample properties */
 	uint8_t srcVolume = src->volume;
@@ -687,7 +749,7 @@ static void slicerProcessSamples(ft2_instance_t *inst)
 
 	/* Process each slice */
 	int i = 0;
-	while (i < state->numSlices && i < 16)
+	while (i < state->numSlices && i < maxSamples)
 	{
 		int32_t start = state->slicePos[i];
 		int32_t end = state->slicePos[i + 1];
@@ -698,42 +760,48 @@ static void slicerProcessSamples(ft2_instance_t *inst)
 		ft2_sample_t *dst = &instr->smp[i];
 
 		/* Free existing sample data */
-		if (dst->dataPtr)
-		{
-			free(dst->origDataPtr ? dst->origDataPtr : dst->dataPtr);
-			dst->dataPtr = NULL;
-			dst->origDataPtr = NULL;
-		}
+		ft2_sample_free_buffers(dst);
 
 		/* Allocate new sample data with padding for interpolation */
-		int32_t allocLen = len + (FT2_MAX_TAPS * 2);
-		int8_t *newData = (int8_t *)calloc(allocLen, bytesPerSample);
-		if (!newData) { i++; continue; }
+		if (!ft2_sample_alloc_buffers(dst, len, format, isStereo)) { i++; continue; }
 
 		/* Copy slice data from the backup */
-		memcpy(newData, srcCopy + (start * bytesPerSample), len * bytesPerSample);
+		uint8_t *dstL = (uint8_t *)ft2_sample_get_data_ptr(dst, format, false);
+		memcpy(dstL, srcCopy + (start * bytesPerSample), (size_t)len * bytesPerSample);
+		if (isStereo)
+		{
+			uint8_t *dstR = (uint8_t *)ft2_sample_get_data_ptr(dst, format, true);
+			memcpy(dstR, srcCopyR + (start * bytesPerSample), (size_t)len * bytesPerSample);
+		}
 
 		/* Setup sample */
-		dst->dataPtr = newData;
-		dst->origDataPtr = newData;
 		dst->length = len;
 		dst->loopStart = 0;
 		dst->loopLength = 0;
 		dst->flags = srcFlags & ~(LOOP_FWD | LOOP_BIDI);
+		if (format == FT2_SMP_FORMAT_16BIT)
+			dst->flags |= FT2_SAMPLE_16BIT;
+		else
+			dst->flags &= ~FT2_SAMPLE_16BIT;
+		if (isStereo)
+			dst->flags |= FT2_SAMPLE_STEREO;
+		else
+			dst->flags &= ~FT2_SAMPLE_STEREO;
 		dst->volume = srcVolume;
 		dst->panning = srcPanning;
 		dst->finetune = srcFinetune;
-		dst->relativeNote = srcRelNote;
+		int32_t relNote = (int32_t)srcRelNote - i;
+		if (relNote < -48)
+			relNote = -48;
+		else if (relNote > 71)
+			relNote = 71;
+		dst->relativeNote = (int8_t)relNote;
+		dst->format = format;
+		dst->sampleRate = src->sampleRate;
 		dst->isFixed = false;
 
 		/* Copy name based on source sample name with slice number */
-		char baseName[20];
-		strncpy(baseName, src->name, 19);
-		baseName[19] = '\0';
-		/* Trim trailing spaces */
-		int nameLen = (int)strlen(baseName);
-		while (nameLen > 0 && baseName[nameLen - 1] == ' ') baseName[--nameLen] = '\0';
-		snprintf(dst->name, sizeof(dst->name), "%s %d", baseName, i + 1);
+		buildSliceSampleName(dst->name, sizeof(dst->name), src->name, i + 1);
 
 		/* Fix sample for interpolation */
 		ft2_fix_sample(dst);
@@ -747,6 +815,7 @@ static void slicerProcessSamples(ft2_instance_t *inst)
 	}
 
 	free(srcCopy);
+	if (srcCopyR) free(srcCopyR);
 
 	/* Update instrument sample count */
 	if (state->numSlices > instr->numSamples)
@@ -754,8 +823,9 @@ static void slicerProcessSamples(ft2_instance_t *inst)
 
 	/* Mark as modified and update UI */
 	ft2_song_mark_modified(inst);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 	inst->uiState.updateInstrSwitcher = true;
+	ft2_xm2_update_usage(inst);
 
 	/* Exit slicer mode */
 	hideSlicerScreen(inst);
@@ -774,21 +844,31 @@ static void slicerProcessInstruments(ft2_instance_t *inst)
 	ft2_instr_t *srcInstr = inst->replayer.instr[startInstr];
 	ft2_sample_t *src = getCurrentSample(inst);
 
-	if (!srcInstr || !src || !src->dataPtr || src->length <= 0)
+	ft2_sample_format_t format = ft2_sample_get_format(src);
+	if (!srcInstr || !src || !ft2_sample_has_data(src, format) || src->length <= 0)
 		return;
 
 	/* Check if we have enough instrument slots */
 	if (startInstr + state->numSlices > 127)
 		return;
 
-	bool is16Bit = (src->flags & SAMPLE_16BIT) != 0;
-	int bytesPerSample = is16Bit ? 2 : 1;
+	const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+	const bool isStereo = ft2_sample_is_stereo(src, format);
+	const uint32_t bytesPerSample = ft2_sample_format_bytes(format);
 	int32_t srcLen = src->length;
 
 	/* Make a copy of the source sample data */
-	int8_t *srcCopy = (int8_t *)malloc(srcLen * bytesPerSample);
+	uint8_t *srcCopy = (uint8_t *)malloc((size_t)srcLen * bytesPerSample);
 	if (!srcCopy) return;
-	memcpy(srcCopy, src->dataPtr, srcLen * bytesPerSample);
+	memcpy(srcCopy, ft2_sample_get_data_ptr_const(src, format, false), (size_t)srcLen * bytesPerSample);
+
+	uint8_t *srcCopyR = NULL;
+	if (isStereo)
+	{
+		srcCopyR = (uint8_t *)malloc((size_t)srcLen * bytesPerSample);
+		if (!srcCopyR) { free(srcCopy); return; }
+		memcpy(srcCopyR, ft2_sample_get_data_ptr_const(src, format, true), (size_t)srcLen * bytesPerSample);
+	}
 
 	/* Save source sample properties */
 	uint8_t srcVolume = src->volume;
@@ -799,7 +879,7 @@ static void slicerProcessInstruments(ft2_instance_t *inst)
 
 	/* Process each slice into a separate instrument */
 	int i = 0;
-	while (i < state->numSlices && i < 16)
+	while (i < state->numSlices && i < maxSamples)
 	{
 		int32_t start = state->slicePos[i];
 		int32_t end = state->slicePos[i + 1];
@@ -820,15 +900,10 @@ static void slicerProcessInstruments(ft2_instance_t *inst)
 
 		/* Clear existing samples in this instrument */
 		int j = 0;
-		while (j < 16)
+		while (j < maxSamples)
 		{
 			ft2_sample_t *s = &dstInstr->smp[j];
-			if (s->dataPtr)
-			{
-				free(s->origDataPtr ? s->origDataPtr : s->dataPtr);
-				s->dataPtr = NULL;
-				s->origDataPtr = NULL;
-			}
+			ft2_sample_free_buffers(s);
 			memset(s, 0, sizeof(ft2_sample_t));
 			j++;
 		}
@@ -854,6 +929,10 @@ static void slicerProcessInstruments(ft2_instance_t *inst)
 		dstInstr->fadeout = srcInstr->fadeout;
 		memcpy(dstInstr->volEnvPoints, srcInstr->volEnvPoints, sizeof(srcInstr->volEnvPoints));
 		memcpy(dstInstr->panEnvPoints, srcInstr->panEnvPoints, sizeof(srcInstr->panEnvPoints));
+		memcpy(dstInstr->volEnvCurve, srcInstr->volEnvCurve, sizeof(srcInstr->volEnvCurve));
+		memcpy(dstInstr->panEnvCurve, srcInstr->panEnvCurve, sizeof(srcInstr->panEnvCurve));
+		dstInstr->volEnvSpeed = srcInstr->volEnvSpeed;
+		dstInstr->panEnvSpeed = srcInstr->panEnvSpeed;
 		dstInstr->midiProgram = srcInstr->midiProgram;
 		dstInstr->midiBend = srcInstr->midiBend;
 
@@ -866,34 +945,40 @@ static void slicerProcessInstruments(ft2_instance_t *inst)
 		ft2_sample_t *dst = &dstInstr->smp[0];
 
 		/* Allocate new sample data with padding for interpolation */
-		int32_t allocLen = len + (FT2_MAX_TAPS * 2);
-		int8_t *newData = (int8_t *)calloc(allocLen, bytesPerSample);
-		if (!newData) { i++; continue; }
+		if (!ft2_sample_alloc_buffers(dst, len, format, isStereo)) { i++; continue; }
 
 		/* Copy slice data from the backup */
-		memcpy(newData, srcCopy + (start * bytesPerSample), len * bytesPerSample);
+		uint8_t *dstL = (uint8_t *)ft2_sample_get_data_ptr(dst, format, false);
+		memcpy(dstL, srcCopy + (start * bytesPerSample), (size_t)len * bytesPerSample);
+		if (isStereo)
+		{
+			uint8_t *dstR = (uint8_t *)ft2_sample_get_data_ptr(dst, format, true);
+			memcpy(dstR, srcCopyR + (start * bytesPerSample), (size_t)len * bytesPerSample);
+		}
 
 		/* Setup sample */
-		dst->dataPtr = newData;
-		dst->origDataPtr = newData;
 		dst->length = len;
 		dst->loopStart = 0;
 		dst->loopLength = 0;
 		dst->flags = srcFlags & ~(LOOP_FWD | LOOP_BIDI);
+		if (format == FT2_SMP_FORMAT_16BIT)
+			dst->flags |= FT2_SAMPLE_16BIT;
+		else
+			dst->flags &= ~FT2_SAMPLE_16BIT;
+		if (isStereo)
+			dst->flags |= FT2_SAMPLE_STEREO;
+		else
+			dst->flags &= ~FT2_SAMPLE_STEREO;
 		dst->volume = srcVolume;
 		dst->panning = srcPanning;
 		dst->finetune = srcFinetune;
 		dst->relativeNote = srcRelNote;
+		dst->format = format;
+		dst->sampleRate = src->sampleRate;
 		dst->isFixed = false;
 
 		/* Copy name based on source sample name with slice number */
-		char baseName[20];
-		strncpy(baseName, src->name, 19);
-		baseName[19] = '\0';
-		/* Trim trailing spaces */
-		int nameLen = (int)strlen(baseName);
-		while (nameLen > 0 && baseName[nameLen - 1] == ' ') baseName[--nameLen] = '\0';
-		snprintf(dst->name, sizeof(dst->name), "%s %d", baseName, i + 1);
+		buildSliceSampleName(dst->name, sizeof(dst->name), src->name, i + 1);
 
 		/* Fix sample for interpolation */
 		ft2_fix_sample(dst);
@@ -902,11 +987,13 @@ static void slicerProcessInstruments(ft2_instance_t *inst)
 	}
 
 	free(srcCopy);
+	if (srcCopyR) free(srcCopyR);
 
 	/* Mark as modified and update UI */
 	ft2_song_mark_modified(inst);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 	inst->uiState.updateInstrSwitcher = true;
+	ft2_xm2_update_usage(inst);
 
 	/* Exit slicer mode */
 	hideSlicerScreen(inst);
@@ -938,7 +1025,8 @@ void pbSlicerProcess(ft2_instance_t *inst)
 	ft2_sample_editor_t *ed = FT2_SAMPLE_ED(inst);
 
 	ft2_sample_t *src = getCurrentSample(inst);
-	if (!src || !src->dataPtr || src->length <= 0)
+	ft2_sample_format_t format = ft2_sample_get_format(src);
+	if (!src || !ft2_sample_has_data(src, format) || src->length <= 0)
 		return;
 
 	bool instrumentMode = (widgets->radioButtonState[RB_SLICER_INSTRUMENTS] == RADIOBUTTON_CHECKED);
@@ -1035,7 +1123,7 @@ void slicerDragMarker(ft2_instance_t *inst, int32_t screenX)
 	if (newPos > maxPos) newPos = maxPos;
 
 	state->slicePos[state->draggedMarker] = newPos;
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_overlay_dirty(inst);
 }
 
 void slicerEndMarkerDrag(ft2_instance_t *inst)
@@ -1055,7 +1143,8 @@ void slicerPreviewSlice(ft2_instance_t *inst, int32_t screenX)
 
 	ft2_slicer_state_t *state = SLICER_STATE(inst);
 	ft2_sample_t *s = getCurrentSample(inst);
-	if (!s || !s->dataPtr) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format)) return;
 
 	int32_t smpPos = ft2_sample_scr2SmpPos(inst, screenX);
 
@@ -1082,7 +1171,7 @@ void slicerPreviewSlice(ft2_instance_t *inst, int32_t screenX)
 	ed->rangeStart = state->slicePos[sliceIdx];
 	ed->rangeEnd = state->slicePos[sliceIdx + 1];
 	ed->hasRange = true;
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_overlay_dirty(inst);
 
 	/* Play the slice */
 	uint8_t ch = inst->cursor.ch;

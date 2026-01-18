@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include "ft2_plugin_input.h"
 #include "ft2_plugin_pattern_ed.h"
+#include "ft2_plugin_callbacks.h"
 #include "ft2_plugin_ui.h"
 #include "ft2_plugin_nibbles.h"
 #include "ft2_plugin_sample_ed.h"
@@ -545,84 +546,86 @@ static bool handleModifiedKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 	/* --- Ctrl+key screen toggles (not in sample/pattern editor for C/X/V) --- */
 	if (ctrlDown && !altDown && !shiftDown) {
 		switch (keyCode) {
-			case 'a': case 'A': inst->uiState.advEditShown = !inst->uiState.advEditShown; return true;
-			case 'b': case 'B':
-				if (!inst->uiState.aboutScreenShown) {
-					inst->uiState.aboutScreenShown = true;
-					inst->uiState.configScreenShown = false;
-					inst->uiState.helpScreenShown = false;
+			case 'a': case 'A':
+			{
+				ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
+				if (ui != NULL)
+				{
+					const ft2_bmp_t *bmp = ui->bmpLoaded ? &ui->bmp : NULL;
+					showAdvEdit(inst, &ui->video, bmp);
 				}
+				return true;
+			}
+			case 'b': case 'B':
+				pbAbout(inst);
 				return true;
 			case 'c': case 'C':
-				inst->uiState.configScreenShown = !inst->uiState.configScreenShown;
-				if (inst->uiState.configScreenShown) {
-					inst->uiState.aboutScreenShown = false;
-					inst->uiState.helpScreenShown = false;
-				}
+				if (!inst->uiState.configScreenShown)
+					pbConfig(inst);
 				return true;
-			case 'd': case 'D': inst->uiState.diskOpShown = !inst->uiState.diskOpShown; return true;
+			case 'd': case 'D':
+				if (!inst->uiState.diskOpShown)
+					pbDiskOp(inst);
+				return true;
 			case 'e': case 'E':
-				if (!inst->uiState.sampleEditorExtShown) {
-					inst->uiState.aboutScreenShown = false;
-					inst->uiState.configScreenShown = false;
-					inst->uiState.helpScreenShown = false;
-					inst->uiState.sampleEditorExtShown = true;
-				}
+				showSampleEditorExt(inst);
 				return true;
 			case 'h': case 'H':
-				inst->uiState.helpScreenShown = !inst->uiState.helpScreenShown;
-				if (inst->uiState.helpScreenShown) {
-					inst->uiState.aboutScreenShown = false;
-					inst->uiState.configScreenShown = false;
-				}
+				pbHelp(inst);
 				return true;
 			case 'i': case 'I':
-				if (!inst->uiState.instEditorShown) {
-					inst->uiState.patternEditorShown = false;
-					inst->uiState.sampleEditorShown = false;
-					inst->uiState.instEditorShown = true;
-				}
+				showInstEditor(inst);
 				return true;
 			case 'm': case 'M':
-				if (!inst->uiState.instEditorExtShown) {
-					inst->uiState.aboutScreenShown = false;
-					inst->uiState.configScreenShown = false;
-					inst->uiState.helpScreenShown = false;
-					inst->uiState.instEditorExtShown = true;
-				}
+				showInstEditorExt(inst);
 				return true;
 			case 'p': case 'P':
-				if (!inst->uiState.patternEditorShown) {
-					inst->uiState.sampleEditorShown = false;
-					inst->uiState.sampleEditorExtShown = false;
-					inst->uiState.instEditorShown = false;
-					inst->uiState.patternEditorShown = true;
+				if (!inst->uiState.patternEditorShown)
+				{
+					if (inst->uiState.sampleEditorShown) hideSampleEditor(inst);
+					if (inst->uiState.sampleEditorExtShown) hideSampleEditorExt(inst);
+					if (inst->uiState.instEditorShown) hideInstEditor(inst);
+					showPatternEditor(inst);
 				}
 				return true;
 			case 's': case 'S':
-				if (!inst->uiState.sampleEditorShown) {
-					inst->uiState.patternEditorShown = false;
-					inst->uiState.instEditorShown = false;
-					inst->uiState.sampleEditorShown = true;
-				}
+				if (!inst->uiState.sampleEditorShown)
+					showSampleEditor(inst);
 				return true;
-			case 't': case 'T': inst->uiState.transposeShown = !inst->uiState.transposeShown; return true;
+			case 't': case 'T':
+				showTranspose(inst);
+				return true;
 			case 'x': case 'X':
+			{
 				/* Restore default view */
-				inst->uiState.sampleEditorShown = false;
-				inst->uiState.sampleEditorExtShown = false;
-				inst->uiState.instEditorShown = false;
-				inst->uiState.instEditorExtShown = false;
-				inst->uiState.transposeShown = false;
-				inst->uiState.aboutScreenShown = false;
-				inst->uiState.configScreenShown = false;
-				inst->uiState.helpScreenShown = false;
-				inst->uiState.diskOpShown = false;
-				inst->uiState.advEditShown = false;
-				inst->uiState.extendedPatternEditor = false;
-				inst->uiState.patternEditorShown = true;
+				if (inst->uiState.extendedPatternEditor)
+					exitPatternEditorExtended(inst);
+
+				if (inst->uiState.sampleEditorShown) hideSampleEditor(inst);
+				if (inst->uiState.sampleEditorExtShown) hideSampleEditorExt(inst);
+				if (inst->uiState.instEditorShown) hideInstEditor(inst);
+				if (inst->uiState.instEditorExtShown) hideInstEditorExt(inst);
+				if (inst->uiState.transposeShown) hideTranspose(inst);
+				if (inst->uiState.aboutScreenShown) pbExitAbout(inst);
+				if (inst->uiState.configScreenShown) pbConfigExit(inst);
+				if (inst->uiState.helpScreenShown) pbHelpExit(inst);
+				if (inst->uiState.nibblesShown)
+				{
+					ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
+					const ft2_bmp_t *bmp = (ui != NULL && ui->bmpLoaded) ? &ui->bmp : NULL;
+					if (ui != NULL) ft2_nibbles_exit(inst, &ui->video, bmp);
+					else ft2_nibbles_hide(inst);
+				}
+				if (inst->uiState.diskOpShown) pbDiskOp(inst);
+				if (inst->uiState.advEditShown) hideAdvEdit(inst);
+				if (inst->uiState.trimScreenShown) hideTrimScreen(inst);
+
+				showPatternEditor(inst);
 				return true;
-			case 'z': case 'Z': inst->uiState.extendedPatternEditor = !inst->uiState.extendedPatternEditor; return true;
+			}
+			case 'z': case 'Z':
+				togglePatternEditorExtended(inst);
+				return true;
 			default: break;
 		}
 	}

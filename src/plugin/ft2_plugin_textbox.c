@@ -11,7 +11,9 @@
 #include "ft2_plugin_textbox.h"
 #include "ft2_plugin_video.h"
 #include "ft2_plugin_bmp.h"
+#include "ft2_plugin_input.h"
 #include "ft2_plugin_ui.h"
+#include "ft2_plugin_sample_utils.h"
 #include "ft2_instance.h"
 
 /* Access textbox state from instance */
@@ -155,6 +157,33 @@ void ft2_textbox_init(ft2_textbox_state_t *state)
 		t->rightMouseButton = false; t->visible = false; t->textPtr = NULL;
 		allocTextBoxRenderBuf(t);
 	}
+
+	/* Wave panel input textbox */
+	{
+		textBox_t *t = &state->textBoxes[TB_WAVE_INPUT];
+		t->x = 196; t->y = 277; t->w = 280; t->h = 12;
+		t->tx = 2; t->ty = 2; t->maxChars = 6;
+		t->rightMouseButton = false; t->visible = false; t->textPtr = NULL;
+		allocTextBoxRenderBuf(t);
+	}
+
+	/* Filter panel input textbox */
+	{
+		textBox_t *t = &state->textBoxes[TB_FILTER_INPUT];
+		t->x = 156; t->y = 277; t->w = 360; t->h = 12;
+		t->tx = 2; t->ty = 2; t->maxChars = 6;
+		t->rightMouseButton = false; t->visible = false; t->textPtr = NULL;
+		allocTextBoxRenderBuf(t);
+	}
+
+	/* Format panel input textbox */
+	{
+		textBox_t *t = &state->textBoxes[TB_FORMAT_RATE];
+		t->x = 196; t->y = 270; t->w = 90; t->h = 12;
+		t->tx = 2; t->ty = 2; t->maxChars = 7;
+		t->rightMouseButton = false; t->visible = false; t->textPtr = NULL;
+		allocTextBoxRenderBuf(t);
+	}
 }
 
 void ft2_textbox_update_pointers(ft2_instance_t *inst)
@@ -171,10 +200,11 @@ void ft2_textbox_update_pointers(ft2_instance_t *inst)
 
 	/* Sample name pointers */
 	ft2_instr_t *curInstr = (inst->editor.curInstr > 0 && inst->editor.curInstr < 128) ? inst->replayer.instr[inst->editor.curInstr] : NULL;
+	const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
 	for (int i = 0; i < 5; i++)
 	{
 		uint8_t smpIdx = inst->editor.sampleBankOffset + i;
-		state->textBoxes[TB_SAMP1 + i].textPtr = (curInstr && smpIdx < 16) ? curInstr->smp[smpIdx].name : NULL;
+		state->textBoxes[TB_SAMP1 + i].textPtr = (curInstr && smpIdx < maxSamples) ? curInstr->smp[smpIdx].name : NULL;
 	}
 
 	state->textBoxes[TB_SONG_NAME].textPtr = inst->replayer.song.name;
@@ -257,6 +287,7 @@ void ft2_textbox_input_char(ft2_instance_t *inst, char c)
 	int16_t len = getTextLength(t);
 	if (len >= t->maxChars - 1) return;
 	if (c < 32 || c > 126) return;
+	if (t->numbersOnly && (c < '0' || c > '9')) return;
 
 	if (t->cursorPos >= len)
 	{
@@ -289,7 +320,7 @@ void ft2_textbox_handle_key(ft2_instance_t *inst, int32_t keyCode, int32_t modif
 
 	switch (keyCode)
 	{
-		case 8: /* Backspace */
+		case FT2_KEY_BACKSPACE:
 			if (t->cursorPos > 0)
 			{
 				if (t->bufOffset > 0) { t->bufOffset -= charWidth(t->textPtr[t->cursorPos - 1]); if (t->bufOffset < 0) t->bufOffset = 0; }
@@ -299,7 +330,7 @@ void ft2_textbox_handle_key(ft2_instance_t *inst, int32_t keyCode, int32_t modif
 			}
 			break;
 
-		case 127: /* Delete */
+		case FT2_KEY_DELETE:
 			if (t->cursorPos < len)
 			{
 				if (t->bufOffset > 0) { t->bufOffset -= charWidth(t->textPtr[t->cursorPos]); if (t->bufOffset < 0) t->bufOffset = 0; }
@@ -307,19 +338,19 @@ void ft2_textbox_handle_key(ft2_instance_t *inst, int32_t keyCode, int32_t modif
 			}
 			break;
 
-		case 0x1000: /* Left */
+		case FT2_KEY_LEFT:
 			if (t->cursorPos > 0) { t->cursorPos--; if (cursorPosToX(t) < -1) scrollTextBufferLeft(t); }
 			break;
 
-		case 0x1001: /* Right */
+		case FT2_KEY_RIGHT:
 			if (t->cursorPos < len) { t->cursorPos++; if (cursorPosToX(t) >= t->renderW) scrollTextBufferRight(t, (uint16_t)len); }
 			break;
 
-		case 0x1006: /* Home */
+		case FT2_KEY_HOME:
 			t->cursorPos = 0; t->bufOffset = 0;
 			break;
 
-		case 0x1007: /* End */
+		case FT2_KEY_END:
 		{
 			uint32_t textWidth = 0;
 			for (int16_t i = 0; i < len; i++) textWidth += charWidth(t->textPtr[i]);
@@ -372,6 +403,21 @@ bool ft2_textbox_is_editing(ft2_instance_t *inst)
 	return TB_STATE(inst)->textEditActive;
 }
 
+void ft2_textbox_tick_cursor(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+	state->cursorBlinkCounter = state->textEditActive ? state->cursorBlinkCounter + 1 : 0;
+}
+
+bool ft2_textbox_get_blink_state(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return false;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+	if (!state->textEditActive) return false;
+	return (state->cursorBlinkCounter & 0x10) == 0;
+}
+
 int16_t ft2_textbox_get_active(ft2_instance_t *inst)
 {
 	if (!inst || !inst->ui) return -1;
@@ -388,9 +434,10 @@ void ft2_textbox_draw(ft2_video_t *video, const ft2_bmp_t *bmp, uint16_t textBox
 /* ------------------------------------------------------------------------- */
 
 /* Returns background palette based on textbox type and selection state */
-static uint8_t getTextBoxBackgroundPal(uint16_t textBoxID, const ft2_instance_t *inst)
+static uint8_t getTextBoxBackgroundPal(const textBox_t *t, uint16_t textBoxID, const ft2_instance_t *inst)
 {
 	if (!inst) return PAL_BCKGRND;
+	if (t != NULL && t->useBgPalOverride) return t->bgPalOverride;
 
 	if (textBoxID >= TB_INST1 && textBoxID <= TB_INST8)
 	{
@@ -417,7 +464,7 @@ void ft2_textbox_draw_with_cursor(ft2_video_t *video, const ft2_bmp_t *bmp,
 	textBox_t *t = &state->textBoxes[textBoxID];
 	if (!t->visible || !t->renderBuf) return;
 
-	uint8_t bgPal = getTextBoxBackgroundPal(textBoxID, inst);
+	uint8_t bgPal = getTextBoxBackgroundPal(t, textBoxID, inst);
 
 	/* Render text to offscreen buffer */
 	memset(t->renderBuf, PAL_TRANSPR, t->renderBufW * t->renderBufH);
@@ -498,6 +545,31 @@ void ft2_textbox_set_cursor_end(ft2_instance_t *inst, uint16_t textBoxID)
 	if (t->textPtr) t->cursorPos = (int16_t)strlen(t->textPtr);
 }
 
+int16_t ft2_textbox_test_mouse_down_id(ft2_instance_t *inst, uint16_t textBoxID, int32_t x, int32_t y, bool rightButton)
+{
+	if (!inst || !inst->ui || textBoxID >= NUM_TEXTBOXES) return -1;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+	textBox_t *t = &state->textBoxes[textBoxID];
+
+	if (!t->visible || !t->textPtr) return -1;
+	if (x < t->x || x >= t->x + t->w || y < t->y || y >= t->y + t->h) {
+		if (state->textEditActive && state->activeTextBox == (int16_t)textBoxID)
+			ft2_textbox_exit_editing(inst);
+		return -1;
+	}
+
+	if (!rightButton && t->rightMouseButton) return -1;
+
+	if (state->textEditActive && state->activeTextBox != (int16_t)textBoxID)
+		ft2_textbox_exit_editing(inst);
+
+	state->activeTextBox = (int16_t)textBoxID;
+	state->textEditActive = true;
+	t->active = true;
+	moveTextCursorToMouseX(t, x);
+	return (int16_t)textBoxID;
+}
+
 void ft2_textbox_mouse_drag(ft2_instance_t *inst, int32_t x, int32_t y)
 {
 	if (!inst || !inst->ui) return;
@@ -527,6 +599,8 @@ void ft2_textbox_configure_dialog(ft2_instance_t *inst, uint16_t x, uint16_t y, 
 	t->maxChars = maxChars;
 	t->cursorPos = textPtr ? (int16_t)strlen(textPtr) : 0;
 	t->visible = true; t->active = false; t->bufOffset = 0;
+	t->numbersOnly = false;
+	t->useBgPalOverride = false;
 
 	if (needRealloc)
 	{
@@ -561,6 +635,46 @@ void ft2_textbox_deactivate_dialog(ft2_instance_t *inst)
 
 	if (state->activeTextBox == TB_DIALOG_INPUT) { state->activeTextBox = -1; state->textEditActive = false; }
 	t->active = false; t->visible = false; t->textPtr = NULL;
+}
+
+void ft2_textbox_configure(ft2_instance_t *inst, uint16_t textBoxID, char *textPtr, uint16_t maxChars,
+                           bool numbersOnly, bool useBgOverride, uint8_t bgOverride)
+{
+	if (!inst || !inst->ui || textBoxID >= NUM_TEXTBOXES) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+	textBox_t *t = &state->textBoxes[textBoxID];
+	bool needRealloc = (maxChars != t->maxChars);
+
+	t->textPtr = textPtr;
+	t->maxChars = maxChars;
+	t->cursorPos = textPtr ? (int16_t)strlen(textPtr) : 0;
+	t->visible = true; t->active = false; t->bufOffset = 0;
+	t->numbersOnly = numbersOnly;
+	t->useBgPalOverride = useBgOverride;
+	t->bgPalOverride = bgOverride;
+
+	if (needRealloc)
+	{
+		if (t->renderBuf) free(t->renderBuf);
+		allocTextBoxRenderBuf(t);
+	}
+	else
+		t->renderW = t->w - (t->tx * 2);
+}
+
+void ft2_textbox_activate_id(ft2_instance_t *inst, uint16_t textBoxID)
+{
+	if (!inst || !inst->ui || textBoxID >= NUM_TEXTBOXES) return;
+	ft2_textbox_state_t *state = TB_STATE(inst);
+	textBox_t *t = &state->textBoxes[textBoxID];
+	if (!t->textPtr) return;
+
+	if (state->textEditActive && state->activeTextBox >= 0 && state->activeTextBox != (int16_t)textBoxID)
+		ft2_textbox_exit_editing(inst);
+
+	state->activeTextBox = (int16_t)textBoxID;
+	state->textEditActive = true;
+	t->active = true;
 }
 
 /* ------------------------------------------------------------------------- */

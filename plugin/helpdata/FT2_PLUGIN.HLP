@@ -7,7 +7,7 @@
 >- 32 channels.
 >- Full MIDI support
 >- 12-Point Volume- & Panning Envelope.
->- Multisamples, up to 16 samples/instrument.
+>- Multisamples, up to 16 samples/instrument (96 with XM2).
 >- 128 instruments.
 >- "Unlimited" sample length.
 >- 8 octaves.
@@ -47,6 +47,11 @@
 >- XI  @T110Extended instrument.
 >- XP  @T110Extended pattern.
 >- XT  @T110Extended track.
+
+@X040@C001XM2/XI2 plugin extension formats:
+>@X060@C002
+>- XM2 @T110Extended module with plugin extensions.
+>- XI2 @T110Extended instrument with plugin extensions.
 
 END
 ;***************************************************************************
@@ -490,17 +495,12 @@ Ctrl+
 >H @T160Help.
 >I @T160Instrument editor.
 >M @T160Instrument editor extension. (MIDI)
->N @T160Nibbles.
 >P @T160Pattern.
 >R @T160Trim.
 >S @T160Sample editor.
 >T @T160Transpose.
 >X @T160Main screen. (almost alt+X)
 >Z @T160Full screen edit. (Z for siZe?)
->1 @T160Configuration #1.
->2 @T160Configuration #2.
->3 @T160Configuration #3.
->4 @T160Configuration #4.
 
 @X040@C001Instrument select (Numeric keypad):
 >@X060@C002
@@ -521,9 +521,10 @@ Alt+1..0 @T160Write command/volume at cursor.
 
 @X040@C001Scale-fade volume:
 >@X060@C002
-Sh+V @T160Scale-fade volume in track.
->Ctrl+V @T160Scale-fade volume in pattern.
->Alt+V @T160Scale-fade volume in block.
+Alt+V @T160Scale-fade volume in block (Option+V on Mac).
+>Sh+V @T160Scale-fade volume in track.
+>Ctrl+V @T160Scale-fade volume in pattern (Mac only).
+>(On Windows/Linux, use block mode after marking all with Alt+A.)
 
 @X040@C001Transpose:
 >@X060@C002
@@ -620,7 +621,7 @@ A Fasttracker 2 instrument is:
 >   1 Volume envelope
 >   1 Panning envelope
 >   1 Auto-vibrato definition
->   1..16 sample(s)
+>   1..16 sample(s) (up to 96 with XM2)
 >   1 Keyboard split definition
 >   1 MIDI definition
 
@@ -628,6 +629,7 @@ A Fasttracker 2 instrument is:
 >   1 Volume/Panning/Finetune definition
 >   1 Relative note
 >   1 Waveform
+>   (XM2: sample rate, bit depth, stereo flag)
 
 >@X040@C001The volume envelope:
 >@X060@C002
@@ -651,6 +653,24 @@ vibrato off.
 >@X060@C002
 >Same as above, except from that the vibrato is not connected to
 the panning envelope.
+
+>@X040@C001Curved envelopes (XM2 only):
+>@X060@C002
+>When XM2 features are enabled, you can click and drag on an envelope
+line segment (between two points) to adjust its curvature. Dragging
+up creates a logarithmic curve (fast attack/decay), dragging down
+creates an exponential curve (slow attack/decay). Double-click on
+a segment to reset it to linear.
+
+>@X040@C001Envelope speed / Len. (XM2 only):
+>@X060@C002
+>When XM2 features are enabled, a "Len." parameter appears for each
+envelope. This is a speed multiplier (1-16) that scales how long the
+envelope takes to play. A value of 1 is normal speed, 2 makes the
+envelope take twice as long, etc. This allows creating much longer
+envelopes for ambient sounds without adding more envelope points.
+>The envelope display is not affected by this setting; it only
+changes playback timing.
 
 >@X040@C001Editing envelope points:
 >@X060@C002
@@ -755,6 +775,23 @@ Press the X-fade button. Enjoy!
 >If you load a 16-bit sample without header, FT2 assumes that it's
 an 8-bit sample. When pressing the 16-bit button, do not press
 "convert" when the request is made.
+>Note: In XM2 mode, these buttons are replaced by Format and Chns.
+
+>@X040@C001Format (XM2 only):
+>@X060@C002
+>Opens a dialog to change the sample's bit depth (8-bit, 16-bit,
+24-bit, or 32-bit float) and sample rate (8000 to 96000 Hz).
+>The sample data is converted to the new format. Higher bit depths
+preserve more dynamic range, and explicit sample rates mean C-4
+always plays at the stored rate (finetune is not used for rate).
+
+>@X040@C001Chns (XM2 only):
+>@X060@C002
+>Opens a dialog to convert between mono and stereo. You can convert
+a mono sample to stereo (duplicating the channel), or convert a
+stereo sample to mono (mixing L+R, keeping left, or keeping right).
+>Stereo samples display separate L/R waveforms and the panning
+control acts as a balance between the channels.
 
 >@X040@C001Minimize:
 >@X060@C002
@@ -879,16 +916,21 @@ portamentoes.
 
 >@X040@C001Enable XM2 features:
 >@X060@C002
-Enables extended XM2 format features including native stereo sample support.
+Enables extended XM2 format features including native stereo sample support
+and instrument editor extensions (curved envelopes and envelope speed).
 >
 When disabled, loading a stereo sample shows a dialog asking you to choose:
 "Read left" (keep left channel), "Read right" (keep right channel), or
-"Convert" (mix to mono). This matches the original FT2 standalone behavior.
+"Convert" (mix to mono).
 >
 When enabled, you can also choose "Load as stereo" to preserve both channels.
 Stereo samples are displayed with separate L/R waveforms in the sample editor
 and panning acts as a balance control. Modules using stereo samples are saved
 as XM2 format, which is not compatible with standard XM players.
+>
+The instrument editor shows envelope curve shaping and a "Len." parameter for
+volume and panning envelopes. "Len." scales envelope playback speed without
+changing the envelope shape. These features are stored in XM2/XI2.
 >
 The XM2 save format option in Disk Operations is only visible when this
 setting is enabled. If you have a module with stereo samples and disable

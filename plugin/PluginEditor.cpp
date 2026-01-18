@@ -11,6 +11,7 @@ extern "C" {
 #include "ft2_plugin_timemap.h"
 #include "ft2_plugin_gui.h"
 #include "ft2_plugin_sample_ed.h"
+#include "ft2_plugin_sample_utils.h"
 #include "ft2_plugin_instr_ed.h"
 #include "ft2_plugin_pattern_ed.h"
 }
@@ -69,6 +70,21 @@ static const KeyMapping kKeyMap[] = {
     { 0xF739,                               FT2_KEY_NUMLOCK }, /* Mac Clear key */
     { 0, 0 } /* sentinel */
 };
+
+static bool isSampleFileExtension(const juce::String& ext)
+{
+    return ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".iff" || ext == ".flac";
+}
+
+void onDropDialogResult(ft2_instance_t* inst, ft2_dialog_result_t result,
+                        const char* inputText, void* userData)
+{
+    (void)inst;
+    (void)inputText;
+    auto* editor = static_cast<FT2PluginEditor*>(userData);
+    if (editor != nullptr)
+        editor->handleDropDialogResult(result);
+}
 
 /* Lookup FT2 key code from JUCE key code. Returns 0 if not in table. */
 static int juceToFt2Key(int juceCode)
@@ -474,6 +490,129 @@ void FT2PluginEditor::processDiskOpRequests()
     }
 }
 
+void FT2PluginEditor::clearDropQueue()
+{
+    dropQueueFiles.clear();
+    dropQueueIndex = 0;
+    dropQueueStartInstr = 1;
+    dropQueueStartSample = 0;
+    dropQueueSampleCount = 0;
+    dropQueueInstrumentCount = 0;
+    dropQueueMode = DropQueueMode::None;
+    dropQueueActive = false;
+}
+
+void FT2PluginEditor::startDropQueue(DropQueueMode mode)
+{
+    ft2_instance_t* inst = audioProcessor.getInstance();
+    if (inst == nullptr)
+    {
+        clearDropQueue();
+        return;
+    }
+
+    const int count = (mode == DropQueueMode::Samples) ? dropQueueSampleCount : dropQueueInstrumentCount;
+    if (count <= 0)
+    {
+        ft2_ui_t* ui = (ft2_ui_t*)inst->ui;
+        if (ui != nullptr)
+        {
+            const char* msg = (mode == DropQueueMode::Samples) ?
+                "No free sample slots in current instrument." :
+                "No free instrument slots.";
+            ft2_dialog_show_message(&ui->dialog, "System message", msg);
+        }
+        clearDropQueue();
+        return;
+    }
+
+    juce::StringArray limited;
+    const int filesToUse = juce::jmin(count, dropQueueFiles.size());
+    for (int i = 0; i < filesToUse; i++)
+        limited.add(dropQueueFiles[i]);
+
+    dropQueueFiles = limited;
+    dropQueueIndex = 0;
+    dropQueueMode = mode;
+    dropQueueActive = true;
+}
+
+void FT2PluginEditor::handleDropDialogResult(ft2_dialog_result_t result)
+{
+    if (result == DIALOG_RESULT_SAMPLES)
+        startDropQueue(DropQueueMode::Samples);
+    else if (result == DIALOG_RESULT_INSTRUMENTS)
+        startDropQueue(DropQueueMode::Instruments);
+    else
+        clearDropQueue();
+}
+
+void FT2PluginEditor::processDropQueue()
+{
+    if (!dropQueueActive)
+        return;
+
+    ft2_instance_t* inst = audioProcessor.getInstance();
+    if (inst == nullptr)
+    {
+        clearDropQueue();
+        return;
+    }
+
+    if (ft2_is_stereo_load_pending(inst))
+        return;
+
+    if (dropQueueIndex >= dropQueueFiles.size())
+    {
+        clearDropQueue();
+        return;
+    }
+
+    const int queueIndex = dropQueueIndex;
+    dropQueueIndex++;
+
+    juce::File file(dropQueueFiles[queueIndex]);
+    if (!file.existsAsFile())
+        return;
+
+    juce::MemoryBlock fileData;
+    if (!file.loadFileAsData(fileData))
+        return;
+
+    int16_t instrNum = dropQueueStartInstr;
+    int16_t sampleNum = dropQueueStartSample;
+    if (dropQueueMode == DropQueueMode::Samples)
+    {
+        sampleNum = (int16_t)(dropQueueStartSample + queueIndex);
+    }
+    else if (dropQueueMode == DropQueueMode::Instruments)
+    {
+        instrNum = (int16_t)(dropQueueStartInstr + queueIndex);
+        sampleNum = 0;
+    }
+
+    const uint8_t* data = static_cast<const uint8_t*>(fileData.getData());
+    uint32_t dataSize = static_cast<uint32_t>(fileData.getSize());
+
+    if (ft2_load_sample(inst, instrNum, sampleNum, data, dataSize, file.getFileName().toRawUTF8()))
+    {
+        if (ft2_is_stereo_load_pending(inst))
+        {
+            ft2_set_pending_stereo_filename(inst, file.getFileName().toRawUTF8());
+        }
+        else
+        {
+            ft2_set_sample_name_from_filename(inst, instrNum, sampleNum, file.getFileName().toRawUTF8());
+        }
+
+        inst->uiState.updateSampleEditor = true;
+        inst->uiState.updateInstrSwitcher = true;
+    }
+
+    if (dropQueueIndex >= dropQueueFiles.size())
+        clearDropQueue();
+}
+
 void FT2PluginEditor::deleteDiskOpFile()
 {
     ft2_instance_t* instPtr = audioProcessor.getInstance();
@@ -627,14 +766,19 @@ void FT2PluginEditor::saveDiskOpFile()
         case FT2_DISKOP_ITEM_MODULE:
             switch (diskop.saveFormat[FT2_DISKOP_ITEM_MODULE])
             {
+                case FT2_MOD_SAVE_XM2: ext = ".xm2"; break;
                 case FT2_MOD_SAVE_MOD: ext = ".mod"; break;
                 case FT2_MOD_SAVE_XM:  ext = ".xm";  break;
                 case FT2_MOD_SAVE_WAV: ext = ".wav"; break;
             }
             break;
         case FT2_DISKOP_ITEM_INSTR:
-            ext = ".xi";
+        {
+            const bool saveXi2 = (diskop.saveFormat[FT2_DISKOP_ITEM_INSTR] == FT2_INS_SAVE_XI2) &&
+                inst->config.enableXm2Features;
+            ext = saveXi2 ? ".xi2" : ".xi";
             break;
+        }
         case FT2_DISKOP_ITEM_SAMPLE:
             switch (diskop.saveFormat[FT2_DISKOP_ITEM_SAMPLE])
             {
@@ -689,8 +833,13 @@ void FT2PluginEditor::saveDiskOpFile()
             success = ft2_save_module(inst, &data, &dataSize);
             break;
         case FT2_DISKOP_ITEM_INSTR:
-            success = ft2_save_instrument(inst, inst->editor.curInstr, &data, &dataSize);
+        {
+            uint8_t instrFormat = diskop.saveFormat[FT2_DISKOP_ITEM_INSTR];
+            if (!inst->config.enableXm2Features)
+                instrFormat = FT2_INS_SAVE_XI;
+            success = ft2_save_instrument(inst, inst->editor.curInstr, &data, &dataSize, instrFormat);
             break;
+        }
         case FT2_DISKOP_ITEM_SAMPLE:
             success = ft2_save_sample(inst, inst->editor.curInstr, inst->editor.curSmp, &data, &dataSize);
             break;
@@ -698,7 +847,7 @@ void FT2PluginEditor::saveDiskOpFile()
             success = ft2_save_pattern(inst, (int16_t)inst->editor.editPattern, &data, &dataSize);
             break;
         case FT2_DISKOP_ITEM_TRACK:
-            success = ft2_save_pattern(inst, (int16_t)inst->editor.editPattern, &data, &dataSize);
+            success = ft2_save_track(inst, (int16_t)inst->editor.editPattern, &data, &dataSize);
             break;
     }
 
@@ -801,7 +950,8 @@ void FT2PluginEditor::loadDiskOpFile(const juce::File& file)
             break;
 
         case FT2_DISKOP_ITEM_SAMPLE:
-            success = ft2_load_sample(inst, inst->editor.curInstr, inst->editor.curSmp, data, dataSize);
+            success = ft2_load_sample(inst, inst->editor.curInstr, inst->editor.curSmp, data, dataSize,
+                                      file.getFileName().toRawUTF8());
             if (success)
             {
                 if (ft2_is_stereo_load_pending(inst))
@@ -830,8 +980,7 @@ void FT2PluginEditor::loadDiskOpFile(const juce::File& file)
             break;
 
         case FT2_DISKOP_ITEM_TRACK:
-            /* Track loading - same as pattern but different data format */
-            success = ft2_load_pattern(inst, (int16_t)inst->editor.editPattern, data, dataSize);
+            success = ft2_load_track(inst, (int16_t)inst->editor.editPattern, data, dataSize);
             if (success)
             {
                 inst->uiState.updatePatternEditor = true;
@@ -891,14 +1040,14 @@ void FT2PluginEditor::readDiskOpDirectory()
             switch (diskop.itemType)
             {
                 case FT2_DISKOP_ITEM_MODULE:
-                    include = ext == ".xm" || ext == ".mod" || ext == ".s3m" || ext == ".it";
+                    include = ext == ".xm" || ext == ".xm2" || ext == ".mod" || ext == ".s3m";
                     break;
                 case FT2_DISKOP_ITEM_INSTR:
-                    include = ext == ".xi" || ext == ".pat";
+                    include = ext == ".xi";
                     break;
                 case FT2_DISKOP_ITEM_SAMPLE:
                     include = ext == ".wav" || ext == ".aiff" || ext == ".aif" || ext == ".iff" ||
-                              ext == ".raw" || ext == ".snd" || ext == ".au";
+                              ext == ".raw" || ext == ".snd" || ext == ".au" || ext == ".flac";
                     break;
                 case FT2_DISKOP_ITEM_PATTERN:
                     include = ext == ".xp";
@@ -990,6 +1139,12 @@ void FT2PluginEditor::timerCallback()
     // Process disk op requests
     processDiskOpRequests();
 
+    // Process queued multi-sample drops
+    processDropQueue();
+
+    // Poll mouse button transitions (JUCE suppresses secondary click events)
+    handleMouseButtonTransitions(getMouseXYRelative(), juce::ModifierKeys::getCurrentModifiers());
+
     // Poll config action requests (reset/load/save global config)
     audioProcessor.pollConfigRequests();
 
@@ -1057,39 +1212,68 @@ uint8_t FT2PluginEditor::getModifiers(const juce::ModifierKeys& mods)
     return ft2Mods;
 }
 
+void FT2PluginEditor::handleMouseButtonTransitions(juce::Point<int> localPos, const juce::ModifierKeys& mods)
+{
+    if (ui == nullptr)
+        return;
+
+    const bool leftDown = mods.isLeftButtonDown();
+    const bool rightDown = mods.isRightButtonDown();
+    const bool pressedLeft = leftDown && !leftButtonHeld;
+    const bool pressedRight = rightDown && !rightButtonHeld;
+    const bool releasedLeft = !leftDown && leftButtonHeld;
+    const bool releasedRight = !rightDown && rightButtonHeld;
+
+    if (!pressedLeft && !pressedRight && !releasedLeft && !releasedRight)
+        return;
+
+    leftButtonHeld = leftDown;
+    rightButtonHeld = rightDown;
+
+    const int width = getWidth();
+    const int height = getHeight();
+    if (width <= 0 || height <= 0)
+        return;
+
+    const bool inside = (localPos.x >= 0 && localPos.y >= 0 && localPos.x < width && localPos.y < height);
+    if (inside && (pressedLeft || pressedRight))
+    {
+        const auto ft2Pos = screenToFT2(localPos);
+        ft2_ui_mouse_press(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, pressedLeft, pressedRight,
+            getModifiers(mods));
+    }
+
+    if (releasedLeft || releasedRight)
+    {
+        const auto ft2Pos = screenToFT2(localPos);
+        if (releasedLeft)
+            ft2_ui_mouse_release(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, MOUSE_BUTTON_LEFT);
+        if (releasedRight)
+            ft2_ui_mouse_release(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, MOUSE_BUTTON_RIGHT);
+    }
+}
+
 void FT2PluginEditor::mouseDown(const juce::MouseEvent& e)
 {
-    auto ft2Pos = screenToFT2(e.getPosition());
-    bool leftDown = e.mods.isLeftButtonDown();
-    bool rightDown = e.mods.isRightButtonDown();
-    
-    ft2_ui_mouse_press(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, leftDown, rightDown);
+    handleMouseButtonTransitions(e.getPosition(), e.mods);
 }
 
 void FT2PluginEditor::mouseUp(const juce::MouseEvent& e)
 {
-    auto ft2Pos = screenToFT2(e.getPosition());
-    
-    /* In JUCE's mouseUp, e.mods reflects state BEFORE release, so the released button IS still "down" in mods.
-     * This is opposite to mouseDown where the pressed button IS "down" in mods. */
-    int button = 1; // Default to left
-    if (e.mods.isLeftButtonDown()) button = 1;
-    else if (e.mods.isRightButtonDown()) button = 2;
-    else if (e.mods.isMiddleButtonDown()) button = 3;
-    
-    ft2_ui_mouse_release(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, button);
+    const auto currentMods = e.source.getCurrentModifiers();
+    handleMouseButtonTransitions(e.getPosition(), currentMods);
 }
 
 void FT2PluginEditor::mouseDrag(const juce::MouseEvent& e)
 {
     auto ft2Pos = screenToFT2(e.getPosition());
-    ft2_ui_mouse_move(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y);
+    ft2_ui_mouse_move(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, getModifiers(e.mods));
 }
 
 void FT2PluginEditor::mouseMove(const juce::MouseEvent& e)
 {
     auto ft2Pos = screenToFT2(e.getPosition());
-    ft2_ui_mouse_move(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y);
+    ft2_ui_mouse_move(ui, audioProcessor.getInstance(), ft2Pos.x, ft2Pos.y, getModifiers(e.mods));
 }
 
 void FT2PluginEditor::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
@@ -1185,6 +1369,65 @@ void FT2PluginEditor::filesDropped(const juce::StringArray& files, int x, int y)
     ft2_instance_t* inst = audioProcessor.getInstance();
     if (inst == nullptr)
         return;
+
+    juce::StringArray sampleFiles;
+    bool hasNonSample = false;
+    for (const auto& dropFile : files)
+    {
+        juce::String ext = juce::File(dropFile).getFileExtension().toLowerCase();
+        if (isSampleFileExtension(ext))
+            sampleFiles.add(dropFile);
+        else
+        {
+            hasNonSample = true;
+            break;
+        }
+    }
+
+    if (!hasNonSample && sampleFiles.size() > 1)
+    {
+        ft2_ui_t* ui = (ft2_ui_t*)inst->ui;
+        if (ui == nullptr || ft2_dialog_is_active(&ui->dialog))
+            return;
+
+        clearDropQueue();
+        dropQueueFiles = sampleFiles;
+
+        int16_t startInstr = inst->editor.curInstr;
+        if (startInstr < 1) startInstr = 1;
+        if (startInstr > FT2_MAX_INST) startInstr = FT2_MAX_INST;
+
+        const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+        if (maxSamples <= 0)
+            return;
+
+        int startSample = inst->editor.curSmp;
+        if (startSample < 0) startSample = 0;
+        if (startSample >= maxSamples) startSample = maxSamples - 1;
+
+        const int sampleCapacity = maxSamples - startSample;
+        dropQueueStartInstr = startInstr;
+        dropQueueStartSample = startSample;
+        dropQueueSampleCount = juce::jmin(sampleFiles.size(), sampleCapacity);
+        dropQueueInstrumentCount = juce::jmin(sampleFiles.size(), FT2_MAX_INST - startInstr + 1);
+
+        if (dropQueueSampleCount <= 0 && dropQueueInstrumentCount <= 0)
+        {
+            ft2_dialog_show_message(&ui->dialog, "System message", "No free instrument or sample slots.");
+            clearDropQueue();
+            return;
+        }
+
+        char text[256];
+        snprintf(text, sizeof(text),
+                 "Load %d samples as separate instruments from position %d,\n"
+                 "or load %d samples in current instrument from position %d?",
+                 dropQueueInstrumentCount, startInstr,
+                 dropQueueSampleCount, startSample + 1);
+        ft2_dialog_show_drop_cb(&ui->dialog, "System request", text,
+                                inst, onDropDialogResult, this);
+        return;
+    }
     
     // Get the first file and try to load it
     juce::File file(files[0]);
@@ -1226,7 +1469,7 @@ void FT2PluginEditor::filesDropped(const juce::StringArray& files, int x, int y)
         int16_t instrNum = inst->editor.curInstr;
         int16_t sampleNum = inst->editor.curSmp;
         
-        if (ft2_load_sample(inst, instrNum, sampleNum, data, dataSize))
+        if (ft2_load_sample(inst, instrNum, sampleNum, data, dataSize, file.getFileName().toRawUTF8()))
         {
             if (ft2_is_stereo_load_pending(inst))
             {

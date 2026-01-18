@@ -253,6 +253,8 @@ void pbSampCrop(struct ft2_instance_t *inst);        /* Delete outside selection
 void pbSampVolume(struct ft2_instance_t *inst);      /* Volume panel */
 void pbSampEffects(struct ft2_instance_t *inst);     /* Effects panel */
 void pbSampExit(struct ft2_instance_t *inst);
+void pbSampFormat(struct ft2_instance_t *inst);      /* XM2 format/resample */
+void pbSampChns(struct ft2_instance_t *inst);        /* XM2 channels */
 void pbSampClear(struct ft2_instance_t *inst);       /* Delete sample data */
 void pbSampMin(struct ft2_instance_t *inst);         /* Minimize sample to loop */
 

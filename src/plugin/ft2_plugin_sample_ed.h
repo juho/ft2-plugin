@@ -24,7 +24,9 @@ typedef struct smp_clipboard_t {
 	int8_t *data;              /* Clipboard sample data (left channel for stereo) */
 	int8_t *dataR;             /* Right channel clipboard data (NULL for mono) */
 	int32_t length;            /* Clipboard sample length */
-	bool is16Bit;              /* Clipboard sample bit depth */
+	ft2_sample_format_t format;/* Clipboard sample format */
+	uint32_t bytesPerSample;   /* Cached bytes per sample */
+	bool is16Bit;              /* Clipboard sample bit depth (legacy) */
 	bool isStereo;             /* Clipboard sample is stereo */
 	bool didCopyWholeSample;   /* True if entire sample was copied */
 	bool hasInfo;              /* True if sampleInfo is valid */
@@ -36,8 +38,12 @@ typedef struct smp_undo_t {
 	bool filled, keepSampleMark;
 	uint8_t flags, undoInstr, undoSmp;
 	uint32_t length, loopStart, loopLength;
-	int8_t *smpData8;
-	int16_t *smpData16;
+	ft2_sample_format_t format;
+	uint32_t sampleRate;
+	uint32_t bytesPerSample;
+	bool isStereo;
+	uint8_t *smpDataL;
+	uint8_t *smpDataR;
 } smp_undo_t;
 
 /* Display area constants (match original FT2) */
@@ -82,6 +88,12 @@ typedef struct ft2_sample_editor_t
 	int32_t loopStart;        /* Cached loop start for display */
 	int32_t loopLength;       /* Cached loop length for display */
 	int32_t oldSmpPosLine;    /* Last playback position line X */
+	int32_t oldRangeStart;    /* Previous selection start (samples) */
+	int32_t oldRangeEnd;      /* Previous selection end (samples) */
+	bool oldHasRange;         /* Previous selection valid flag */
+	int32_t oldLoopStart;     /* Previous loop start (samples) */
+	int32_t oldLoopLength;    /* Previous loop length (samples) */
+	bool oldLoopActive;       /* Previous loop active flag */
 
 	double dScrPosScaled;     /* scrPos * dPos2ScrMul (floored) */
 	double dPos2ScrMul;       /* Sample->screen multiplier */
@@ -93,6 +105,37 @@ typedef struct ft2_sample_editor_t
 
 	int32_t lastDrawX;        /* Last draw position (draw mode) */
 	int32_t lastDrawY;        /* Last draw value (draw mode) */
+
+	/* Waveform cache */
+	uint32_t *waveformCache;
+	bool waveformCacheValid;
+	bool waveformDirty;
+	bool overlaysDirty;
+	int16_t cacheInstr;
+	int16_t cacheSample;
+	int32_t cacheScrPos;
+	int32_t cacheViewSize;
+	int32_t cacheLength;
+	ft2_sample_format_t cacheFormat;
+	bool cacheStereo;
+	const void *cacheDataPtr;
+	const void *cacheDataPtrR;
+
+	/* Zoomed-out min/max peak cache (24-bit scale) */
+	int32_t *peakMinL;
+	int32_t *peakMaxL;
+	int32_t *peakMinR;
+	int32_t *peakMaxR;
+	int32_t peakBlockSize;
+	int32_t peakBlockCount;
+	bool peakCacheValid;
+	int16_t peakInstr;
+	int16_t peakSample;
+	int32_t peakLength;
+	ft2_sample_format_t peakFormat;
+	bool peakStereo;
+	const void *peakDataPtrL;
+	const void *peakDataPtrR;
 
 	/* Clipboard (per-instance) */
 	smp_clipboard_t clipboard;
@@ -106,6 +149,7 @@ typedef struct ft2_sample_editor_t
 
 /* Initialization */
 void ft2_sample_ed_init(ft2_sample_editor_t *editor, struct ft2_video_t *video);
+void ft2_sample_ed_free(ft2_sample_editor_t *editor);
 void ft2_sample_ed_set_sample(struct ft2_instance_t *inst, int instr, int sample);
 
 /* Drawing */
@@ -114,6 +158,8 @@ void ft2_sample_ed_draw_waveform(struct ft2_instance_t *inst);
 void ft2_sample_ed_draw_range(struct ft2_instance_t *inst);
 void ft2_sample_ed_draw_loop_points(struct ft2_instance_t *inst);
 void ft2_sample_ed_draw_pos_line(struct ft2_instance_t *inst);
+void ft2_sample_ed_mark_waveform_dirty(struct ft2_instance_t *inst);
+void ft2_sample_ed_mark_overlay_dirty(struct ft2_instance_t *inst);
 
 /* View control */
 void ft2_sample_ed_zoom_in(struct ft2_instance_t *inst, int32_t mouseX);
@@ -146,6 +192,7 @@ void ft2_sample_ed_normalize(struct ft2_instance_t *inst);
 void ft2_sample_ed_fade_in(struct ft2_instance_t *inst);
 void ft2_sample_ed_fade_out(struct ft2_instance_t *inst);
 void ft2_sample_ed_crossfade_loop(struct ft2_instance_t *inst);
+bool ft2_sample_ed_resample_format(struct ft2_instance_t *inst, ft2_sample_format_t targetFormat, uint32_t targetRate);
 
 /* Coordinate conversion */
 int32_t ft2_sample_scr2SmpPos(struct ft2_instance_t *inst, int32_t x);

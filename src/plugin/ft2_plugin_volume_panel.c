@@ -6,6 +6,7 @@
 */
 
 #include <string.h>
+#include <math.h>
 #include "ft2_plugin_volume_panel.h"
 #include "ft2_plugin_modal_panels.h"
 #include "ft2_plugin_video.h"
@@ -13,6 +14,7 @@
 #include "ft2_plugin_pushbuttons.h"
 #include "ft2_plugin_scrollbars.h"
 #include "ft2_plugin_sample_ed.h"
+#include "ft2_plugin_sample_utils.h"
 #include "ft2_plugin_replayer.h"
 #include "ft2_plugin_ui.h"
 #include "../ft2_instance.h"
@@ -245,48 +247,14 @@ static void applyVolumeToSample(ft2_instance_t *inst)
 {
 	if (!inst || !inst->ui) return;
 	volume_panel_state_t *state = VOL_STATE(inst);
-	ft2_sample_t *s = getCurrentSample(inst);
-	if (!s || !s->dataPtr || !s->length) return;
-
-	int32_t x1, x2;
-	if (!getRange(inst, s, &x1, &x2)) return;
-	const int32_t len = x2 - x1;
-	if (state->startVol == 100.0 && state->endVol == 100.0) return;
-
-	ft2_stop_sample_voices(inst, s);
-	ft2_unfix_sample(s);
-
-	const bool ramp = (state->startVol != state->endVol);
-	const double dVolDelta = ramp ? ((state->endVol - state->startVol) / 100.0) / len : 0.0;
-	double dVol = state->startVol / 100.0;
-
-	if (s->flags & FT2_SAMPLE_16BIT)
-	{
-		int16_t *ptr = (int16_t *)s->dataPtr + x1;
-		for (int32_t i = 0; i < len; i++, dVol += dVolDelta)
-		{
-			int32_t v = (int32_t)(ptr[i] * dVol);
-			ptr[i] = (v < -32768) ? -32768 : (v > 32767) ? 32767 : (int16_t)v;
-		}
-	}
-	else
-	{
-		int8_t *ptr = s->dataPtr + x1;
-		for (int32_t i = 0; i < len; i++, dVol += dVolDelta)
-		{
-			int32_t v = (int32_t)(ptr[i] * dVol);
-			ptr[i] = (v < -128) ? -128 : (v > 127) ? 127 : (int8_t)v;
-		}
-	}
-
-	ft2_fix_sample(s);
-	inst->uiState.updateSampleEditor = true;
+	sampApplyVolume(inst, state->startVol, state->endVol);
 }
 
 static double calculateMaxScale(ft2_instance_t *inst)
 {
 	ft2_sample_t *s = getCurrentSample(inst);
-	if (!s || !s->dataPtr || !s->length) return 100.0;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format) || !s->length) return 100.0;
 
 	int32_t x1, x2;
 	if (!getRange(inst, s, &x1, &x2)) return 100.0;
@@ -294,31 +262,24 @@ static double calculateMaxScale(ft2_instance_t *inst)
 
 	ft2_unfix_sample(s);
 
-	int32_t maxAmp = 0;
-	if (s->flags & FT2_SAMPLE_16BIT)
+	float peak = 0.0f;
+	const bool isStereo = ft2_sample_is_stereo(s, format);
+	for (uint32_t i = 0; i < len; i++)
 	{
-		const int16_t *ptr = (const int16_t *)s->dataPtr + x1;
-		for (uint32_t i = 0; i < len; i++)
+		float v = fabsf(ft2_sample_get_float(s, format, false, (int32_t)x1 + (int32_t)i));
+		if (v > peak) peak = v;
+		if (isStereo)
 		{
-			int32_t a = (ptr[i] < 0) ? -ptr[i] : ptr[i];
-			if (a > maxAmp) maxAmp = a;
-		}
-	}
-	else
-	{
-		const int8_t *ptr = s->dataPtr + x1;
-		for (uint32_t i = 0; i < len; i++)
-		{
-			int32_t a = (ptr[i] < 0) ? -ptr[i] : ptr[i];
-			if (a > maxAmp) maxAmp = a;
+			v = fabsf(ft2_sample_get_float(s, format, true, (int32_t)x1 + (int32_t)i));
+			if (v > peak) peak = v;
 		}
 	}
 
 	ft2_fix_sample(s);
 
 	double scale = 100.0;
-	if (maxAmp > 0)
-		scale = ((s->flags & FT2_SAMPLE_16BIT) ? 32767.0 : 127.0) / maxAmp * 100.0;
+	if (peak > 0.0f)
+		scale = (1.0 / peak) * 100.0;
 	return (scale < 100.0) ? 100.0 : scale;
 }
 
@@ -330,7 +291,8 @@ void ft2_volume_panel_show(ft2_instance_t *inst)
 {
 	if (!inst || !inst->ui) return;
 	ft2_sample_t *s = getCurrentSample(inst);
-	if (!s || !s->dataPtr || !s->length) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format) || !s->length) return;
 
 	volume_panel_state_t *state = VOL_STATE(inst);
 	state->active = true;

@@ -1,14 +1,53 @@
 # Changelog for Fasttracker II Plugin
 
-## 1.1.0 (Jan 17, 2026)
+## 1.1.0 (Jan 22, 2026)
 
-- Feat: Sample slicer panel in sample editor.
-- Fix: Regression in sinc8 interpolation.
+- Feat: New XM2 format for new features (beta), which only work with this plugin. Plugin can convert between XM and XM2 formats, with destructive changes when going from XM2 to XM. **THIS IS OPT-IN; check the "Enable XM2 features" checkbox in config to enable it.** Songs that use XM2 features use .XM2 file extension when saving. **XM format support is unchanged.**
+- Feat: New XI2 format for new instrument features (beta).
+
+### XM2/XI2-specific updates:
+
+#### Sample editor:
+
+- Feat: Stereo sample loading, processing and editing.
+- Feat: Change sample rate and bit depth (click the "Format" button).
+- Feat: Convert from stereo to mono, and vice versa (click the "Chns" button).
+- Feat: Redone resample panel in S.E.Ext: resamples sample rate and bit depth while keeping format as-is.
+
+#### Instruments:
+
+- Feat: Max. 96 samples (as many keys as there are available on the instrument editor piano) in an instrument.
+- Feat: Internal sample format supports higher sample rates (48k, 96k) and bit depths (24, 32f) without downsampling.
+- Feat: Sample rate and bit depth are now stored with the sample. This means that in XM2 mode, C-4 is always set to the sample rate and finetune is not used for setting it. Relative note is used to set the root note offset from C-4.
+- Feat: Curved exp/log envelopes. Click and drag on an envelope line segment to adjust the curvature. Double click to reset to linear.
+- Feat: Length (Len.) value in envelopes; 1 is normal length, 2 is double length, etc.
+- UI: Add/del buttons have been moved to the same line as the predef buttons to give space for the new Length value.
+
+### General updates:
+
+#### Sample editor:
+
+- Feat: Recycle-style sample slicer. Slices samples into multiple parts (as samples or instruments), with segment and playback preview. XM mode supports up to 16 slices. In XM2 mode, up to 96.
+- Feat: Faster waveform drawing.
+- Fix: Playhead correctly picks up the latest note playing.
+- Fix: Minor scope nits.
+
+#### Instrument editor:
+
+- Feat: Shift-click on an envelope line segment to insert a point.
+- Feat: Alt/cmd-click on an envelope line segment to delete a point.
 - Fix: Loading of WAV samples now correctly infers the sample rate and finetuning.
-- Fix: Keyjazz now correctly plays notes while holding down keys when not editing.
-- Fix: Sample editor playhead correctly picks up the latest note playing.
 - Fix: Finetune value uses decimal, not hex.
-- Fix: Minor scope nits while working in sample editor.
+
+#### Other:
+
+- Feat: New sample loaders (AIFF, IFF, RAW, SND, FLAC).
+- Feat: Plugin is able to handle multiple samples being dropped.
+- Feat: Hooked up hotkeys for Ctrl+I (instrument editor), Ctrl+E (extended sample editor), Ctrl+S (sample editor), Ctrl+P (pattern editor), Ctrl+M (inst.ed.ext), Ctrl+X (reset), Ctrl+Z (extended pattern editor).
+- Fix: Regression in sinc8 interpolation.
+- Fix: Keyjazz now correctly plays notes while holding down keys when not editing.
+- Fix: Textbox caret position is movable with left/right/home/end.
+- Fix: (Un)soloing by left+right click on scope block works correctly.
 
 ## 1.0.57 (Jan 14, 2026)
 

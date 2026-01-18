@@ -19,8 +19,10 @@
 #include "ft2_plugin_pushbuttons.h"
 #include "ft2_plugin_scrollbars.h"
 #include "ft2_plugin_sample_ed.h"
+#include "ft2_plugin_sample_utils.h"
 #include "ft2_plugin_replayer.h"
 #include "ft2_plugin_ui.h"
+#include "ft2_plugin_xm2_convert.h"
 #include "../ft2_instance.h"
 #define ECHO_STATE(inst) (&FT2_UI(inst)->modalPanels.echo)
 
@@ -192,15 +194,19 @@ static void applyEchoToSample(ft2_instance_t *inst)
 	if (state->echoNum < 1) return;
 
 	ft2_sample_t *s = getCurrentSample(inst);
-	if (!s || !s->dataPtr || s->length == 0) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format) || s->length == 0) return;
 
+	const bool isStereo = ft2_sample_is_stereo(s, format);
 	int32_t readLen = s->length;
-	int8_t *readPtr = s->dataPtr;
-	bool sample16Bit = (s->flags & FT2_SAMPLE_16BIT) != 0;
 	int32_t distance = state->echoDistance * 16;
 	double dVolChange = state->echoVolChange / 100.0;
 
-	double dSmp = sample16Bit ? 32768.0 : 128.0;
+	double dSmp = 1.0;
+	if (format == FT2_SMP_FORMAT_24BIT) dSmp = 8388608.0;
+	else if (format == FT2_SMP_FORMAT_16BIT) dSmp = 32768.0;
+	else if (format == FT2_SMP_FORMAT_8BIT) dSmp = 128.0;
+
 	int32_t k = 0;
 	while (k < state->echoNum && dSmp >= 1.0) { dSmp *= dVolChange; k++; }
 	int32_t nEchoes = k + 1;
@@ -213,80 +219,113 @@ static void applyEchoToSample(ft2_instance_t *inst)
 		writeLen = (int32_t)tmp64;
 	}
 
-	int32_t bytesPerSample = sample16Bit ? 2 : 1;
-	int32_t leftPadding = FT2_MAX_TAPS * bytesPerSample;
-	int32_t rightPadding = FT2_MAX_TAPS * bytesPerSample;
-	size_t allocSize = (size_t)(leftPadding + writeLen * bytesPerSample + rightPadding);
+	const uint32_t bytesPerSample = ft2_sample_format_bytes(format);
+	const int32_t padding = (int32_t)(FT2_MAX_TAPS * bytesPerSample);
+	const size_t allocSize = (size_t)padding + ((size_t)writeLen * bytesPerSample) + (size_t)padding;
 
-	int8_t *newOrigPtr = (int8_t *)calloc(allocSize, 1);
-	if (!newOrigPtr) return;
-	int8_t *newData = newOrigPtr + leftPadding;
+	void *newOrigL = calloc(allocSize, 1);
+	if (!newOrigL) return;
+	void *newOrigR = NULL;
+	if (isStereo)
+	{
+		newOrigR = calloc(allocSize, 1);
+		if (!newOrigR) { free(newOrigL); return; }
+	}
+
+	uint8_t *newDataL = (uint8_t *)newOrigL + padding;
+	uint8_t *newDataR = isStereo ? (uint8_t *)newOrigR + padding : NULL;
 
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
-	
-	int32_t writeIdx = 0;
-	
-	if (sample16Bit)
+
+	ft2_sample_t srcSmp = *s;
+	ft2_sample_t dstSmp = *s;
+	dstSmp.origDataPtr = dstSmp.dataPtr = NULL;
+	dstSmp.origDataPtrR = dstSmp.dataPtrR = NULL;
+	dstSmp.origDataPtr24 = dstSmp.dataPtr24 = NULL;
+	dstSmp.origDataPtr24R = dstSmp.dataPtr24R = NULL;
+	dstSmp.origDataPtrF = dstSmp.dataPtrF = NULL;
+	dstSmp.origDataPtrFR = dstSmp.dataPtrFR = NULL;
+
+	if (format == FT2_SMP_FORMAT_24BIT)
 	{
-		const int16_t *readPtr16 = (const int16_t *)readPtr;
-		int16_t *writePtr16 = (int16_t *)newData;
-		
-		while (writeIdx < writeLen)
+		dstSmp.origDataPtr24 = (int32_t *)newOrigL;
+		dstSmp.dataPtr24 = (int32_t *)newDataL;
+		if (isStereo)
 		{
-			double dSmpOut = 0.0, dSmpMul = 1.0;
-			int32_t echoRead = writeIdx, echoCycle = nEchoes;
-			
-			while (echoCycle > 0) {
-				if (echoRead >= 0 && echoRead < readLen) dSmpOut += (double)readPtr16[echoRead] * dSmpMul;
-				dSmpMul *= dVolChange; echoRead -= distance;
-				if (echoRead < 0) break;
-				echoCycle--;
-			}
-			
-			int32_t smp32 = (int32_t)dSmpOut;
-			if (smp32 < -32768) smp32 = -32768;
-			if (smp32 > 32767) smp32 = 32767;
-			writePtr16[writeIdx++] = (int16_t)smp32;
+			dstSmp.origDataPtr24R = (int32_t *)newOrigR;
+			dstSmp.dataPtr24R = (int32_t *)newDataR;
+		}
+	}
+	else if (format == FT2_SMP_FORMAT_FLOAT32)
+	{
+		dstSmp.origDataPtrF = (float *)newOrigL;
+		dstSmp.dataPtrF = (float *)newDataL;
+		if (isStereo)
+		{
+			dstSmp.origDataPtrFR = (float *)newOrigR;
+			dstSmp.dataPtrFR = (float *)newDataR;
 		}
 	}
 	else
 	{
-		int8_t *writePtr8 = newData;
-		
-		while (writeIdx < writeLen)
+		dstSmp.origDataPtr = (int8_t *)newOrigL;
+		dstSmp.dataPtr = (int8_t *)newDataL;
+		if (isStereo)
 		{
+			dstSmp.origDataPtrR = (int8_t *)newOrigR;
+			dstSmp.dataPtrR = (int8_t *)newDataR;
+		}
+	}
+	dstSmp.format = format;
+	if (format == FT2_SMP_FORMAT_16BIT)
+		dstSmp.flags |= FT2_SAMPLE_16BIT;
+	else
+		dstSmp.flags &= ~FT2_SAMPLE_16BIT;
+	if (isStereo)
+		dstSmp.flags |= FT2_SAMPLE_STEREO;
+	else
+		dstSmp.flags &= ~FT2_SAMPLE_STEREO;
+	dstSmp.isFixed = false;
+	dstSmp.fixedPos = 0;
+
+	for (int32_t writeIdx = 0; writeIdx < writeLen; writeIdx++)
+	{
+		for (int ch = 0; ch < (isStereo ? 2 : 1); ch++)
+		{
+			const bool rightChannel = (ch == 1);
 			double dSmpOut = 0.0, dSmpMul = 1.0;
 			int32_t echoRead = writeIdx, echoCycle = nEchoes;
-			
-			while (echoCycle > 0) {
-				if (echoRead >= 0 && echoRead < readLen) dSmpOut += (double)readPtr[echoRead] * dSmpMul;
-				dSmpMul *= dVolChange; echoRead -= distance;
+
+			while (echoCycle > 0)
+			{
+				if (echoRead >= 0 && echoRead < readLen)
+					dSmpOut += (double)ft2_sample_get_float(&srcSmp, format, rightChannel, echoRead) * dSmpMul;
+				dSmpMul *= dVolChange;
+				echoRead -= distance;
 				if (echoRead < 0) break;
 				echoCycle--;
 			}
-			
-			int32_t smp32 = (int32_t)dSmpOut;
-			if (smp32 < -128) smp32 = -128;
-			if (smp32 > 127) smp32 = 127;
-			writePtr8[writeIdx++] = (int8_t)smp32;
+
+			ft2_sample_set_float(&dstSmp, format, rightChannel, writeIdx, (float)dSmpOut);
 		}
 	}
-	
-	if (s->origDataPtr) free(s->origDataPtr);
-	s->origDataPtr = newOrigPtr;
-	s->dataPtr = newData;
+
+	ft2_sample_free_buffers(s);
+	*s = dstSmp;
 	s->length = writeLen;
 
 	ft2_fix_sample(s);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
+	ft2_xm2_update_usage(inst);
 }
 
 void ft2_echo_panel_show(ft2_instance_t *inst)
 {
 	if (!inst || !inst->ui) return;
 	ft2_sample_t *s = getCurrentSample(inst);
-	if (!s || !s->dataPtr || s->length == 0) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format) || s->length == 0) return;
 
 	echo_panel_state_t *state = ECHO_STATE(inst);
 	state->active = true;

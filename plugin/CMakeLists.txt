@@ -14,6 +14,9 @@ project(FT2Plugin VERSION 1.1.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# libFLAC configuration
+option(EXTERNAL_LIBFLAC "use external(system) flac library" OFF)
+
 # Add JUCE
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../JUCE JUCE_Build)
 
@@ -40,6 +43,7 @@ set(FT2_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_scopes.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_pattern_ed.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_sample_ed.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_sample_utils.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_dialog.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_modal_panels.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_volume_panel.c
@@ -48,6 +52,9 @@ set(FT2_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_mix_panel.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_wave_panel.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_filter_panel.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_format_panel.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_xm2_convert.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_channels_panel.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_slicer_panel.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_smpfx.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin/ft2_plugin_instr_ed.c
@@ -102,6 +109,7 @@ target_include_directories(ft2_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/mixer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/gfxdata
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/libflac
 )
 set_target_properties(ft2_core PROPERTIES
     C_STANDARD 11
@@ -111,6 +119,18 @@ set_target_properties(ft2_core PROPERTIES
 target_compile_definitions(ft2_core PRIVATE
     FT2_PLUGIN_VERSION="${PROJECT_VERSION}"
 )
+
+if(EXTERNAL_LIBFLAC)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FLAC REQUIRED IMPORTED_TARGET flac)
+    target_compile_definitions(ft2_core PRIVATE HAS_LIBFLAC EXTERNAL_LIBFLAC)
+    target_link_libraries(ft2_core PRIVATE PkgConfig::FLAC)
+else()
+    file(GLOB flac_SRCS
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/libflac/*.c")
+    target_sources(ft2_core PRIVATE ${flac_SRCS})
+    target_compile_definitions(ft2_core PRIVATE HAS_LIBFLAC)
+endif()
 
 # Link the plugin
 target_sources(FT2Plugin PRIVATE ${PLUGIN_SOURCES})

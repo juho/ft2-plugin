@@ -28,7 +28,9 @@ struct ft2_ui_t;
 #define FT2_MAX_CHANNELS 32
 #define FT2_MAX_PATTERNS 256
 #define FT2_MAX_INST 128
-#define FT2_MAX_SMP_PER_INST 16
+#define FT2_XM_MAX_SMP_PER_INST 16
+#define FT2_XM2_MAX_SMP_PER_INST 96
+#define FT2_MAX_SMP_PER_INST FT2_XM2_MAX_SMP_PER_INST
 #define FT2_MAX_ORDERS 256
 #define FT2_MAX_PATT_LEN 256
 #define FT2_MIN_BPM 32
@@ -60,7 +62,9 @@ enum ft2_diskop_save_format
 	FT2_MOD_SAVE_WAV = 3,
 	FT2_SMP_SAVE_RAW = 0,
 	FT2_SMP_SAVE_IFF = 1,
-	FT2_SMP_SAVE_WAV = 2
+	FT2_SMP_SAVE_WAV = 2,
+	FT2_INS_SAVE_XI = 0,
+	FT2_INS_SAVE_XI2 = 1
 };
 
 /* Playback modes */
@@ -99,6 +103,73 @@ enum ft2_sample_flags
 	FT2_SAMPLE_STEREO = 32
 };
 
+typedef enum ft2_sample_format_t
+{
+	FT2_SMP_FORMAT_8BIT = 0,
+	FT2_SMP_FORMAT_16BIT = 1,
+	FT2_SMP_FORMAT_24BIT = 2,
+	FT2_SMP_FORMAT_FLOAT32 = 3
+} ft2_sample_format_t;
+
+static inline uint32_t ft2_sample_format_bytes(ft2_sample_format_t fmt)
+{
+	switch (fmt)
+	{
+		default:
+		case FT2_SMP_FORMAT_8BIT:    return 1;
+		case FT2_SMP_FORMAT_16BIT:   return 2;
+		case FT2_SMP_FORMAT_24BIT:   return 4; /* Stored as int32_t */
+		case FT2_SMP_FORMAT_FLOAT32: return 4;
+	}
+}
+
+static inline bool ft2_sample_format_is_float(ft2_sample_format_t fmt)
+{
+	return (fmt == FT2_SMP_FORMAT_FLOAT32);
+}
+
+/* XM2 sample extension header (packed) */
+#define FT2_XM2_SMP_EXT_ID 0x53324D58u /* "XM2S" */
+#define FT2_XM2_SMP_EXT_VERSION 1
+#define FT2_XM2_SMP_FLAG_DELTA 0x0001u
+#define FT2_XM2_INS_EXT_ID 0x49324D58u /* "XM2I" */
+#define FT2_XM2_INS_EXT_VERSION 2
+
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
+typedef struct ft2_xm2_smp_ext_t
+{
+	uint32_t id;
+	uint8_t version;
+	uint8_t format;     /* ft2_sample_format_t */
+	uint16_t flags;     /* FT2_XM2_SMP_FLAG_* */
+	uint32_t sampleRate;/* Explicit C4 rate, 0 = use finetune/relativeNote */
+	uint32_t reserved;
+}
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+ft2_xm2_smp_ext_t;
+
+typedef struct ft2_xm2_ins_ext_t
+{
+	uint32_t id;
+	uint8_t version;
+	int8_t volEnvCurve[12];
+	int8_t panEnvCurve[12];
+	uint8_t volEnvSpeed;
+	uint8_t panEnvSpeed;
+	uint8_t reserved;
+}
+#ifdef __GNUC__
+__attribute__((packed))
+#endif
+ft2_xm2_ins_ext_t;
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
+
 /* Envelope flags */
 enum ft2_envelope_flags
 {
@@ -106,6 +177,9 @@ enum ft2_envelope_flags
 	FT2_ENV_SUSTAIN = 2,
 	FT2_ENV_LOOP = 4
 };
+
+#define FT2_ENV_CURVE_MAX 64
+#define FT2_ENV_CURVE_K_MAX 16.0
 
 /**
  * @brief Pattern note structure (packed).
@@ -135,15 +209,29 @@ typedef struct ft2_sample_t
 	int8_t finetune, relativeNote;
 	int8_t *dataPtr, *origDataPtr;
 	int8_t *dataPtrR, *origDataPtrR;  /* Right channel for stereo (NULL for mono) */
+	int32_t *dataPtr24, *origDataPtr24;
+	int32_t *dataPtr24R, *origDataPtr24R;  /* Right channel for stereo (24-bit) */
+	float *dataPtrF, *origDataPtrF;
+	float *dataPtrFR, *origDataPtrFR;      /* Right channel for stereo (float) */
 	uint8_t volume, flags, panning;
 	int32_t length, loopStart, loopLength;
+	ft2_sample_format_t format;
+	uint32_t sampleRate;  /* Explicit C4 rate for XM2 (0 = use finetune/relativeNote) */
 
 	int8_t leftEdgeTapSamples8[FT2_MAX_TAPS * 2];
 	int16_t leftEdgeTapSamples16[FT2_MAX_TAPS * 2];
+	int32_t leftEdgeTapSamples24[FT2_MAX_TAPS * 2];
+	float leftEdgeTapSamplesF[FT2_MAX_TAPS * 2];
 	int8_t leftEdgeTapSamples8R[FT2_MAX_TAPS * 2];   /* Right channel tap samples */
 	int16_t leftEdgeTapSamples16R[FT2_MAX_TAPS * 2]; /* Right channel tap samples */
+	int32_t leftEdgeTapSamples24R[FT2_MAX_TAPS * 2];
+	float leftEdgeTapSamplesFR[FT2_MAX_TAPS * 2];
 	int16_t fixedSmp[FT2_MAX_TAPS * 2];
 	int16_t fixedSmpR[FT2_MAX_TAPS * 2];  /* Right channel fixed samples */
+	int32_t fixedSmp24[FT2_MAX_TAPS * 2];
+	int32_t fixedSmp24R[FT2_MAX_TAPS * 2];
+	float fixedSmpF[FT2_MAX_TAPS * 2];
+	float fixedSmpFR[FT2_MAX_TAPS * 2];
 	int32_t fixedPos;
 } ft2_sample_t;
 
@@ -161,9 +249,13 @@ typedef struct ft2_instr_t
 	uint8_t autoVibType, autoVibSweep, autoVibDepth, autoVibRate;
 	uint16_t fadeout;
 	int16_t volEnvPoints[12][2], panEnvPoints[12][2];
+	int8_t volEnvCurve[12];
+	int8_t panEnvCurve[12];
+	uint8_t volEnvSpeed;
+	uint8_t panEnvSpeed;
 	int16_t midiProgram, midiBend;
 	int16_t numSamples;
-	ft2_sample_t smp[16];
+	ft2_sample_t smp[FT2_MAX_SMP_PER_INST];
 } ft2_instr_t;
 
 /**
@@ -264,8 +356,13 @@ typedef struct ft2_voice_t
 	const int8_t *base8R, *revBase8R;    /* Right channel (stereo) */
 	const int16_t *base16, *revBase16;
 	const int16_t *base16R, *revBase16R; /* Right channel (stereo) */
+	const int32_t *base24, *revBase24;
+	const int32_t *base24R, *revBase24R; /* Right channel (stereo) */
+	const float *baseF, *revBaseF;
+	const float *baseFR, *revBaseFR;     /* Right channel (stereo) */
 	bool active, samplingBackwards, isFadeOutVoice, hasLooped;
 	bool isStereo;  /* Fast check for mixer: true if sample is stereo */
+	ft2_sample_format_t sampleFormat;
 	uint8_t scopeVolume, mixFuncOffset, panning, loopType;
 	int32_t position, sampleEnd, loopStart, loopLength;
 	uint32_t volumeRampLength;
@@ -273,8 +370,12 @@ typedef struct ft2_voice_t
 
 	const int8_t *leftEdgeTaps8;
 	const int16_t *leftEdgeTaps16;
+	const int32_t *leftEdgeTaps24;
+	const float *leftEdgeTapsF;
 	const int8_t *leftEdgeTaps8R;   /* Right channel tap samples */
 	const int16_t *leftEdgeTaps16R; /* Right channel tap samples */
+	const int32_t *leftEdgeTaps24R;
+	const float *leftEdgeTapsFR;
 
 	const float *fSincLUT;
 	float fVolume, fCurrVolumeL, fCurrVolumeR, fVolumeLDelta, fVolumeRDelta;
@@ -507,10 +608,10 @@ typedef struct ft2_nibbles_state_t
  */
 typedef struct ft2_slicer_state_t
 {
-	uint8_t numSlices;           /* Number of slices (2-16) */
+	uint8_t numSlices;           /* Number of slices (2-16 XM, 2-96 XM2) */
 	uint8_t rootNote;            /* Starting note for mapping (0-95, default 48 = C-4) */
 	uint8_t sensitivity;         /* Transient detection sensitivity (0-100) */
-	int32_t slicePos[17];        /* Slice boundaries (numSlices + 1 positions) */
+	int32_t slicePos[97];        /* Slice boundaries (numSlices + 1 positions) */
 	int8_t draggedMarker;        /* Currently dragged marker (-1 = none) */
 	int8_t selectedSlice;        /* Currently selected slice for preview (-1 = none) */
 } ft2_slicer_state_t;
@@ -560,6 +661,7 @@ typedef struct ft2_diskop_state_t
 
 	uint8_t itemType;                /* 0=Module, 1=Instr, 2=Sample, 3=Pattern, 4=Track */
 	uint8_t saveFormat[5];           /* Per-item save format */
+	bool instrSaveFormatExplicit;    /* True after user selects XI/XI2 */
 	bool showAllFiles;
 	bool firstOpen;                  /* True until first directory read */
 
@@ -600,7 +702,8 @@ typedef struct ft2_diskop_state_t
 	bool pendingStereoLoad;
 	int16_t pendingStereoInstrNum;
 	int16_t pendingStereoSampleNum;
-	uint8_t *pendingStereoData;      /* Copy of WAV file data */
+	uint8_t pendingStereoFormat;     /* ft2_file_format for pending load */
+	uint8_t *pendingStereoData;      /* Copy of file data */
 	uint32_t pendingStereoDataSize;
 	char pendingStereoFilename[256];
 } ft2_diskop_state_t;
@@ -622,12 +725,15 @@ typedef struct ft2_scope_sync_entry_t
 	uint16_t period;
 	const int8_t *base8;
 	const int16_t *base16;
+	const int32_t *base24;
+	const float *baseF;
 	int32_t length;
 	int32_t loopStart;
 	int32_t loopLength;
 	int32_t smpStartPos;
 	uint8_t loopType;
-	bool sample16Bit;
+	ft2_sample_format_t sampleFormat;
+	uint32_t sampleRate;
 } ft2_scope_sync_entry_t;
 
 typedef struct ft2_scope_sync_queue_t

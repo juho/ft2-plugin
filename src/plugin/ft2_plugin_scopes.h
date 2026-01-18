@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "../ft2_instance.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,8 +47,10 @@ typedef struct scope_t
 	volatile bool active;           /* Currently playing */
 	const int8_t *base8;            /* 8-bit sample data pointer */
 	const int16_t *base16;          /* 16-bit sample data pointer */
+	const int32_t *base24;          /* 24-bit sample data pointer */
+	const float *baseF;             /* 32-bit float sample data pointer */
 	bool wasCleared;                /* Background needs redraw */
-	bool sample16Bit;               /* True if 16-bit sample */
+	ft2_sample_format_t sampleFormat;
 	bool samplingBackwards;         /* Bidi loop direction */
 	bool hasLooped;                 /* Has passed loop point */
 	uint8_t loopType;               /* LOOP_OFF/LOOP_FORWARD/LOOP_BIDI */
@@ -58,6 +61,9 @@ typedef struct scope_t
 	uint64_t positionFrac;          /* Fractional position */
 	const int8_t *leftEdgeTaps8;    /* Left padding for interpolation */
 	const int16_t *leftEdgeTaps16;
+	const int32_t *leftEdgeTaps24;
+	const float *leftEdgeTapsF;
+	uint32_t sampleRate;
 } scope_t;
 
 /* Scopes manager state */

@@ -12,6 +12,7 @@
 
 #include "ft2_plugin_smpfx.h"
 #include "ft2_plugin_sample_ed.h"
+#include "ft2_plugin_sample_utils.h"
 #include "ft2_plugin_video.h"
 #include "ft2_plugin_ui.h"
 #include "ft2_plugin_pushbuttons.h"
@@ -19,6 +20,7 @@
 #include "ft2_plugin_wave_panel.h"
 #include "ft2_plugin_filter_panel.h"
 #include "ft2_plugin_replayer.h"
+#include "ft2_plugin_xm2_convert.h"
 #include "../ft2_instance.h"
 
 #ifndef M_PI
@@ -47,7 +49,8 @@ static ft2_sample_t *getSmpFxCurSample(ft2_instance_t *inst)
 {
 	if (!inst || inst->editor.curInstr == 0 || inst->editor.curInstr >= 128) return NULL;
 	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
-	if (!instr || inst->editor.curSmp >= 16) return NULL;
+	const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+	if (!instr || inst->editor.curSmp >= maxSamples) return NULL;
 	return &instr->smp[inst->editor.curSmp];
 }
 
@@ -77,8 +80,8 @@ void clearSampleUndo(ft2_instance_t *inst)
 {
 	if (!inst || !inst->ui) return;
 	smp_undo_t *undo = UNDO_STATE(inst);
-	if (undo->smpData8) { free(undo->smpData8); undo->smpData8 = NULL; }
-	if (undo->smpData16) { free(undo->smpData16); undo->smpData16 = NULL; }
+	if (undo->smpDataL) { free(undo->smpDataL); undo->smpDataL = NULL; }
+	if (undo->smpDataR) { free(undo->smpDataR); undo->smpDataR = NULL; }
 	undo->filled = false;
 	undo->keepSampleMark = false;
 }
@@ -90,7 +93,8 @@ void fillSampleUndo(ft2_instance_t *inst, bool keepSampleMark)
 	undo->filled = false;
 
 	ft2_sample_t *s = getSmpFxCurSample(inst);
-	if (!s || s->length == 0 || !s->dataPtr) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || s->length == 0 || !ft2_sample_has_data(s, format)) return;
 
 	ft2_unfix_sample(s);
 	clearSampleUndo(inst);
@@ -102,22 +106,39 @@ void fillSampleUndo(ft2_instance_t *inst, bool keepSampleMark)
 	undo->loopStart = s->loopStart;
 	undo->loopLength = s->loopLength;
 	undo->keepSampleMark = keepSampleMark;
+	undo->format = format;
+	undo->sampleRate = s->sampleRate;
+	undo->bytesPerSample = ft2_sample_format_bytes(format);
+	undo->isStereo = ft2_sample_is_stereo(s, format);
 
-	if (s->flags & SAMPLE_16BIT)
+	size_t dataBytes = (size_t)s->length * undo->bytesPerSample;
+	undo->smpDataL = (uint8_t *)malloc(dataBytes);
+	if (undo->smpDataL == NULL)
 	{
-		undo->smpData16 = (int16_t *)malloc(s->length * sizeof(int16_t));
-		if (undo->smpData16) { memcpy(undo->smpData16, s->dataPtr, s->length * sizeof(int16_t)); undo->filled = true; }
+		ft2_fix_sample(s);
+		return;
 	}
-	else
+	memcpy(undo->smpDataL, ft2_sample_get_data_ptr_const(s, format, false), dataBytes);
+
+	if (undo->isStereo)
 	{
-		undo->smpData8 = (int8_t *)malloc(s->length * sizeof(int8_t));
-		if (undo->smpData8) { memcpy(undo->smpData8, s->dataPtr, s->length * sizeof(int8_t)); undo->filled = true; }
+		undo->smpDataR = (uint8_t *)malloc(dataBytes);
+		if (undo->smpDataR == NULL)
+		{
+			free(undo->smpDataL);
+			undo->smpDataL = NULL;
+			ft2_fix_sample(s);
+			return;
+		}
+		memcpy(undo->smpDataR, ft2_sample_get_data_ptr_const(s, format, true), dataBytes);
 	}
+
+	undo->filled = true;
 
 	ft2_fix_sample(s);
 }
 
-/* Allocates new 16-bit sample, stopping any playing voices */
+/* Allocates new sample using current format/stereo, stopping any playing voices */
 static ft2_sample_t *setupNewSample(ft2_instance_t *inst, uint32_t length)
 {
 	ft2_instr_t *instr = inst->replayer.instr[inst->editor.curInstr];
@@ -131,13 +152,28 @@ static ft2_sample_t *setupNewSample(ft2_instance_t *inst, uint32_t length)
 	ft2_sample_t *s = &instr->smp[inst->editor.curSmp];
 	ft2_stop_sample_voices(inst, s);
 
-	if (!allocateSmpData(inst, inst->editor.curInstr, inst->editor.curSmp, length, true))
+	const ft2_sample_format_t format = ft2_sample_get_format(s);
+	const bool isStereo = ft2_sample_is_stereo(s, format);
+	const uint32_t sampleRate = s->sampleRate;
+
+	if (!ft2_sample_alloc_buffers(s, (int32_t)length, format, isStereo))
 		return NULL;
 
 	s->isFixed = false;
 	s->length = length;
 	s->loopLength = s->loopStart = 0;
-	s->flags = SAMPLE_16BIT;
+	s->flags &= ~(LOOP_FWD | LOOP_BIDI);
+	if (format == FT2_SMP_FORMAT_16BIT)
+		s->flags |= FT2_SAMPLE_16BIT;
+	else
+		s->flags &= ~FT2_SAMPLE_16BIT;
+	if (isStereo)
+		s->flags |= FT2_SAMPLE_STEREO;
+	else
+		s->flags &= ~FT2_SAMPLE_STEREO;
+	s->format = format;
+	s->sampleRate = sampleRate;
+	ft2_xm2_update_usage(inst);
 	return s;
 }
 
@@ -190,19 +226,23 @@ static void generateTriangle(ft2_instance_t *inst)
 
 	const double delta = 4.0 / fx->lastWaveLength;
 	double phase = 0.0;
-	int16_t *ptr16 = (int16_t *)s->dataPtr;
+	const ft2_sample_format_t format = ft2_sample_get_format(s);
+	const bool isStereo = ft2_sample_is_stereo(s, format);
 
 	for (int32_t i = 0; i < newLength; i++)
 	{
 		double t = (phase > 3.0) ? phase - 4.0 : (phase >= 1.0) ? 2.0 - phase : phase;
-		*ptr16++ = (int16_t)(t * INT16_MAX);
+		float v = (float)t;
+		ft2_sample_set_float(s, format, false, i, v);
+		if (isStereo)
+			ft2_sample_set_float(s, format, true, i, v);
 		phase = fmod(phase + delta, 4.0);
 	}
 
 	s->loopLength = newLength;
 	s->flags |= LOOP_FWD;
 	ft2_fix_sample(s);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 static void generateSaw(ft2_instance_t *inst)
@@ -217,14 +257,23 @@ static void generateSaw(ft2_instance_t *inst)
 	if (!s) return;
 
 	uint64_t point64 = 0, delta64 = ((uint64_t)(INT16_MAX * 2) << 32ULL) / fx->lastWaveLength;
-	int16_t *ptr16 = (int16_t *)s->dataPtr;
+	const ft2_sample_format_t format = ft2_sample_get_format(s);
+	const bool isStereo = ft2_sample_is_stereo(s, format);
 
-	for (int32_t i = 0; i < newLength; i++) { *ptr16++ = (int16_t)(point64 >> 32); point64 += delta64; }
+	for (int32_t i = 0; i < newLength; i++)
+	{
+		int16_t s16 = (int16_t)(point64 >> 32);
+		float v = (float)s16 * (1.0f / 32768.0f);
+		ft2_sample_set_float(s, format, false, i, v);
+		if (isStereo)
+			ft2_sample_set_float(s, format, true, i, v);
+		point64 += delta64;
+	}
 
 	s->loopLength = newLength;
 	s->flags |= LOOP_FWD;
 	ft2_fix_sample(s);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 static void generateSine(ft2_instance_t *inst)
@@ -239,13 +288,20 @@ static void generateSine(ft2_instance_t *inst)
 	if (!s) return;
 
 	const double dMul = (2.0 * M_PI) / fx->lastWaveLength;
-	int16_t *ptr16 = (int16_t *)s->dataPtr;
-	for (int32_t i = 0; i < newLength; i++) *ptr16++ = (int16_t)(INT16_MAX * sin(i * dMul));
+	const ft2_sample_format_t format = ft2_sample_get_format(s);
+	const bool isStereo = ft2_sample_is_stereo(s, format);
+	for (int32_t i = 0; i < newLength; i++)
+	{
+		float v = (float)sin(i * dMul);
+		ft2_sample_set_float(s, format, false, i, v);
+		if (isStereo)
+			ft2_sample_set_float(s, format, true, i, v);
+	}
 
 	s->loopLength = newLength;
 	s->flags |= LOOP_FWD;
 	ft2_fix_sample(s);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 static void generateSquare(ft2_instance_t *inst)
@@ -262,18 +318,22 @@ static void generateSquare(ft2_instance_t *inst)
 	const uint32_t halfWaveLength = fx->lastWaveLength / 2;
 	int16_t currValue = INT16_MAX;
 	uint32_t counter = 0;
-	int16_t *ptr16 = (int16_t *)s->dataPtr;
+	const ft2_sample_format_t format = ft2_sample_get_format(s);
+	const bool isStereo = ft2_sample_is_stereo(s, format);
 
 	for (uint32_t i = 0; i < newLength; i++)
 	{
-		*ptr16++ = currValue;
+		float v = (currValue >= 0) ? 1.0f : -1.0f;
+		ft2_sample_set_float(s, format, false, (int32_t)i, v);
+		if (isStereo)
+			ft2_sample_set_float(s, format, true, (int32_t)i, v);
 		if (++counter >= halfWaveLength) { counter = 0; currValue = -currValue; }
 	}
 
 	s->loopLength = newLength;
 	s->flags |= LOOP_FWD;
 	ft2_fix_sample(s);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 void pbSfxTriangle(ft2_instance_t *inst) { ft2_wave_panel_show(inst, WAVE_TYPE_TRIANGLE); }
@@ -296,21 +356,14 @@ void pbSfxResoDown(ft2_instance_t *inst) {
 	if (fx->filterResonance > 0) { fx->filterResonance--; inst->uiState.updateSampleEditor = true; }
 }
 
-/* Calculates sample rate at C-4 from relativeNote and finetune */
-static double getSampleC4Rate(ft2_sample_t *s)
-{
-	double period = (10 * 12 * 16 * 4) - (s->relativeNote * 16 * 4) - (s->finetune / 2);
-	return 8363.0 * pow(2.0, (4608.0 - period) / 768.0);
-}
-
 #define CUTOFF_EPSILON (1E-4)
 
 /* 2nd-order Butterworth lowpass with resonance (Q controlled by resonance param) */
-static void setupResoLpFilter(ft2_sample_t *s, resoFilter_t *f, double cutoff, uint32_t resonance, bool absoluteCutoff)
+static void setupResoLpFilter(ft2_instance_t *inst, ft2_sample_t *s, resoFilter_t *f, double cutoff, uint32_t resonance, bool absoluteCutoff)
 {
 	if (!absoluteCutoff)
 	{
-		const double sampleFreq = getSampleC4Rate(s);
+		const double sampleFreq = ft2_sample_get_playback_rate(inst, s);
 		if (cutoff >= sampleFreq / 2.0) cutoff = (sampleFreq / 2.0) - CUTOFF_EPSILON;
 		cutoff /= sampleFreq;
 	}
@@ -328,11 +381,11 @@ static void setupResoLpFilter(ft2_sample_t *s, resoFilter_t *f, double cutoff, u
 }
 
 /* 2nd-order Butterworth highpass with resonance */
-static void setupResoHpFilter(ft2_sample_t *s, resoFilter_t *f, double cutoff, uint32_t resonance, bool absoluteCutoff)
+static void setupResoHpFilter(ft2_instance_t *inst, ft2_sample_t *s, resoFilter_t *f, double cutoff, uint32_t resonance, bool absoluteCutoff)
 {
 	if (!absoluteCutoff)
 	{
-		const double sampleFreq = getSampleC4Rate(s);
+		const double sampleFreq = ft2_sample_get_playback_rate(inst, s);
 		if (cutoff >= sampleFreq / 2.0) cutoff = (sampleFreq / 2.0) - CUTOFF_EPSILON;
 		cutoff /= sampleFreq;
 	}
@@ -352,82 +405,100 @@ static void setupResoHpFilter(ft2_sample_t *s, resoFilter_t *f, double cutoff, u
 /* Applies biquad filter to sample range; optionally normalizes output */
 static bool applyResoFilter(ft2_instance_t *inst, ft2_sample_t *s, resoFilter_t *f, int32_t x1, int32_t x2)
 {
+	if (!s) return false;
 	if (x1 < 0) x1 = 0;
 	if (x2 > s->length) x2 = s->length;
 	if (x2 <= x1) return true;
 
 	const int32_t len = x2 - x1;
-	ft2_stop_sample_voices(inst, s);
+	const ft2_sample_format_t format = ft2_sample_get_format(s);
+	const bool isStereo = ft2_sample_is_stereo(s, format);
+	const bool doNormalize = (inst && inst->ui) ? SMPFX_STATE(inst)->normalization : false;
 
-	bool doNormalize = (inst && inst->ui) ? SMPFX_STATE(inst)->normalization : false;
+	ft2_stop_sample_voices(inst, s);
+	ft2_unfix_sample(s);
+
 	if (!doNormalize)
 	{
-		ft2_unfix_sample(s);
-		if (s->flags & SAMPLE_16BIT)
+		/* Process in-place per channel */
+		for (int ch = 0; ch < (isStereo ? 2 : 1); ch++)
 		{
-			int16_t *ptr16 = (int16_t *)s->dataPtr + x1;
+			const bool rightChannel = (ch == 1);
+			resoFilter_t fc = *f;
+			fc.inTmp[0] = fc.inTmp[1] = fc.outTmp[0] = fc.outTmp[1] = 0.0;
 			for (int32_t i = 0; i < len; i++)
 			{
-				double out = f->a1 * ptr16[i] + f->a2 * f->inTmp[0] + f->a3 * f->inTmp[1] - f->b1 * f->outTmp[0] - f->b2 * f->outTmp[1];
-				f->inTmp[1] = f->inTmp[0]; f->inTmp[0] = ptr16[i];
-				f->outTmp[1] = f->outTmp[0]; f->outTmp[0] = out;
-				ptr16[i] = (out < INT16_MIN) ? INT16_MIN : (out > INT16_MAX) ? INT16_MAX : (int16_t)out;
+				double in = ft2_sample_get_float(s, format, rightChannel, x1 + i);
+				double out = fc.a1 * in + fc.a2 * fc.inTmp[0] + fc.a3 * fc.inTmp[1] - fc.b1 * fc.outTmp[0] - fc.b2 * fc.outTmp[1];
+				fc.inTmp[1] = fc.inTmp[0]; fc.inTmp[0] = in;
+				fc.outTmp[1] = fc.outTmp[0]; fc.outTmp[0] = out;
+				ft2_sample_set_float(s, format, rightChannel, x1 + i, (float)out);
 			}
 		}
-		else
-		{
-			int8_t *ptr8 = (int8_t *)s->dataPtr + x1;
-			for (int32_t i = 0; i < len; i++)
-			{
-				double out = f->a1 * ptr8[i] + f->a2 * f->inTmp[0] + f->a3 * f->inTmp[1] - f->b1 * f->outTmp[0] - f->b2 * f->outTmp[1];
-				f->inTmp[1] = f->inTmp[0]; f->inTmp[0] = ptr8[i];
-				f->outTmp[1] = f->outTmp[0]; f->outTmp[0] = out;
-				ptr8[i] = (out < INT8_MIN) ? INT8_MIN : (out > INT8_MAX) ? INT8_MAX : (int8_t)out;
-			}
-		}
-		ft2_fix_sample(s);
 	}
 	else
 	{
-		double *dSmp = (double *)malloc(len * sizeof(double));
-		if (!dSmp) return false;
-
-		ft2_unfix_sample(s);
-
-		if (s->flags & SAMPLE_16BIT)
-			for (int32_t i = 0; i < len; i++) dSmp[i] = (double)((int16_t *)s->dataPtr + x1)[i];
-		else
-			for (int32_t i = 0; i < len; i++) dSmp[i] = (double)((int8_t *)s->dataPtr + x1)[i];
+		/* Normalize across channels using temporary buffers */
+		float *tmpL = (float *)malloc((size_t)len * sizeof(float));
+		float *tmpR = isStereo ? (float *)malloc((size_t)len * sizeof(float)) : NULL;
+		if (!tmpL || (isStereo && !tmpR))
+		{
+			if (tmpL) free(tmpL);
+			if (tmpR) free(tmpR);
+			ft2_fix_sample(s);
+			return false;
+		}
 
 		double peak = 0.0;
+		{
+			resoFilter_t fc = *f;
+			fc.inTmp[0] = fc.inTmp[1] = fc.outTmp[0] = fc.outTmp[1] = 0.0;
+			for (int32_t i = 0; i < len; i++)
+			{
+				double in = ft2_sample_get_float(s, format, false, x1 + i);
+				double out = fc.a1 * in + fc.a2 * fc.inTmp[0] + fc.a3 * fc.inTmp[1] - fc.b1 * fc.outTmp[0] - fc.b2 * fc.outTmp[1];
+				fc.inTmp[1] = fc.inTmp[0]; fc.inTmp[0] = in;
+				fc.outTmp[1] = fc.outTmp[0]; fc.outTmp[0] = out;
+				tmpL[i] = (float)out;
+				if (fabs(out) > peak) peak = fabs(out);
+			}
+		}
+
+		if (isStereo)
+		{
+			resoFilter_t fc = *f;
+			fc.inTmp[0] = fc.inTmp[1] = fc.outTmp[0] = fc.outTmp[1] = 0.0;
+			for (int32_t i = 0; i < len; i++)
+			{
+				double in = ft2_sample_get_float(s, format, true, x1 + i);
+				double out = fc.a1 * in + fc.a2 * fc.inTmp[0] + fc.a3 * fc.inTmp[1] - fc.b1 * fc.outTmp[0] - fc.b2 * fc.outTmp[1];
+				fc.inTmp[1] = fc.inTmp[0]; fc.inTmp[0] = in;
+				fc.outTmp[1] = fc.outTmp[0]; fc.outTmp[0] = out;
+				tmpR[i] = (float)out;
+				if (fabs(out) > peak) peak = fabs(out);
+			}
+		}
+
+		float scale = (peak > 0.0) ? (float)(1.0 / peak) : 1.0f;
 		for (int32_t i = 0; i < len; i++)
-		{
-			double out = f->a1 * dSmp[i] + f->a2 * f->inTmp[0] + f->a3 * f->inTmp[1] - f->b1 * f->outTmp[0] - f->b2 * f->outTmp[1];
-			f->inTmp[1] = f->inTmp[0]; f->inTmp[0] = dSmp[i];
-			f->outTmp[1] = f->outTmp[0]; f->outTmp[0] = out;
-			dSmp[i] = out;
-			if (fabs(out) > peak) peak = fabs(out);
-		}
+			ft2_sample_set_float(s, format, false, x1 + i, tmpL[i] * scale);
+		if (isStereo)
+			for (int32_t i = 0; i < len; i++)
+				ft2_sample_set_float(s, format, true, x1 + i, tmpR[i] * scale);
 
-		if (peak > 0.0)
-		{
-			double scale = (s->flags & SAMPLE_16BIT) ? INT16_MAX / peak : INT8_MAX / peak;
-			if (s->flags & SAMPLE_16BIT)
-				for (int32_t i = 0; i < len; i++) ((int16_t *)s->dataPtr + x1)[i] = (int16_t)(dSmp[i] * scale);
-			else
-				for (int32_t i = 0; i < len; i++) ((int8_t *)s->dataPtr + x1)[i] = (int8_t)(dSmp[i] * scale);
-		}
-
-		free(dSmp);
-		ft2_fix_sample(s);
+		free(tmpL);
+		if (tmpR) free(tmpR);
 	}
+
+	ft2_fix_sample(s);
 	return true;
 }
 
 static void applyLowPassFilter(ft2_instance_t *inst, int32_t cutoff)
 {
 	ft2_sample_t *s = getSmpFxCurSample(inst);
-	if (!s || !s->dataPtr || !inst->ui) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format) || !inst->ui) return;
 
 	smpfx_state_t *fx = SMPFX_STATE(inst);
 	fx->lastFilterType = FILTER_LOWPASS;
@@ -437,16 +508,17 @@ static void applyLowPassFilter(ft2_instance_t *inst, int32_t cutoff)
 	getSmpFxRange(inst, s, &x1, &x2);
 
 	resoFilter_t f;
-	setupResoLpFilter(s, &f, cutoff, fx->filterResonance, false);
+	setupResoLpFilter(inst, s, &f, cutoff, fx->filterResonance, false);
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
 	applyResoFilter(inst, s, &f, x1, x2);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 static void applyHighPassFilter(ft2_instance_t *inst, int32_t cutoff)
 {
 	ft2_sample_t *s = getSmpFxCurSample(inst);
-	if (!s || !s->dataPtr || !inst->ui) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format) || !inst->ui) return;
 
 	smpfx_state_t *fx = SMPFX_STATE(inst);
 	fx->lastFilterType = FILTER_HIGHPASS;
@@ -456,10 +528,10 @@ static void applyHighPassFilter(ft2_instance_t *inst, int32_t cutoff)
 	getSmpFxRange(inst, s, &x1, &x2);
 
 	resoFilter_t f;
-	setupResoHpFilter(s, &f, cutoff, fx->filterResonance, false);
+	setupResoHpFilter(inst, s, &f, cutoff, fx->filterResonance, false);
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
 	applyResoFilter(inst, s, &f, x1, x2);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 void pbSfxLowPass(ft2_instance_t *inst) { ft2_filter_panel_show(inst, FILTER_TYPE_LOWPASS); }
@@ -478,146 +550,166 @@ void smpfx_apply_filter(ft2_instance_t *inst, int filterType, int32_t cutoff)
 void pbSfxSubBass(ft2_instance_t *inst)
 {
 	ft2_sample_t *s = getSmpFxCurSample(inst);
-	if (!s || !s->dataPtr) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format)) return;
 
 	int32_t x1, x2;
 	getSmpFxRange(inst, s, &x1, &x2);
 
 	resoFilter_t f;
-	setupResoHpFilter(s, &f, 0.001, 0, true);
+	setupResoHpFilter(inst, s, &f, 0.001, 0, true);
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
 	applyResoFilter(inst, s, &f, x1, x2);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 /* Adds bass by mixing in LP-filtered signal at 25% */
 void pbSfxAddBass(ft2_instance_t *inst)
 {
 	ft2_sample_t *s = getSmpFxCurSample(inst);
-	if (!s || !s->dataPtr) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format)) return;
 
 	int32_t x1, x2;
 	getSmpFxRange(inst, s, &x1, &x2);
 	const int32_t len = x2 - x1;
 	if (len <= 0) return;
 
-	double *dSmp = (double *)malloc(len * sizeof(double));
-	if (!dSmp) return;
+	const bool isStereo = ft2_sample_is_stereo(s, format);
+	float *origL = (float *)malloc((size_t)len * sizeof(float));
+	float *filtL = (float *)malloc((size_t)len * sizeof(float));
+	float *origR = isStereo ? (float *)malloc((size_t)len * sizeof(float)) : NULL;
+	float *filtR = isStereo ? (float *)malloc((size_t)len * sizeof(float)) : NULL;
+	if (!origL || !filtL || (isStereo && (!origR || !filtR)))
+	{
+		free(origL); free(filtL); free(origR); free(filtR);
+		return;
+	}
 
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
 
-	if (s->flags & SAMPLE_16BIT)
-		for (int32_t i = 0; i < len; i++) dSmp[i] = ((int16_t *)s->dataPtr + x1)[i];
-	else
-		for (int32_t i = 0; i < len; i++) dSmp[i] = ((int8_t *)s->dataPtr + x1)[i];
+	for (int32_t i = 0; i < len; i++)
+		origL[i] = ft2_sample_get_float(s, format, false, x1 + i);
 
 	resoFilter_t f;
-	setupResoLpFilter(s, &f, 0.015, 0, true);
+	setupResoLpFilter(inst, s, &f, 0.015, 0, true);
 	for (int32_t i = 0; i < len; i++)
 	{
-		double out = f.a1 * dSmp[i] + f.a2 * f.inTmp[0] + f.a3 * f.inTmp[1] - f.b1 * f.outTmp[0] - f.b2 * f.outTmp[1];
-		f.inTmp[1] = f.inTmp[0]; f.inTmp[0] = dSmp[i];
+		double out = f.a1 * origL[i] + f.a2 * f.inTmp[0] + f.a3 * f.inTmp[1] - f.b1 * f.outTmp[0] - f.b2 * f.outTmp[1];
+		f.inTmp[1] = f.inTmp[0]; f.inTmp[0] = origL[i];
 		f.outTmp[1] = f.outTmp[0]; f.outTmp[0] = out;
-		dSmp[i] = out;
+		filtL[i] = (float)out;
 	}
 
-	if (s->flags & SAMPLE_16BIT)
+	if (isStereo)
 	{
-		int16_t *ptr16 = (int16_t *)s->dataPtr + x1;
+		for (int32_t i = 0; i < len; i++)
+			origR[i] = ft2_sample_get_float(s, format, true, x1 + i);
+
+		setupResoLpFilter(inst, s, &f, 0.015, 0, true);
 		for (int32_t i = 0; i < len; i++)
 		{
-			double out = ptr16[i] + dSmp[i] * 0.25;
-			ptr16[i] = (out < INT16_MIN) ? INT16_MIN : (out > INT16_MAX) ? INT16_MAX : (int16_t)out;
-		}
-	}
-	else
-	{
-		int8_t *ptr8 = (int8_t *)s->dataPtr + x1;
-		for (int32_t i = 0; i < len; i++)
-		{
-			double out = ptr8[i] + dSmp[i] * 0.25;
-			ptr8[i] = (out < INT8_MIN) ? INT8_MIN : (out > INT8_MAX) ? INT8_MAX : (int8_t)out;
+			double out = f.a1 * origR[i] + f.a2 * f.inTmp[0] + f.a3 * f.inTmp[1] - f.b1 * f.outTmp[0] - f.b2 * f.outTmp[1];
+			f.inTmp[1] = f.inTmp[0]; f.inTmp[0] = origR[i];
+			f.outTmp[1] = f.outTmp[0]; f.outTmp[0] = out;
+			filtR[i] = (float)out;
 		}
 	}
 
-	free(dSmp);
+	for (int32_t i = 0; i < len; i++)
+		ft2_sample_set_float(s, format, false, x1 + i, origL[i] + (filtL[i] * 0.25f));
+	if (isStereo)
+		for (int32_t i = 0; i < len; i++)
+			ft2_sample_set_float(s, format, true, x1 + i, origR[i] + (filtR[i] * 0.25f));
+
 	ft2_fix_sample(s);
-	inst->uiState.updateSampleEditor = true;
+	free(origL); free(filtL); free(origR); free(filtR);
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 /* Removes treble via LP at normalized 0.33 */
 void pbSfxSubTreble(ft2_instance_t *inst)
 {
 	ft2_sample_t *s = getSmpFxCurSample(inst);
-	if (!s || !s->dataPtr) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format)) return;
 
 	int32_t x1, x2;
 	getSmpFxRange(inst, s, &x1, &x2);
 
 	resoFilter_t f;
-	setupResoLpFilter(s, &f, 0.33, 0, true);
+	setupResoLpFilter(inst, s, &f, 0.33, 0, true);
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
 	applyResoFilter(inst, s, &f, x1, x2);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 /* Adds treble by subtracting HP-filtered signal at 25% (shelf boost) */
 void pbSfxAddTreble(ft2_instance_t *inst)
 {
 	ft2_sample_t *s = getSmpFxCurSample(inst);
-	if (!s || !s->dataPtr) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format)) return;
 
 	int32_t x1, x2;
 	getSmpFxRange(inst, s, &x1, &x2);
 	const int32_t len = x2 - x1;
 	if (len <= 0) return;
 
-	double *dSmp = (double *)malloc(len * sizeof(double));
-	if (!dSmp) return;
+	const bool isStereo = ft2_sample_is_stereo(s, format);
+	float *origL = (float *)malloc((size_t)len * sizeof(float));
+	float *filtL = (float *)malloc((size_t)len * sizeof(float));
+	float *origR = isStereo ? (float *)malloc((size_t)len * sizeof(float)) : NULL;
+	float *filtR = isStereo ? (float *)malloc((size_t)len * sizeof(float)) : NULL;
+	if (!origL || !filtL || (isStereo && (!origR || !filtR)))
+	{
+		free(origL); free(filtL); free(origR); free(filtR);
+		return;
+	}
 
 	fillSampleUndo(inst, KEEP_SAMPLE_MARK);
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
 
-	if (s->flags & SAMPLE_16BIT)
-		for (int32_t i = 0; i < len; i++) dSmp[i] = ((int16_t *)s->dataPtr + x1)[i];
-	else
-		for (int32_t i = 0; i < len; i++) dSmp[i] = ((int8_t *)s->dataPtr + x1)[i];
+	for (int32_t i = 0; i < len; i++)
+		origL[i] = ft2_sample_get_float(s, format, false, x1 + i);
 
 	resoFilter_t f;
-	setupResoHpFilter(s, &f, 0.27, 0, true);
+	setupResoHpFilter(inst, s, &f, 0.27, 0, true);
 	for (int32_t i = 0; i < len; i++)
 	{
-		double out = f.a1 * dSmp[i] + f.a2 * f.inTmp[0] + f.a3 * f.inTmp[1] - f.b1 * f.outTmp[0] - f.b2 * f.outTmp[1];
-		f.inTmp[1] = f.inTmp[0]; f.inTmp[0] = dSmp[i];
+		double out = f.a1 * origL[i] + f.a2 * f.inTmp[0] + f.a3 * f.inTmp[1] - f.b1 * f.outTmp[0] - f.b2 * f.outTmp[1];
+		f.inTmp[1] = f.inTmp[0]; f.inTmp[0] = origL[i];
 		f.outTmp[1] = f.outTmp[0]; f.outTmp[0] = out;
-		dSmp[i] = out;
+		filtL[i] = (float)out;
 	}
 
-	if (s->flags & SAMPLE_16BIT)
+	if (isStereo)
 	{
-		int16_t *ptr16 = (int16_t *)s->dataPtr + x1;
+		for (int32_t i = 0; i < len; i++)
+			origR[i] = ft2_sample_get_float(s, format, true, x1 + i);
+
+		setupResoHpFilter(inst, s, &f, 0.27, 0, true);
 		for (int32_t i = 0; i < len; i++)
 		{
-			double out = ptr16[i] - dSmp[i] * 0.25;
-			ptr16[i] = (out < INT16_MIN) ? INT16_MIN : (out > INT16_MAX) ? INT16_MAX : (int16_t)out;
-		}
-	}
-	else
-	{
-		int8_t *ptr8 = (int8_t *)s->dataPtr + x1;
-		for (int32_t i = 0; i < len; i++)
-		{
-			double out = ptr8[i] - dSmp[i] * 0.25;
-			ptr8[i] = (out < INT8_MIN) ? INT8_MIN : (out > INT8_MAX) ? INT8_MAX : (int8_t)out;
+			double out = f.a1 * origR[i] + f.a2 * f.inTmp[0] + f.a3 * f.inTmp[1] - f.b1 * f.outTmp[0] - f.b2 * f.outTmp[1];
+			f.inTmp[1] = f.inTmp[0]; f.inTmp[0] = origR[i];
+			f.outTmp[1] = f.outTmp[0]; f.outTmp[0] = out;
+			filtR[i] = (float)out;
 		}
 	}
 
-	free(dSmp);
+	for (int32_t i = 0; i < len; i++)
+		ft2_sample_set_float(s, format, false, x1 + i, origL[i] - (filtL[i] * 0.25f));
+	if (isStereo)
+		for (int32_t i = 0; i < len; i++)
+			ft2_sample_set_float(s, format, true, x1 + i, origR[i] - (filtR[i] * 0.25f));
+
 	ft2_fix_sample(s);
-	inst->uiState.updateSampleEditor = true;
+	free(origL); free(filtL); free(origR); free(filtR);
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -627,7 +719,8 @@ void pbSfxAddTreble(ft2_instance_t *inst)
 void pbSfxSetAmp(ft2_instance_t *inst)
 {
 	ft2_sample_t *s = getSmpFxCurSample(inst);
-	if (!s || !s->dataPtr || !inst->ui) return;
+	ft2_sample_format_t format = ft2_sample_get_format(s);
+	if (!s || !ft2_sample_has_data(s, format) || !inst->ui) return;
 
 	int32_t x1, x2;
 	getSmpFxRange(inst, s, &x1, &x2);
@@ -638,29 +731,22 @@ void pbSfxSetAmp(ft2_instance_t *inst)
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
 
-	const int32_t mul = (int32_t)round((1 << 22UL) * (SMPFX_STATE(inst)->lastAmp / 100.0));
+	const double mul = SMPFX_STATE(inst)->lastAmp / 100.0;
+	const bool isStereo = ft2_sample_is_stereo(s, format);
 
-	if (s->flags & SAMPLE_16BIT)
+	for (int32_t i = 0; i < len; i++)
 	{
-		int16_t *ptr16 = (int16_t *)s->dataPtr + x1;
-		for (int32_t i = 0; i < len; i++)
+		float v = ft2_sample_get_float(s, format, false, x1 + i);
+		ft2_sample_set_float(s, format, false, x1 + i, (float)(v * mul));
+		if (isStereo)
 		{
-			int32_t sample = ((int64_t)ptr16[i] * mul) >> 22;
-			ptr16[i] = (sample < INT16_MIN) ? INT16_MIN : (sample > INT16_MAX) ? INT16_MAX : (int16_t)sample;
-		}
-	}
-	else
-	{
-		int8_t *ptr8 = (int8_t *)s->dataPtr + x1;
-		for (int32_t i = 0; i < len; i++)
-		{
-			int32_t sample = ((int64_t)ptr8[i] * mul) >> 22;
-			ptr8[i] = (sample < INT8_MIN) ? INT8_MIN : (sample > INT8_MAX) ? INT8_MAX : (int8_t)sample;
+			v = ft2_sample_get_float(s, format, true, x1 + i);
+			ft2_sample_set_float(s, format, true, x1 + i, (float)(v * mul));
 		}
 	}
 
 	ft2_fix_sample(s);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 void pbSfxUndo(ft2_instance_t *inst)
@@ -674,23 +760,33 @@ void pbSfxUndo(ft2_instance_t *inst)
 	if (!s) return;
 
 	ft2_stop_sample_voices(inst, s);
-	freeSmpData(inst, inst->editor.curInstr, inst->editor.curSmp);
+	ft2_sample_free_buffers(s);
 
 	s->flags = undo->flags;
-	s->length = undo->length;
-	s->loopStart = undo->loopStart;
-	s->loopLength = undo->loopLength;
+	s->format = undo->format;
+	s->sampleRate = undo->sampleRate;
+	s->length = (int32_t)undo->length;
+	s->loopStart = (int32_t)undo->loopStart;
+	s->loopLength = (int32_t)undo->loopLength;
 
-	if (allocateSmpData(inst, inst->editor.curInstr, inst->editor.curSmp, s->length, !!(s->flags & SAMPLE_16BIT)))
+	if (ft2_sample_alloc_buffers(s, s->length, undo->format, undo->isStereo))
 	{
-		memcpy(s->dataPtr, (s->flags & SAMPLE_16BIT) ? (void *)undo->smpData16 : (void *)undo->smpData8,
-		       s->length * ((s->flags & SAMPLE_16BIT) ? sizeof(int16_t) : sizeof(int8_t)));
+		const size_t dataBytes = (size_t)undo->length * undo->bytesPerSample;
+		uint8_t *dstL = (uint8_t *)ft2_sample_get_data_ptr(s, undo->format, false);
+		memcpy(dstL, undo->smpDataL, dataBytes);
+
+		if (undo->isStereo && undo->smpDataR != NULL)
+		{
+			uint8_t *dstR = (uint8_t *)ft2_sample_get_data_ptr(s, undo->format, true);
+			memcpy(dstR, undo->smpDataR, dataBytes);
+		}
+
 		ft2_fix_sample(s);
 	}
 
 	undo->keepSampleMark = false;
 	undo->filled = false;
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 /* ------------------------------------------------------------------------- */

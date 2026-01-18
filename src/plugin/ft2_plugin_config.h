@@ -51,7 +51,6 @@ enum { /* Sample interpolation quality */
 
 /*
  * All persistent configuration. Saved/loaded with plugin state.
- * Matches standalone config_t where applicable.
  */
 typedef struct ft2_plugin_config_t
 {
@@ -141,18 +140,21 @@ typedef struct ft2_plugin_config_t
 
 	uint8_t currConfigScreen;   /* CONFIG_SCREEN_* */
 
-	/* Envelope presets 1-6 (matches standalone config_t) */
+	/* Envelope presets 1-6 */
 	int16_t stdEnvPoints[6][2][12][2]; /* [preset][vol/pan][point][x/y] */
+	int8_t stdEnvCurve[6][2][12];      /* [preset][vol/pan][segment] (0=linear) */
 	uint16_t stdVolEnvLength[6];
 	uint16_t stdVolEnvSustain[6];
 	uint16_t stdVolEnvLoopStart[6];
 	uint16_t stdVolEnvLoopEnd[6];
 	uint16_t stdVolEnvFlags[6];
+	uint8_t stdVolEnvSpeed[6];
 	uint16_t stdPanEnvLength[6];
 	uint16_t stdPanEnvSustain[6];
 	uint16_t stdPanEnvLoopStart[6];
 	uint16_t stdPanEnvLoopEnd[6];
 	uint16_t stdPanEnvFlags[6];
+	uint8_t stdPanEnvSpeed[6];
 	uint16_t stdFadeout[6];
 	uint16_t stdVibRate[6];
 	uint16_t stdVibDepth[6];

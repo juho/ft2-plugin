@@ -44,6 +44,14 @@ struct ft2_instance_t;
 typedef struct ft2_instrument_editor_t {
 	int8_t activeEnv;        /* -1=none, 0=vol, 1=pan */
 	int8_t envDragMode;      /* 0=none, 1=drag, 2=stretch */
+	int8_t activeEnvSegment; /* Segment index for curve drag (-1=none) */
+	int8_t hoverEnv;         /* Hovered envelope (-1=none, 0=vol, 1=pan) */
+	int8_t hoverEnvSegment;  /* Hovered segment index (-1=none) */
+	int8_t curveDragStart;   /* Curve value at drag start */
+	int32_t curveDragStartY; /* Mouse Y at drag start */
+	uint64_t lastCurveClickNs;
+	int8_t lastCurveClickEnv;
+	int8_t lastCurveClickSegment;
 	int32_t saveMouseX;      /* Drag offset from point center */
 	int32_t saveMouseY;
 	int32_t lastMouseX;
@@ -58,13 +66,13 @@ void ft2_instr_ed_draw(struct ft2_instance_t *inst);
 void ft2_instr_ed_draw_vol_env(struct ft2_instance_t *inst);
 void ft2_instr_ed_draw_pan_env(struct ft2_instance_t *inst);
 void ft2_instr_ed_draw_envelope(struct ft2_instance_t *inst, int envNum);
-void ft2_instr_ed_draw_note_map(struct ft2_instance_t *inst);
 void ft2_instr_ed_draw_piano(struct ft2_instance_t *inst);
 void updateInstEditor(struct ft2_instance_t *inst);
 
 /* Mouse */
 void ft2_instr_ed_mouse_click(struct ft2_instance_t *inst, int x, int y, int button);
 void ft2_instr_ed_mouse_drag(struct ft2_instance_t *inst, int x, int y);
+void ft2_instr_ed_mouse_move(struct ft2_instance_t *inst, int x, int y);
 void ft2_instr_ed_mouse_up(struct ft2_instance_t *inst);
 
 /* Visibility */
@@ -116,6 +124,10 @@ void pbPanEnvRepSUp(struct ft2_instance_t *inst);
 void pbPanEnvRepSDown(struct ft2_instance_t *inst);
 void pbPanEnvRepEUp(struct ft2_instance_t *inst);
 void pbPanEnvRepEDown(struct ft2_instance_t *inst);
+void pbVolEnvLenUp(struct ft2_instance_t *inst);
+void pbVolEnvLenDown(struct ft2_instance_t *inst);
+void pbPanEnvLenUp(struct ft2_instance_t *inst);
+void pbPanEnvLenDown(struct ft2_instance_t *inst);
 
 /* Sample/instrument value buttons */
 void pbInstVolDown(struct ft2_instance_t *inst);

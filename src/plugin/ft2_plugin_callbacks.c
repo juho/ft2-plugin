@@ -15,11 +15,15 @@
 #include "ft2_plugin_checkboxes.h"
 #include "ft2_plugin_radiobuttons.h"
 #include "ft2_plugin_sample_ed.h"
+#include "ft2_plugin_sample_utils.h"
 #include "ft2_plugin_pattern_ed.h"
 #include "ft2_plugin_volume_panel.h"
 #include "ft2_plugin_resample_panel.h"
 #include "ft2_plugin_echo_panel.h"
 #include "ft2_plugin_mix_panel.h"
+#include "ft2_plugin_format_panel.h"
+#include "ft2_plugin_channels_panel.h"
+#include "ft2_plugin_xm2_convert.h"
 #include "ft2_plugin_smpfx.h"
 #include "ft2_plugin_dialog.h"
 #include "ft2_plugin_ui.h"
@@ -859,7 +863,7 @@ static void zapInstrs(ft2_instance_t *inst)
 	
 	/* Trigger UI updates */
 	inst->uiState.updateInstrSwitcher = true;
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 }
 
 static void zapDialogCallback(ft2_instance_t *inst, ft2_dialog_result_t result,
@@ -1283,7 +1287,9 @@ void pbSampleListUp(ft2_instance_t *inst)
 void pbSampleListDown(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
-	if (inst->editor.sampleBankOffset < 11) {
+	const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+	const int32_t maxOffset = (maxSamples > 5) ? (maxSamples - 5) : 0;
+	if (inst->editor.sampleBankOffset < maxOffset) {
 		inst->editor.sampleBankOffset++;
 
 		ft2_widgets_t *widgets = inst->ui ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
@@ -1431,7 +1437,8 @@ static ft2_instr_t *getCurInstr(ft2_instance_t *inst)
 static ft2_sample_t *getCurSample(ft2_instance_t *inst)
 {
 	ft2_instr_t *instr = getCurInstr(inst);
-	if (instr == NULL || inst->editor.curSmp >= 16)
+	const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+	if (instr == NULL || inst->editor.curSmp >= maxSamples)
 		return NULL;
 	return &instr->smp[inst->editor.curSmp];
 }
@@ -1651,6 +1658,22 @@ void pbSampExit(ft2_instance_t *inst)
 	inst->uiState.patternEditorShown = true;
 }
 
+void pbSampFormat(ft2_instance_t *inst)
+{
+	if (inst == NULL || !inst->config.enableXm2Features)
+		return;
+
+	ft2_format_panel_show(inst);
+}
+
+void pbSampChns(ft2_instance_t *inst)
+{
+	if (inst == NULL || !inst->config.enableXm2Features)
+		return;
+
+	ft2_channels_panel_show(inst);
+}
+
 void pbSampClear(ft2_instance_t *inst)
 {
 	clearSample(inst);
@@ -1769,7 +1792,7 @@ void rbSampleNoLoop(ft2_instance_t *inst)
 
 	if (inst != NULL)
 	{
-		inst->uiState.updateSampleEditor = true;
+		ft2_sample_ed_mark_waveform_dirty(inst);
 		ft2_song_mark_modified(inst);
 	}
 }
@@ -1804,7 +1827,7 @@ void rbSampleForwardLoop(ft2_instance_t *inst)
 
 	if (inst != NULL)
 	{
-		inst->uiState.updateSampleEditor = true;
+		ft2_sample_ed_mark_waveform_dirty(inst);
 		ft2_song_mark_modified(inst);
 	}
 }
@@ -1839,7 +1862,7 @@ void rbSamplePingpongLoop(ft2_instance_t *inst)
 
 	if (inst != NULL)
 	{
-		inst->uiState.updateSampleEditor = true;
+		ft2_sample_ed_mark_waveform_dirty(inst);
 		ft2_song_mark_modified(inst);
 	}
 }
@@ -1888,7 +1911,9 @@ static void onConvert8BitResult(ft2_instance_t *inst, ft2_dialog_result_t result
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
 	if (widgets != NULL)
 		checkRadioButtonNoRedraw(widgets, RB_SAMPLE_8BIT);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
+	ft2_song_mark_modified(inst);
+	ft2_xm2_update_usage(inst);
 }
 
 /* 8-bit to 16-bit conversion. "Yes" scales values, "No" reinterprets bytes. */
@@ -1963,7 +1988,9 @@ static void onConvert16BitResult(ft2_instance_t *inst, ft2_dialog_result_t resul
 	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
 	if (widgets != NULL)
 		checkRadioButtonNoRedraw(widgets, RB_SAMPLE_16BIT);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
+	ft2_song_mark_modified(inst);
+	ft2_xm2_update_usage(inst);
 }
 
 void rbSample8bit(ft2_instance_t *inst)
@@ -2036,6 +2063,9 @@ void sbPosEd(ft2_instance_t *inst, uint32_t pos)
 void sbSampleList(ft2_instance_t *inst, uint32_t pos)
 {
 	if (inst == NULL) return;
+	const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+	const int32_t maxOffset = (maxSamples > 5) ? (maxSamples - 5) : 0;
+	if (pos > (uint32_t)maxOffset) pos = (uint32_t)maxOffset;
 	inst->editor.sampleBankOffset = (uint8_t)pos;
 	inst->uiState.updateInstrSwitcher = true;
 }
@@ -2340,6 +2370,12 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_INST_PREPE_UP].callbackFuncOnDown = pbPanEnvRepEUp;
 	widgets->pushButtons[PB_INST_PREPE_DOWN].callbackFuncOnDown = pbPanEnvRepEDown;
 
+	/* Instrument editor - envelope length (XM2) */
+	widgets->pushButtons[PB_INST_VLEN_UP].callbackFuncOnDown = pbVolEnvLenUp;
+	widgets->pushButtons[PB_INST_VLEN_DOWN].callbackFuncOnDown = pbVolEnvLenDown;
+	widgets->pushButtons[PB_INST_PLEN_UP].callbackFuncOnDown = pbPanEnvLenUp;
+	widgets->pushButtons[PB_INST_PLEN_DOWN].callbackFuncOnDown = pbPanEnvLenDown;
+
 	/* Instrument editor - sample parameters */
 	widgets->pushButtons[PB_INST_VOL_DOWN].callbackFuncOnDown = pbInstVolDown;
 	widgets->pushButtons[PB_INST_VOL_UP].callbackFuncOnDown = pbInstVolUp;
@@ -2395,6 +2431,8 @@ void initCallbacks(ft2_widgets_t *widgets)
 	widgets->pushButtons[PB_SAMP_VOLUME].callbackFuncOnUp = pbSampVolume;
 	widgets->pushButtons[PB_SAMP_EFFECTS].callbackFuncOnUp = pbSampEffects;
 	widgets->pushButtons[PB_SAMP_EXIT].callbackFuncOnUp = pbSampExit;
+	widgets->pushButtons[PB_SAMP_FORMAT].callbackFuncOnUp = pbSampFormat;
+	widgets->pushButtons[PB_SAMP_CHNS].callbackFuncOnUp = pbSampChns;
 	widgets->pushButtons[PB_SAMP_CLEAR].callbackFuncOnUp = pbSampClear;
 	widgets->pushButtons[PB_SAMP_MIN].callbackFuncOnUp = pbSampMin;
 	widgets->pushButtons[PB_SAMP_REPEAT_UP].callbackFuncOnDown = sampRepeatUp;
@@ -2616,6 +2654,8 @@ void initCallbacks(ft2_widgets_t *widgets)
 	radioButtons[RB_DISKOP_MOD_MOD].callbackFunc = rbDiskOpModSaveMod;
 	radioButtons[RB_DISKOP_MOD_XM].callbackFunc = rbDiskOpModSaveXm;
 	radioButtons[RB_DISKOP_MOD_XM2].callbackFunc = rbDiskOpModSaveXm2;
+	radioButtons[RB_DISKOP_INS_XI].callbackFunc = rbDiskOpInsSaveXi;
+	radioButtons[RB_DISKOP_INS_XI2].callbackFunc = rbDiskOpInsSaveXi2;
 	radioButtons[RB_DISKOP_SMP_RAW].callbackFunc = rbDiskOpSmpSaveRaw;
 	radioButtons[RB_DISKOP_SMP_IFF].callbackFunc = rbDiskOpSmpSaveIff;
 	radioButtons[RB_DISKOP_SMP_WAV].callbackFunc = rbDiskOpSmpSaveWav;

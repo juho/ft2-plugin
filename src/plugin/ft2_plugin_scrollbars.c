@@ -13,6 +13,7 @@
 #include "ft2_plugin_widgets.h"
 #include "ft2_plugin_video.h"
 #include "ft2_plugin_palette.h"
+#include "ft2_instance.h"
 #include "ft2_plugin_config.h"
 
 #define FIXED_THUMB_SIZE 15
@@ -187,7 +188,7 @@ void initScrollBars(ft2_widgets_t *widgets)
 	widgets->scrollBarState[SB_POS_ED].page = 5;
 	widgets->scrollBarState[SB_POS_ED].end = 5;
 	widgets->scrollBarState[SB_SAMPLE_LIST].page = 5;
-	widgets->scrollBarState[SB_SAMPLE_LIST].end = 16;
+	widgets->scrollBarState[SB_SAMPLE_LIST].end = FT2_XM_MAX_SMP_PER_INST;
 	widgets->scrollBarState[SB_HELP_SCROLL].page = 15;
 	widgets->scrollBarState[SB_HELP_SCROLL].end = 1;
 	widgets->scrollBarState[SB_DISKOP_LIST].page = 15;

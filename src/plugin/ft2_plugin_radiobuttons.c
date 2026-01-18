@@ -182,7 +182,8 @@ radioButton_t radioButtons[NUM_RADIOBUTTONS] =
 
 	/* Disk op instrument save as */
 	/*x, y,   w,  group,                      callback */
-	{ 4, 100, 29, RB_GROUP_DISKOP_INS_SAVEAS, NULL },
+	{ 4, 100, 29, RB_GROUP_DISKOP_INS_SAVEAS, NULL },  /* RB_DISKOP_INS_XI */
+	{ 4, 114, 33, RB_GROUP_DISKOP_INS_SAVEAS, NULL },  /* RB_DISKOP_INS_XI2 */
 
 	/* Disk op sample save as */
 	/*x, y,   w,  group,                      callback */
@@ -338,6 +339,39 @@ void drawRadioButton(struct ft2_widgets_t *widgets, struct ft2_video_t *video, c
 
 	/* Bitmap: 3 frames (unchecked, checked, pressed) */
 	const uint8_t *gfxPtr = &bmp->radiobuttonGfx[state * (RADIOBUTTON_W * RADIOBUTTON_H)];
+	if (rb->group == RB_GROUP_DIALOG)
+	{
+		if (video == NULL || video->frameBuffer == NULL)
+			return;
+		if (rb->x + RADIOBUTTON_W > SCREEN_W || rb->y + RADIOBUTTON_H > SCREEN_H)
+			return;
+
+		const uint8_t *srcPtr = gfxPtr;
+		uint32_t *dstPtr = &video->frameBuffer[(rb->y * SCREEN_W) + rb->x];
+		int32_t y = 0;
+		while (y < RADIOBUTTON_H)
+		{
+			int32_t x = 0;
+			while (x < RADIOBUTTON_W)
+			{
+				uint8_t palIndex = srcPtr[x];
+				if (palIndex == PAL_DESKTOP)
+					palIndex = PAL_BUTTONS;
+				else if (palIndex == PAL_DSKTOP1)
+					palIndex = PAL_BUTTON1;
+				else if (palIndex == PAL_DSKTOP2)
+					palIndex = PAL_BUTTON2;
+
+				dstPtr[x] = video->palette[palIndex];
+				x++;
+			}
+			srcPtr += RADIOBUTTON_W;
+			dstPtr += SCREEN_W;
+			y++;
+		}
+		return;
+	}
+
 	blitFast(video, rb->x, rb->y, gfxPtr, RADIOBUTTON_W, RADIOBUTTON_H);
 }
 

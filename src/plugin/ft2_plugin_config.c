@@ -15,6 +15,8 @@
 #include "ft2_plugin_config.h"
 #include "ft2_plugin_video.h"
 #include "ft2_plugin_bmp.h"
+#include "ft2_plugin_sample_utils.h"
+#include "ft2_plugin_slicer_panel.h"
 #include "ft2_plugin_pushbuttons.h"
 #include "ft2_plugin_radiobuttons.h"
 #include "ft2_plugin_checkboxes.h"
@@ -25,6 +27,7 @@
 #include "ft2_plugin_pattern_ed.h"
 #include "ft2_plugin_dialog.h"
 #include "ft2_plugin_timemap.h"
+#include "ft2_plugin_xm2_convert.h"
 #include "ft2_instance.h"
 
 /* Initialize config with FT2 defaults. Called once per instance at creation. */
@@ -122,7 +125,7 @@ void ft2_config_init(ft2_plugin_config_t *config)
 	config->userPaletteContrast[0] = 52; /* Desktop */
 	config->userPaletteContrast[1] = 57; /* Buttons */
 
-	/* Start on audio screen (matches standalone) */
+	/* Start on audio screen */
 	config->currConfigScreen = CONFIG_SCREEN_AUDIO;
 
 	/*
@@ -142,11 +145,13 @@ void ft2_config_init(ft2_plugin_config_t *config)
 			config->stdEnvPoints[i][0][p][0] = 0;
 			config->stdEnvPoints[i][0][p][1] = 0;
 		}
+		memset(config->stdEnvCurve[i][0], 0, sizeof(config->stdEnvCurve[i][0]));
 		config->stdVolEnvLength[i] = 6;
 		config->stdVolEnvSustain[i] = 2;
 		config->stdVolEnvLoopStart[i] = 3;
 		config->stdVolEnvLoopEnd[i] = 5;
 		config->stdVolEnvFlags[i] = 0;
+		config->stdVolEnvSpeed[i] = 1;
 
 		/* Panning envelope: 6 points, subtle sweep settling to center (Y=32) */
 		config->stdEnvPoints[i][1][0][0] = 0;  config->stdEnvPoints[i][1][0][1] = 32;
@@ -159,11 +164,13 @@ void ft2_config_init(ft2_plugin_config_t *config)
 			config->stdEnvPoints[i][1][p][0] = 0;
 			config->stdEnvPoints[i][1][p][1] = 0;
 		}
+		memset(config->stdEnvCurve[i][1], 0, sizeof(config->stdEnvCurve[i][1]));
 		config->stdPanEnvLength[i] = 6;
 		config->stdPanEnvSustain[i] = 2;
 		config->stdPanEnvLoopStart[i] = 3;
 		config->stdPanEnvLoopEnd[i] = 5;
 		config->stdPanEnvFlags[i] = 0;
+		config->stdPanEnvSpeed[i] = 1;
 
 		config->stdFadeout[i] = 128;
 		config->stdVibRate[i] = 0;
@@ -428,7 +435,8 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	drawFramework(video, 110, 0, 522, 87, FRAMEWORK_TYPE1);
 	drawFramework(video, 110, 87, 138, 86, FRAMEWORK_TYPE1);
 	drawFramework(video, 248, 87, 153, 86, FRAMEWORK_TYPE1);
-	drawFramework(video, 401, 87, 231, 86, FRAMEWORK_TYPE1);
+	drawFramework(video, 401, 87, 231, 46, FRAMEWORK_TYPE1);
+	drawFramework(video, 401, 133, 231, 40, FRAMEWORK_TYPE1);
 
 	/* DAW Sync (plugin-specific) */
 	textOutShadow(video, bmp, 114, 4, PAL_FORGRND, PAL_DSKTOP2, "DAW Sync:");
@@ -473,8 +481,8 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 	/* XM2 features (plugin-specific) */
 	widgets->checkBoxChecked[CB_CONF_ENABLE_XM2] = cfg->enableXm2Features;
 	showCheckBox(widgets, video, bmp, CB_CONF_ENABLE_XM2);
-	textOutShadow(video, bmp, 422, 135, PAL_FORGRND, PAL_DSKTOP2, "Enable XM2 features");
-	textOutShadow(video, bmp, 420, 147, PAL_DSKTOP2, PAL_DSKTOP2, "(stereo samples, etc.)");
+	textOutShadow(video, bmp, 421, 139, PAL_FORGRND, PAL_DSKTOP2, "Enable XM2 features");
+	textOutShadow(video, bmp, 421, 152, PAL_FORGRND, PAL_DSKTOP2, "(stereo + hi-res samples, etc.)");
 
 	/* Amplification: 1x-32x boost applied before master volume */
 	textOutShadow(video, bmp, 252, 91, PAL_FORGRND, PAL_DSKTOP2, "Amplification:");
@@ -504,7 +512,7 @@ static void showConfigAudio(ft2_instance_t *inst, ft2_video_t *video, const ft2_
 
 /* ---------- Layout tab ---------- */
 
-/* Layout config: pattern display, fonts, scopes, palette. Matches standalone. */
+/* Layout config: pattern display, fonts, scopes, palette. */
 static void showConfigLayout(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
 {
 	ft2_plugin_config_t *cfg = &inst->config;
@@ -1001,12 +1009,16 @@ void rbConfigFreqSlidesAmiga(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
 	inst->audio.linearPeriodsFlag = false;
+	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_FREQ_AMIGA);
 }
 
 void rbConfigFreqSlidesLinear(ft2_instance_t *inst)
 {
 	if (inst == NULL) return;
 	inst->audio.linearPeriodsFlag = true;
+	ft2_widgets_t *widgets = (inst->ui != NULL) ? &((ft2_ui_t *)inst->ui)->widgets : NULL;
+	if (widgets != NULL) checkRadioButtonNoRedraw(widgets, RB_CONFIG_FREQ_LINEAR);
 }
 
 /* ---------- MIDI trigger mode ---------- */
@@ -1318,10 +1330,128 @@ void cbConfigVolRamp(ft2_instance_t *inst)
 
 /* ---------- XM2 features ---------- */
 
-void cbConfigEnableXm2(ft2_instance_t *inst)
+static void applyXm2EnableState(ft2_instance_t *inst, bool enabled)
 {
 	if (inst == NULL) return;
-	inst->config.enableXm2Features = !inst->config.enableXm2Features;
+	inst->config.enableXm2Features = enabled;
+
+	const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+	const int32_t maxOffset = (maxSamples > 5) ? (maxSamples - 5) : 0;
+
+	if (inst->editor.curSmp >= maxSamples)
+		inst->editor.curSmp = (uint8_t)(maxSamples - 1);
+	if (inst->editor.srcSmp >= maxSamples)
+		inst->editor.srcSmp = (uint8_t)(maxSamples - 1);
+	if (inst->editor.sampleBankOffset > maxOffset)
+		inst->editor.sampleBankOffset = (uint8_t)maxOffset;
+
+	ft2_widgets_t *widgets = (inst->ui != NULL) ? &FT2_UI(inst)->widgets : NULL;
+	if (widgets != NULL)
+	{
+		widgets->scrollBarState[SB_SAMPLE_LIST].end = maxSamples;
+		widgets->scrollBarState[SB_SAMPLE_LIST].pos = inst->editor.sampleBankOffset;
+		widgets->checkBoxChecked[CB_CONF_ENABLE_XM2] = enabled;
+
+		if (inst->uiState.sampleEditorShown)
+		{
+			widgets->radioButtonVisible[RB_SAMPLE_8BIT] = !enabled;
+			widgets->radioButtonVisible[RB_SAMPLE_16BIT] = !enabled;
+			widgets->pushButtonVisible[PB_SAMP_FORMAT] = enabled;
+			widgets->pushButtonVisible[PB_SAMP_CHNS] = enabled;
+			inst->uiState.updateSampleEditor = true;
+		}
+
+		if (inst->uiState.instEditorShown)
+		{
+			inst->uiState.updateInstEditor = true;
+			inst->uiState.needsFullRedraw = true;
+		}
+	}
+
+	if (enabled)
+	{
+		if (!inst->diskop.instrSaveFormatExplicit)
+			inst->diskop.saveFormat[FT2_DISKOP_ITEM_INSTR] = FT2_INS_SAVE_XI2;
+	}
+	else
+	{
+		if (!inst->diskop.instrSaveFormatExplicit &&
+			inst->diskop.saveFormat[FT2_DISKOP_ITEM_INSTR] == FT2_INS_SAVE_XI2)
+		{
+			inst->diskop.saveFormat[FT2_DISKOP_ITEM_INSTR] = FT2_INS_SAVE_XI;
+		}
+	}
+
+	if (!enabled)
+	{
+		ft2_slicer_state_t *slicer = &inst->slicer;
+		if (slicer->numSlices > FT2_XM_MAX_SMP_PER_INST)
+		{
+			slicer->numSlices = FT2_XM_MAX_SMP_PER_INST;
+			slicerDetectTransients(inst);
+		}
+	}
+
+	inst->uiState.updateInstrSwitcher = true;
+	inst->uiState.updateInstEditor = true;
+}
+
+static void onDisableXm2Result(ft2_instance_t *inst, ft2_dialog_result_t result,
+                               const char *inputText, void *userData)
+{
+	(void)inputText;
+	(void)userData;
+
+	if (inst == NULL)
+		return;
+
+	if (result != DIALOG_RESULT_YES)
+	{
+		applyXm2EnableState(inst, true);
+		return;
+	}
+
+	if (!ft2_xm2_conform_song_inplace(inst))
+	{
+		ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
+		if (ui != NULL)
+			ft2_dialog_show_message(&ui->dialog, "System message", "Not enough memory!");
+		applyXm2EnableState(inst, true);
+		return;
+	}
+
+	applyXm2EnableState(inst, false);
+}
+
+void cbConfigEnableXm2(ft2_instance_t *inst)
+{
+	if (inst == NULL || inst->ui == NULL) return;
+
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
+	const bool enableXm2 = widgets->checkBoxChecked[CB_CONF_ENABLE_XM2];
+
+	if (enableXm2)
+	{
+		applyXm2EnableState(inst, true);
+		return;
+	}
+
+	ft2_xm2_update_usage(inst);
+	if (inst->replayer.song.usesXm2Features)
+	{
+		widgets->checkBoxChecked[CB_CONF_ENABLE_XM2] = true;
+		ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
+		if (ui != NULL)
+		{
+			ft2_dialog_show_yesno_cb(&ui->dialog,
+				"WARNING!",
+				"XM2 features are in use in this song.\nContinuing converts or discards data unsupported by XM;\nStereo samples, >16-bit, >44k, sample slots beyond 0F.\nThere is no undo! Do you want to proceed?",
+				inst, onDisableXm2Result, NULL);
+		}
+		return;
+	}
+
+	applyXm2EnableState(inst, false);
 }
 
 /* ---------- Miscellaneous checkboxes ---------- */

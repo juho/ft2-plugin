@@ -3,7 +3,7 @@
  * @brief Modal panel manager and consolidated state for sample editor dialogs.
  *
  * Only one panel can be active at a time. Each panel (Volume, Resample, Echo,
- * Mix, Wave, Filter) is a self-contained module; this manager tracks the
+ * Mix, Wave, Filter, Format, Channels) is a self-contained module; this manager tracks the
  * active panel and routes draw/close calls.
  */
 
@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "../ft2_instance.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,7 +28,9 @@ typedef enum modal_panel_type_t {
 	MODAL_PANEL_ECHO,
 	MODAL_PANEL_MIX,
 	MODAL_PANEL_WAVE,
-	MODAL_PANEL_FILTER
+	MODAL_PANEL_FILTER,
+	MODAL_PANEL_FORMAT,
+	MODAL_PANEL_CHANNELS
 } modal_panel_type_t;
 
 /* Wave generator types */
@@ -53,6 +56,8 @@ typedef struct {
 typedef struct {
 	bool active;
 	int8_t relReSmp;
+	int32_t targetRateHz;
+	uint8_t targetBits;
 } resample_panel_state_t;
 
 typedef struct {
@@ -72,7 +77,6 @@ typedef struct {
 	bool active;
 	wave_type_t waveType;
 	char inputBuffer[16];
-	int inputCursorPos;
 	int32_t lastWaveLength;
 } wave_panel_state_t;
 
@@ -80,10 +84,32 @@ typedef struct {
 	bool active;
 	filter_type_t filterType;
 	char inputBuffer[16];
-	int inputCursorPos;
 	int32_t lastLpCutoff;
 	int32_t lastHpCutoff;
 } filter_panel_state_t;
+
+typedef struct {
+	bool active;
+	char rateBuffer[16];
+	ft2_sample_format_t targetFormat;
+} format_panel_state_t;
+
+typedef enum {
+	FT2_CHNS_TO_MONO_LEFT = 0,
+	FT2_CHNS_TO_MONO_RIGHT,
+	FT2_CHNS_TO_MONO_DOWNMIX
+} ft2_channels_to_mono_t;
+
+typedef enum {
+	FT2_CHNS_TO_STEREO_YES = 0,
+	FT2_CHNS_TO_STEREO_NO
+} ft2_channels_to_stereo_t;
+
+typedef struct {
+	bool active;
+	uint8_t toMonoMode;
+	uint8_t toStereoMode;
+} channels_panel_state_t;
 
 /* Consolidated modal panel state (per-instance) */
 typedef struct ft2_modal_state_t {
@@ -94,6 +120,8 @@ typedef struct ft2_modal_state_t {
 	mix_panel_state_t mix;
 	wave_panel_state_t wave;
 	filter_panel_state_t filter;
+	format_panel_state_t format;
+	channels_panel_state_t channels;
 } ft2_modal_state_t;
 
 /* Initialize modal panel state with defaults */

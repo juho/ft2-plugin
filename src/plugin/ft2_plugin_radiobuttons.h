@@ -194,6 +194,7 @@ enum
 
 	/* Disk op instrument save as */
 	RB_DISKOP_INS_XI,
+	RB_DISKOP_INS_XI2,
 
 	/* Disk op sample save as */
 	RB_DISKOP_SMP_RAW,

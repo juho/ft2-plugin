@@ -32,6 +32,23 @@ static void doVibrato(ft2_instance_t *inst, ft2_channel_t *ch);
 static void portamento(ft2_instance_t *inst, ft2_channel_t *ch);
 static void volSlide(ft2_instance_t *inst, ft2_channel_t *ch, uint8_t param);
 static uint16_t period2NotePeriod(ft2_instance_t *inst, uint16_t period, uint8_t noteOffset, ft2_channel_t *ch);
+static double envelope_curve_eval(double t, int8_t curve);
+
+static uint8_t get_env_speed(const ft2_instance_t *inst, const ft2_instr_t *ins, bool volume)
+{
+	if (inst == NULL || ins == NULL || !inst->config.enableXm2Features)
+		return 1;
+
+	const uint8_t speed = volume ? ins->volEnvSpeed : ins->panEnvSpeed;
+	return (speed >= 1 && speed <= 16) ? speed : 1;
+}
+
+static int32_t get_env_point_tick(const ft2_instance_t *inst, const ft2_instr_t *ins, bool volume, uint8_t point)
+{
+	const uint8_t speed = get_env_speed(inst, ins, volume);
+	const int32_t tick = volume ? ins->volEnvPoints[point][0] : ins->panEnvPoints[point][0];
+	return tick * (int32_t)speed;
+}
 
 /* ------------------------------------------------------------------------- */
 /*                          VOICE MANAGEMENT                                 */
@@ -106,8 +123,15 @@ void ft2_stop_sample_voices(ft2_instance_t *inst, ft2_sample_t *smp)
 		if (!v->active)
 			continue;
 
-		bool isSameSample = (v->base8 && v->base8 == (const int8_t *)smp->dataPtr) ||
-		                    (v->base16 && v->base16 == (const int16_t *)smp->dataPtr);
+		bool isSameSample = false;
+		if (v->base8 && smp->dataPtr != NULL && v->base8 == (const int8_t *)smp->dataPtr)
+			isSameSample = true;
+		else if (v->base16 && smp->dataPtr != NULL && v->base16 == (const int16_t *)smp->dataPtr)
+			isSameSample = true;
+		else if (v->base24 && smp->dataPtr24 != NULL && v->base24 == (const int32_t *)smp->dataPtr24)
+			isSameSample = true;
+		else if (v->baseF && smp->dataPtrF != NULL && v->baseF == (const float *)smp->dataPtrF)
+			isSameSample = true;
 		if (isSameSample)
 		{
 			memset(v, 0, sizeof(ft2_voice_t));
@@ -150,11 +174,21 @@ void ft2_trigger_voice(ft2_instance_t *inst, int32_t voiceNum, ft2_sample_t *smp
 	const int32_t loopStart = smp->loopStart;
 	const int32_t loopLength = smp->loopLength;
 	const int32_t loopEnd = loopStart + loopLength;
-	const bool sample16Bit = !!(smp->flags & FT2_SAMPLE_16BIT);
+	ft2_sample_format_t format = smp->format;
+	if (format != FT2_SMP_FORMAT_24BIT && format != FT2_SMP_FORMAT_FLOAT32)
+		format = (smp->flags & FT2_SAMPLE_16BIT) ? FT2_SMP_FORMAT_16BIT : FT2_SMP_FORMAT_8BIT;
 	const bool sampleStereo = !!(smp->flags & FT2_SAMPLE_STEREO);
 	uint8_t loopType = smp->flags & (FT2_LOOP_FWD | FT2_LOOP_BIDI);
 
-	if (!smp->dataPtr || length < 1)
+	bool hasData = false;
+	if (format == FT2_SMP_FORMAT_24BIT)
+		hasData = (smp->dataPtr24 != NULL);
+	else if (format == FT2_SMP_FORMAT_FLOAT32)
+		hasData = (smp->dataPtrF != NULL);
+	else
+		hasData = (smp->dataPtr != NULL);
+
+	if (!hasData || length < 1)
 	{
 		v->active = false;
 		return;
@@ -164,50 +198,152 @@ void ft2_trigger_voice(ft2_instance_t *inst, int32_t voiceNum, ft2_sample_t *smp
 		loopType = 0;
 
 	/* Set stereo flag for mixer */
-	v->isStereo = sampleStereo && (smp->dataPtrR != NULL);
+	if (format == FT2_SMP_FORMAT_24BIT)
+		v->isStereo = sampleStereo && (smp->dataPtr24R != NULL);
+	else if (format == FT2_SMP_FORMAT_FLOAT32)
+		v->isStereo = sampleStereo && (smp->dataPtrFR != NULL);
+	else
+		v->isStereo = sampleStereo && (smp->dataPtrR != NULL);
+	v->sampleFormat = format;
 
-	if (sample16Bit)
+	if (format == FT2_SMP_FORMAT_16BIT)
 	{
 		v->base16 = (const int16_t *)smp->dataPtr;
 		v->base8 = NULL;
+		v->base24 = NULL;
+		v->baseF = NULL;
 		v->revBase16 = &v->base16[loopStart + loopEnd];
 		v->leftEdgeTaps16 = smp->leftEdgeTapSamples16 + FT2_MAX_LEFT_TAPS;
+		v->leftEdgeTaps24 = NULL;
+		v->leftEdgeTapsF = NULL;
 
 		/* Right channel for stereo */
 		if (v->isStereo)
 		{
 			v->base16R = (const int16_t *)smp->dataPtrR;
 			v->base8R = NULL;
+			v->base24R = NULL;
+			v->baseFR = NULL;
 			v->revBase16R = &v->base16R[loopStart + loopEnd];
 			v->leftEdgeTaps16R = smp->leftEdgeTapSamples16R + FT2_MAX_LEFT_TAPS;
+			v->leftEdgeTaps24R = NULL;
+			v->leftEdgeTapsFR = NULL;
 		}
 		else
 		{
 			v->base16R = NULL;
 			v->base8R = NULL;
+			v->base24R = NULL;
+			v->baseFR = NULL;
 			v->leftEdgeTaps16R = NULL;
+			v->leftEdgeTaps24R = NULL;
+			v->leftEdgeTapsFR = NULL;
 		}
 	}
-	else
+	else if (format == FT2_SMP_FORMAT_8BIT)
 	{
 		v->base8 = smp->dataPtr;
 		v->base16 = NULL;
+		v->base24 = NULL;
+		v->baseF = NULL;
 		v->revBase8 = &v->base8[loopStart + loopEnd];
 		v->leftEdgeTaps8 = smp->leftEdgeTapSamples8 + FT2_MAX_LEFT_TAPS;
+		v->leftEdgeTaps24 = NULL;
+		v->leftEdgeTapsF = NULL;
 
 		/* Right channel for stereo */
 		if (v->isStereo)
 		{
 			v->base8R = smp->dataPtrR;
 			v->base16R = NULL;
+			v->base24R = NULL;
+			v->baseFR = NULL;
 			v->revBase8R = &v->base8R[loopStart + loopEnd];
 			v->leftEdgeTaps8R = smp->leftEdgeTapSamples8R + FT2_MAX_LEFT_TAPS;
+			v->leftEdgeTaps24R = NULL;
+			v->leftEdgeTapsFR = NULL;
 		}
 		else
 		{
 			v->base8R = NULL;
 			v->base16R = NULL;
+			v->base24R = NULL;
+			v->baseFR = NULL;
 			v->leftEdgeTaps8R = NULL;
+			v->leftEdgeTaps24R = NULL;
+			v->leftEdgeTapsFR = NULL;
+		}
+	}
+	else if (format == FT2_SMP_FORMAT_24BIT)
+	{
+		v->base24 = smp->dataPtr24;
+		v->base8 = NULL;
+		v->base16 = NULL;
+		v->baseF = NULL;
+		v->revBase24 = &v->base24[loopStart + loopEnd];
+		v->leftEdgeTaps24 = smp->leftEdgeTapSamples24 + FT2_MAX_LEFT_TAPS;
+		v->leftEdgeTaps8 = NULL;
+		v->leftEdgeTaps16 = NULL;
+		v->leftEdgeTapsF = NULL;
+
+		if (v->isStereo)
+		{
+			v->base24R = smp->dataPtr24R;
+			v->base8R = NULL;
+			v->base16R = NULL;
+			v->baseFR = NULL;
+			v->revBase24R = &v->base24R[loopStart + loopEnd];
+			v->leftEdgeTaps24R = smp->leftEdgeTapSamples24R + FT2_MAX_LEFT_TAPS;
+			v->leftEdgeTaps8R = NULL;
+			v->leftEdgeTaps16R = NULL;
+			v->leftEdgeTapsFR = NULL;
+		}
+		else
+		{
+			v->base24R = NULL;
+			v->base8R = NULL;
+			v->base16R = NULL;
+			v->baseFR = NULL;
+			v->leftEdgeTaps24R = NULL;
+			v->leftEdgeTaps8R = NULL;
+			v->leftEdgeTaps16R = NULL;
+			v->leftEdgeTapsFR = NULL;
+		}
+	}
+	else /* FT2_SMP_FORMAT_FLOAT32 */
+	{
+		v->baseF = smp->dataPtrF;
+		v->base8 = NULL;
+		v->base16 = NULL;
+		v->base24 = NULL;
+		v->revBaseF = &v->baseF[loopStart + loopEnd];
+		v->leftEdgeTapsF = smp->leftEdgeTapSamplesF + FT2_MAX_LEFT_TAPS;
+		v->leftEdgeTaps8 = NULL;
+		v->leftEdgeTaps16 = NULL;
+		v->leftEdgeTaps24 = NULL;
+
+		if (v->isStereo)
+		{
+			v->baseFR = smp->dataPtrFR;
+			v->base8R = NULL;
+			v->base16R = NULL;
+			v->base24R = NULL;
+			v->revBaseFR = &v->baseFR[loopStart + loopEnd];
+			v->leftEdgeTapsFR = smp->leftEdgeTapSamplesFR + FT2_MAX_LEFT_TAPS;
+			v->leftEdgeTaps8R = NULL;
+			v->leftEdgeTaps16R = NULL;
+			v->leftEdgeTaps24R = NULL;
+		}
+		else
+		{
+			v->baseFR = NULL;
+			v->base8R = NULL;
+			v->base16R = NULL;
+			v->base24R = NULL;
+			v->leftEdgeTapsFR = NULL;
+			v->leftEdgeTaps8R = NULL;
+			v->leftEdgeTaps16R = NULL;
+			v->leftEdgeTaps24R = NULL;
 		}
 	}
 
@@ -227,6 +363,7 @@ void ft2_trigger_voice(ft2_instance_t *inst, int32_t voiceNum, ft2_sample_t *smp
 	}
 
 	/* Mix function offset encodes: bit depth (8/16), loop type, interpolation mode */
+	const bool sample16Bit = (format != FT2_SMP_FORMAT_8BIT);
 	int32_t mixFuncOffset = ((int32_t)sample16Bit * 3) + loopType;
 	mixFuncOffset += inst->audio.interpolationType * 6;
 	v->mixFuncOffset = (uint8_t)mixFuncOffset;
@@ -399,8 +536,9 @@ void ft2_key_off(ft2_instance_t *inst, ft2_channel_t *ch)
 
 	if (ins->volEnvFlags & FT2_ENV_ENABLED)
 	{
-		if (ch->volEnvTick >= (uint16_t)ins->volEnvPoints[ch->volEnvPos][0])
-			ch->volEnvTick = ins->volEnvPoints[ch->volEnvPos][0] - 1;
+		const int32_t pointTick = get_env_point_tick(inst, ins, true, ch->volEnvPos);
+		if (ch->volEnvTick >= pointTick)
+			ch->volEnvTick = (uint16_t)(pointTick - 1);
 	}
 	else
 	{
@@ -412,8 +550,9 @@ void ft2_key_off(ft2_instance_t *inst, ft2_channel_t *ch)
 	/* FT2 bug: checks volEnvFlags instead of panEnvFlags for panning envelope! */
 	if (!(ins->panEnvFlags & FT2_ENV_ENABLED))
 	{
-		if (ch->panEnvTick >= (uint16_t)ins->panEnvPoints[ch->panEnvPos][0])
-			ch->panEnvTick = ins->panEnvPoints[ch->panEnvPos][0] - 1;
+		const int32_t pointTick = get_env_point_tick(inst, ins, false, ch->panEnvPos);
+		if (ch->panEnvTick >= pointTick)
+			ch->panEnvTick = (uint16_t)(pointTick - 1);
 	}
 
 	/* MIDI output: note off */
@@ -553,7 +692,16 @@ static void triggerNote(ft2_instance_t *inst, uint8_t note, uint8_t efx, uint8_t
 
 	if (note > 96) note = 96;
 
-	ch->smpNum = ins ? (ins->note2SampleLUT[note - 1] & 0xF) : 0;
+	uint8_t smpNum = 0;
+	if (ins != NULL)
+	{
+		smpNum = ins->note2SampleLUT[note - 1];
+		if (!inst->config.enableXm2Features)
+			smpNum &= 0x0F;
+		else if (smpNum >= FT2_XM2_MAX_SMP_PER_INST)
+			smpNum = FT2_XM2_MAX_SMP_PER_INST - 1;
+	}
+	ch->smpNum = smpNum;
 	ft2_sample_t *s = ins ? &ins->smp[ch->smpNum] : NULL;
 	ch->smpPtr = s;
 
@@ -760,7 +908,7 @@ static void extraFinePitchSlide(ft2_instance_t *inst, ft2_channel_t *ch, uint8_t
 	}
 }
 
-static void setEnvelopePos(ft2_channel_t *ch, uint8_t param)
+static void setEnvelopePos(ft2_instance_t *inst, ft2_channel_t *ch, uint8_t param)
 {
 	bool envUpdate;
 	int8_t point;
@@ -773,29 +921,32 @@ static void setEnvelopePos(ft2_channel_t *ch, uint8_t param)
 	/* *** VOLUME ENVELOPE *** */
 	if (ins->volEnvFlags & FT2_ENV_ENABLED)
 	{
-		ch->volEnvTick = param - 1;
+		const uint8_t speed = get_env_speed(inst, ins, true);
+		const int32_t scaledTick = (int32_t)param * speed;
+		ch->volEnvTick = (uint16_t)(scaledTick - 1);
 
 		point = 0;
 		envUpdate = true;
-		tick = param;
+		tick = scaledTick;
 
 		if (ins->volEnvLength > 1)
 		{
 			point++;
 			for (int32_t i = 0; i < ins->volEnvLength - 1; i++)
 			{
-				if (tick < ins->volEnvPoints[point][0])
+				if (tick < get_env_point_tick(inst, ins, true, (uint8_t)point))
 				{
 					point--;
 
-					tick -= ins->volEnvPoints[point][0];
+					tick -= get_env_point_tick(inst, ins, true, (uint8_t)point);
 					if (tick == 0) /* FT2 doesn't test for <= 0 here */
 					{
 						envUpdate = false;
 						break;
 					}
 
-					const int32_t xDiff = ins->volEnvPoints[point + 1][0] - ins->volEnvPoints[point + 0][0];
+					const int32_t xDiff = get_env_point_tick(inst, ins, true, (uint8_t)(point + 1)) -
+						get_env_point_tick(inst, ins, true, (uint8_t)point);
 					if (xDiff <= 0)
 					{
 						envUpdate = true;
@@ -806,8 +957,20 @@ static void setEnvelopePos(ft2_channel_t *ch, uint8_t param)
 					const int32_t y1 = ins->volEnvPoints[point + 1][1] & 0xFF;
 					const int32_t yDiff = y1 - y0;
 
-					ch->fVolEnvDelta = (float)yDiff / (float)xDiff;
-					ch->fVolEnvValue = (float)y0 + (ch->fVolEnvDelta * (tick - 1));
+					const int8_t curve = (inst != NULL && inst->config.enableXm2Features) ? ins->volEnvCurve[point + 1] : 0;
+					if (curve != 0)
+					{
+						const double tRaw = (double)(tick - 1) / (double)xDiff;
+						const double t = (tRaw < 0.0) ? 0.0 : (tRaw > 1.0 ? 1.0 : tRaw);
+						const double f = envelope_curve_eval(t, curve);
+						ch->fVolEnvDelta = 0.0f;
+						ch->fVolEnvValue = (float)((double)y0 + ((double)yDiff * f));
+					}
+					else
+					{
+						ch->fVolEnvDelta = (float)yDiff / (float)xDiff;
+						ch->fVolEnvValue = (float)y0 + (ch->fVolEnvDelta * (tick - 1));
+					}
 
 					point++;
 
@@ -842,29 +1005,32 @@ static void setEnvelopePos(ft2_channel_t *ch, uint8_t param)
 	/* FT2 logic bug: should've been ins->panEnvFlags, but FT2 uses volEnvFlags & ENV_SUSTAIN */
 	if (ins->volEnvFlags & FT2_ENV_SUSTAIN)
 	{
-		ch->panEnvTick = param - 1;
+		const uint8_t speed = get_env_speed(inst, ins, false);
+		const int32_t scaledTick = (int32_t)param * speed;
+		ch->panEnvTick = (uint16_t)(scaledTick - 1);
 
 		point = 0;
 		envUpdate = true;
-		tick = param;
+		tick = scaledTick;
 
 		if (ins->panEnvLength > 1)
 		{
 			point++;
 			for (int32_t i = 0; i < ins->panEnvLength - 1; i++)
 			{
-				if (tick < ins->panEnvPoints[point][0])
+				if (tick < get_env_point_tick(inst, ins, false, (uint8_t)point))
 				{
 					point--;
 
-					tick -= ins->panEnvPoints[point][0];
+					tick -= get_env_point_tick(inst, ins, false, (uint8_t)point);
 					if (tick == 0) /* FT2 doesn't test for <= 0 here */
 					{
 						envUpdate = false;
 						break;
 					}
 
-					const int32_t xDiff = ins->panEnvPoints[point + 1][0] - ins->panEnvPoints[point + 0][0];
+					const int32_t xDiff = get_env_point_tick(inst, ins, false, (uint8_t)(point + 1)) -
+						get_env_point_tick(inst, ins, false, (uint8_t)point);
 					if (xDiff <= 0)
 					{
 						envUpdate = true;
@@ -875,8 +1041,20 @@ static void setEnvelopePos(ft2_channel_t *ch, uint8_t param)
 					const int32_t y1 = ins->panEnvPoints[point + 1][1] & 0xFF;
 					const int32_t yDiff = y1 - y0;
 
-					ch->fPanEnvDelta = (float)yDiff / (float)xDiff;
-					ch->fPanEnvValue = (float)y0 + (ch->fPanEnvDelta * (tick - 1));
+					const int8_t curve = (inst != NULL && inst->config.enableXm2Features) ? ins->panEnvCurve[point + 1] : 0;
+					if (curve != 0)
+					{
+						const double tRaw = (double)(tick - 1) / (double)xDiff;
+						const double t = (tRaw < 0.0) ? 0.0 : (tRaw > 1.0 ? 1.0 : tRaw);
+						const double f = envelope_curve_eval(t, curve);
+						ch->fPanEnvDelta = 0.0f;
+						ch->fPanEnvValue = (float)((double)y0 + ((double)yDiff * f));
+					}
+					else
+					{
+						ch->fPanEnvDelta = (float)yDiff / (float)xDiff;
+						ch->fPanEnvValue = (float)y0 + (ch->fPanEnvDelta * (tick - 1));
+					}
 
 					point++;
 
@@ -1071,7 +1249,7 @@ static void handleMoreEffects_TickZero(ft2_instance_t *inst, ft2_channel_t *ch)
 			break;
 
 		case 0x15: // Lxx - Set envelope position
-			setEnvelopePos(ch, param);
+			setEnvelopePos(inst, ch, param);
 			break;
 
 		case 0x21: // Extra fine pitch slide
@@ -1680,6 +1858,19 @@ static void handleEffects_TickNonZero(ft2_instance_t *inst, ft2_channel_t *ch)
 /*                   ENVELOPE AND AUTO-VIBRATO PROCESSING                    */
 /* ------------------------------------------------------------------------- */
 
+static double envelope_curve_eval(double t, int8_t curve)
+{
+	if (curve == 0) return t;
+	if (t <= 0.0) return 0.0;
+	if (t >= 1.0) return 1.0;
+
+	const double k = (double)curve * (FT2_ENV_CURVE_K_MAX / (double)FT2_ENV_CURVE_MAX);
+	if (fabs(k) < 1e-8) return t;
+	const double denom = exp(k) - 1.0;
+	if (denom == 0.0) return t;
+	return (exp(k * t) - 1.0) / denom;
+}
+
 static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 {
 	ft2_instr_t *ins = ch->instrPtr;
@@ -1709,11 +1900,12 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 		if (ins->volEnvFlags & FT2_ENV_ENABLED)
 		{
 			bool envDidInterpolate = false;
+			bool envCurveActive = false;
 			uint8_t envPos = ch->volEnvPos;
 
 			ch->volEnvTick++;
 
-			if (ch->volEnvTick == ins->volEnvPoints[envPos][0])
+			if (ch->volEnvTick == (uint16_t)get_env_point_tick(inst, ins, true, envPos))
 			{
 				ch->fVolEnvValue = (float)(int32_t)(ins->volEnvPoints[envPos][1] & 0xFF);
 
@@ -1726,7 +1918,7 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 						if (!(ins->volEnvFlags & FT2_ENV_SUSTAIN) || envPos != ins->volEnvSustain || !ch->keyOff)
 						{
 							envPos = ins->volEnvLoopStart;
-							ch->volEnvTick = ins->volEnvPoints[envPos][0];
+							ch->volEnvTick = (uint16_t)get_env_point_tick(inst, ins, true, envPos);
 							ch->fVolEnvValue = (float)(int32_t)(ins->volEnvPoints[envPos][1] & 0xFF);
 						}
 					}
@@ -1750,8 +1942,8 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 					{
 						ch->volEnvPos = envPos;
 
-						const int32_t x0 = ins->volEnvPoints[envPos - 1][0];
-						const int32_t x1 = ins->volEnvPoints[envPos][0];
+						const int32_t x0 = get_env_point_tick(inst, ins, true, (uint8_t)(envPos - 1));
+						const int32_t x1 = get_env_point_tick(inst, ins, true, envPos);
 						const int32_t xDiff = x1 - x0;
 
 						if (xDiff > 0)
@@ -1776,14 +1968,49 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 				}
 			}
 
-			if (!envDidInterpolate)
+			if (inst->config.enableXm2Features && ch->volEnvPos > 0 && ch->volEnvPos < ins->volEnvLength)
 			{
-				ch->fVolEnvValue += ch->fVolEnvDelta;
-				fEnvVal = ch->fVolEnvValue;
+				const uint8_t seg = ch->volEnvPos;
+				const int8_t curve = ins->volEnvCurve[seg];
+				if (curve != 0)
+				{
+					const int32_t x0 = get_env_point_tick(inst, ins, true, (uint8_t)(seg - 1));
+					const int32_t x1 = get_env_point_tick(inst, ins, true, seg);
+					const int32_t xDiff = x1 - x0;
+					if (xDiff > 0)
+					{
+						const double tRaw = (double)((int32_t)ch->volEnvTick - x0) / (double)xDiff;
+						const double t = (tRaw < 0.0) ? 0.0 : (tRaw > 1.0 ? 1.0 : tRaw);
+						const double f = envelope_curve_eval(t, curve);
+						const int32_t y0 = ins->volEnvPoints[seg - 1][1] & 0xFF;
+						const int32_t y1 = ins->volEnvPoints[seg][1] & 0xFF;
+						ch->fVolEnvValue = (float)((double)y0 + ((double)(y1 - y0) * f));
+						fEnvVal = ch->fVolEnvValue;
+						envCurveActive = true;
+					}
+				}
+			}
+			if (envCurveActive)
+			{
 				if (fEnvVal < 0.0f || fEnvVal > 64.0f)
 				{
 					fEnvVal = CLAMP(fEnvVal, 0.0f, 64.0f);
+					ch->fVolEnvValue = fEnvVal;
 					ch->fVolEnvDelta = 0.0f;
+				}
+			}
+
+			if (!envDidInterpolate)
+			{
+				if (!envCurveActive)
+				{
+					ch->fVolEnvValue += ch->fVolEnvDelta;
+					fEnvVal = ch->fVolEnvValue;
+					if (fEnvVal < 0.0f || fEnvVal > 64.0f)
+					{
+						fEnvVal = CLAMP(fEnvVal, 0.0f, 64.0f);
+						ch->fVolEnvDelta = 0.0f;
+					}
 				}
 			}
 
@@ -1809,11 +2036,12 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 	if (ins && (ins->panEnvFlags & FT2_ENV_ENABLED))
 	{
 		bool envDidInterpolate = false;
+		bool envCurveActive = false;
 		uint8_t envPos = ch->panEnvPos;
 
 		ch->panEnvTick++;
 
-		if (ch->panEnvTick == ins->panEnvPoints[envPos][0])
+		if (ch->panEnvTick == (uint16_t)get_env_point_tick(inst, ins, false, envPos))
 		{
 			ch->fPanEnvValue = (float)(int32_t)(ins->panEnvPoints[envPos][1] & 0xFF);
 
@@ -1826,7 +2054,7 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 					if (!(ins->panEnvFlags & FT2_ENV_SUSTAIN) || envPos != ins->panEnvSustain || !ch->keyOff)
 					{
 						envPos = ins->panEnvLoopStart;
-						ch->panEnvTick = ins->panEnvPoints[envPos][0];
+						ch->panEnvTick = (uint16_t)get_env_point_tick(inst, ins, false, envPos);
 						ch->fPanEnvValue = (float)(int32_t)(ins->panEnvPoints[envPos][1] & 0xFF);
 					}
 				}
@@ -1850,8 +2078,8 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 				{
 					ch->panEnvPos = envPos;
 
-					const int32_t x0 = ins->panEnvPoints[envPos - 1][0];
-					const int32_t x1 = ins->panEnvPoints[envPos][0];
+					const int32_t x0 = get_env_point_tick(inst, ins, false, (uint8_t)(envPos - 1));
+					const int32_t x1 = get_env_point_tick(inst, ins, false, envPos);
 					const int32_t xDiff = x1 - x0;
 
 					if (xDiff > 0)
@@ -1875,13 +2103,46 @@ static void updateVolPanAutoVib(ft2_instance_t *inst, ft2_channel_t *ch)
 			}
 		}
 
-		if (!envDidInterpolate)
+		if (inst->config.enableXm2Features && ch->panEnvPos > 0 && ch->panEnvPos < ins->panEnvLength)
 		{
-			ch->fPanEnvValue += ch->fPanEnvDelta;
+			const uint8_t seg = ch->panEnvPos;
+			const int8_t curve = ins->panEnvCurve[seg];
+			if (curve != 0)
+			{
+				const int32_t x0 = get_env_point_tick(inst, ins, false, (uint8_t)(seg - 1));
+				const int32_t x1 = get_env_point_tick(inst, ins, false, seg);
+				const int32_t xDiff = x1 - x0;
+				if (xDiff > 0)
+				{
+					const double tRaw = (double)((int32_t)ch->panEnvTick - x0) / (double)xDiff;
+					const double t = (tRaw < 0.0) ? 0.0 : (tRaw > 1.0 ? 1.0 : tRaw);
+					const double f = envelope_curve_eval(t, curve);
+					const int32_t y0 = ins->panEnvPoints[seg - 1][1] & 0xFF;
+					const int32_t y1 = ins->panEnvPoints[seg][1] & 0xFF;
+					ch->fPanEnvValue = (float)((double)y0 + ((double)(y1 - y0) * f));
+					envCurveActive = true;
+				}
+			}
+		}
+		if (envCurveActive)
+		{
 			if (ch->fPanEnvValue < 0.0f || ch->fPanEnvValue > 64.0f)
 			{
 				ch->fPanEnvValue = CLAMP(ch->fPanEnvValue, 0.0f, 64.0f);
 				ch->fPanEnvDelta = 0.0f;
+			}
+		}
+
+		if (!envDidInterpolate)
+		{
+			if (!envCurveActive)
+			{
+				ch->fPanEnvValue += ch->fPanEnvDelta;
+				if (ch->fPanEnvValue < 0.0f || ch->fPanEnvValue > 64.0f)
+				{
+					ch->fPanEnvValue = CLAMP(ch->fPanEnvValue, 0.0f, 64.0f);
+					ch->fPanEnvDelta = 0.0f;
+				}
 			}
 		}
 
@@ -2139,7 +2400,7 @@ static void getNextPos(ft2_instance_t *inst)
 			s->pattNum = s->orders[s->songPos & 0xFF];
 			s->currNumRows = rep->patternNumRows[s->pattNum & 0xFF];
 
-			/* Sync editor state with song position (matches standalone behavior) */
+			/* Sync editor state with song position */
 			inst->editor.editPattern = (uint8_t)s->pattNum;
 			inst->editor.songPos = s->songPos;
 			inst->uiState.updatePosSections = true;
@@ -2264,6 +2525,11 @@ void ft2_update_voices(ft2_instance_t *inst)
 		if (status & FT2_CF_UPDATE_PERIOD)
 		{
 			v->delta = ft2_period_to_delta(inst, ch->finalPeriod);
+			if (ch->smpPtr != NULL && ch->smpPtr->sampleRate > 0)
+			{
+				const double ratio = (double)ch->smpPtr->sampleRate / 8363.0;
+				v->delta = (uint64_t)llround((double)v->delta * ratio);
+			}
 			ft2_voice_setup_sinc_lut(inst, v);
 		}
 
@@ -2301,11 +2567,18 @@ void ft2_update_voices(ft2_instance_t *inst)
 			if (status & FT2_CS_TRIGGER_VOICE)
 			{
 				ft2_sample_t *smp = ch->smpPtr;
-				if (smp != NULL && smp->dataPtr != NULL)
+				if (smp != NULL)
 				{
-					syncEntry.base8 = smp->dataPtr;
-					syncEntry.base16 = (smp->flags & FT2_SAMPLE_16BIT) ? (const int16_t *)smp->dataPtr : NULL;
-					syncEntry.sample16Bit = !!(smp->flags & FT2_SAMPLE_16BIT);
+					ft2_sample_format_t format = smp->format;
+					if (format != FT2_SMP_FORMAT_24BIT && format != FT2_SMP_FORMAT_FLOAT32)
+						format = (smp->flags & FT2_SAMPLE_16BIT) ? FT2_SMP_FORMAT_16BIT : FT2_SMP_FORMAT_8BIT;
+
+					syncEntry.sampleFormat = format;
+					syncEntry.base8 = (format == FT2_SMP_FORMAT_8BIT) ? smp->dataPtr : NULL;
+					syncEntry.base16 = (format == FT2_SMP_FORMAT_16BIT) ? (const int16_t *)smp->dataPtr : NULL;
+					syncEntry.base24 = (format == FT2_SMP_FORMAT_24BIT) ? smp->dataPtr24 : NULL;
+					syncEntry.baseF = (format == FT2_SMP_FORMAT_FLOAT32) ? smp->dataPtrF : NULL;
+					syncEntry.sampleRate = smp->sampleRate;
 					syncEntry.smpStartPos = ch->smpStartPos;
 
 					if (rangeEndPos > 0)
@@ -2450,6 +2723,112 @@ static inline float sampleInterp16(const int16_t *s, uint64_t frac, uint8_t mode
 	}
 }
 
+static inline float linearInterp24(const int32_t *s, uint64_t frac)
+{
+	const float f = (float)((uint32_t)(frac) >> 1) * (1.0f / 2147483648.0f);
+	return ((float)s[0] + ((float)(s[1] - s[0]) * f)) * (1.0f / 8388608.0f);
+}
+
+static inline float quadraticInterp24(const int32_t *s, uint64_t frac, const float *lut)
+{
+	const float *t = lut + (((uint32_t)(frac) >> QUADRATIC_SPLINE_FRACSHIFT) * QUADRATIC_SPLINE_WIDTH);
+	return ((s[0] * t[0]) + (s[1] * t[1]) + (s[2] * t[2])) * (1.0f / 8388608.0f);
+}
+
+static inline float cubicInterp24(const int32_t *s, uint64_t frac, const float *lut)
+{
+	const float *t = lut + (((uint32_t)(frac) >> CUBIC_SPLINE_FRACSHIFT) & CUBIC_SPLINE_FRACMASK);
+	return ((s[-1] * t[0]) + (s[0] * t[1]) + (s[1] * t[2]) + (s[2] * t[3])) * (1.0f / 8388608.0f);
+}
+
+static inline float sinc8Interp24(const int32_t *s, uint64_t frac, const float *lut)
+{
+	const float *t = lut + (((uint32_t)(frac) >> SINC8_FRACSHIFT) & SINC8_FRACMASK);
+	return ((s[-3] * t[0]) + (s[-2] * t[1]) + (s[-1] * t[2]) + (s[0] * t[3]) +
+	        (s[1] * t[4]) + (s[2] * t[5]) + (s[3] * t[6]) + (s[4] * t[7])) * (1.0f / 8388608.0f);
+}
+
+static inline float sinc16Interp24(const int32_t *s, uint64_t frac, const float *lut)
+{
+	const float *t = lut + (((uint32_t)(frac) >> SINC16_FRACSHIFT) & SINC16_FRACMASK);
+	return ((s[-7] * t[0]) + (s[-6] * t[1]) + (s[-5] * t[2]) + (s[-4] * t[3]) +
+	        (s[-3] * t[4]) + (s[-2] * t[5]) + (s[-1] * t[6]) + (s[0] * t[7]) +
+	        (s[1] * t[8]) + (s[2] * t[9]) + (s[3] * t[10]) + (s[4] * t[11]) +
+	        (s[5] * t[12]) + (s[6] * t[13]) + (s[7] * t[14]) + (s[8] * t[15])) * (1.0f / 8388608.0f);
+}
+
+static inline float sampleInterp24(const int32_t *s, uint64_t frac, uint8_t mode, ft2_interp_tables_t *tables, const float *sincLUT)
+{
+	switch (mode)
+	{
+		case FT2_INTERP_LINEAR:
+			return linearInterp24(s, frac);
+		case FT2_INTERP_QUADRATIC:
+			return quadraticInterp24(s, frac, tables->fQuadraticSplineLUT);
+		case FT2_INTERP_CUBIC:
+			return cubicInterp24(s, frac, tables->fCubicSplineLUT);
+		case FT2_INTERP_SINC8:
+			return sinc8Interp24(s, frac, sincLUT);
+		case FT2_INTERP_SINC16:
+			return sinc16Interp24(s, frac, sincLUT);
+		default: /* FT2_INTERP_DISABLED */
+			return s[0] * (1.0f / 8388608.0f);
+	}
+}
+
+static inline float linearInterpF(const float *s, uint64_t frac)
+{
+	const float f = (float)((uint32_t)(frac) >> 1) * (1.0f / 2147483648.0f);
+	return s[0] + ((s[1] - s[0]) * f);
+}
+
+static inline float quadraticInterpF(const float *s, uint64_t frac, const float *lut)
+{
+	const float *t = lut + (((uint32_t)(frac) >> QUADRATIC_SPLINE_FRACSHIFT) * QUADRATIC_SPLINE_WIDTH);
+	return (s[0] * t[0]) + (s[1] * t[1]) + (s[2] * t[2]);
+}
+
+static inline float cubicInterpF(const float *s, uint64_t frac, const float *lut)
+{
+	const float *t = lut + (((uint32_t)(frac) >> CUBIC_SPLINE_FRACSHIFT) & CUBIC_SPLINE_FRACMASK);
+	return (s[-1] * t[0]) + (s[0] * t[1]) + (s[1] * t[2]) + (s[2] * t[3]);
+}
+
+static inline float sinc8InterpF(const float *s, uint64_t frac, const float *lut)
+{
+	const float *t = lut + (((uint32_t)(frac) >> SINC8_FRACSHIFT) & SINC8_FRACMASK);
+	return (s[-3] * t[0]) + (s[-2] * t[1]) + (s[-1] * t[2]) + (s[0] * t[3]) +
+	       (s[1] * t[4]) + (s[2] * t[5]) + (s[3] * t[6]) + (s[4] * t[7]);
+}
+
+static inline float sinc16InterpF(const float *s, uint64_t frac, const float *lut)
+{
+	const float *t = lut + (((uint32_t)(frac) >> SINC16_FRACSHIFT) & SINC16_FRACMASK);
+	return (s[-7] * t[0]) + (s[-6] * t[1]) + (s[-5] * t[2]) + (s[-4] * t[3]) +
+	       (s[-3] * t[4]) + (s[-2] * t[5]) + (s[-1] * t[6]) + (s[0] * t[7]) +
+	       (s[1] * t[8]) + (s[2] * t[9]) + (s[3] * t[10]) + (s[4] * t[11]) +
+	       (s[5] * t[12]) + (s[6] * t[13]) + (s[7] * t[14]) + (s[8] * t[15]);
+}
+
+static inline float sampleInterpF(const float *s, uint64_t frac, uint8_t mode, ft2_interp_tables_t *tables, const float *sincLUT)
+{
+	switch (mode)
+	{
+		case FT2_INTERP_LINEAR:
+			return linearInterpF(s, frac);
+		case FT2_INTERP_QUADRATIC:
+			return quadraticInterpF(s, frac, tables->fQuadraticSplineLUT);
+		case FT2_INTERP_CUBIC:
+			return cubicInterpF(s, frac, tables->fCubicSplineLUT);
+		case FT2_INTERP_SINC8:
+			return sinc8InterpF(s, frac, sincLUT);
+		case FT2_INTERP_SINC16:
+			return sinc16InterpF(s, frac, sincLUT);
+		default: /* FT2_INTERP_DISABLED */
+			return s[0];
+	}
+}
+
 static void mixVoice8BitNoLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
 {
 	const int8_t *base = v->base8;
@@ -2540,6 +2919,124 @@ static void mixVoice16BitNoLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t n
 		if (isStereo)
 		{
 			const float fSampleR = sampleInterp16(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
+
+		if (rampLen > 0)
+		{
+			fVolumeL += fVolLDelta;
+			fVolumeR += fVolRDelta;
+			rampLen--;
+		}
+
+		positionFrac += delta;
+		position += (int32_t)(positionFrac >> 32);
+		positionFrac &= 0xFFFFFFFF;
+	}
+
+	v->position = position;
+	v->positionFrac = positionFrac;
+	v->fCurrVolumeL = fVolumeL;
+	v->fCurrVolumeR = fVolumeR;
+	v->volumeRampLength = rampLen;
+}
+
+static void mixVoice24BitNoLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
+{
+	const int32_t *base = v->base24;
+	const int32_t *baseR = v->base24R;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
+	int32_t position = v->position;
+	uint64_t positionFrac = v->positionFrac;
+	const uint64_t delta = v->delta;
+	float *fMixBufferL = inst->audio.fMixBufferL;
+	float *fMixBufferR = inst->audio.fMixBufferR;
+	float fVolumeL = v->fCurrVolumeL;
+	float fVolumeR = v->fCurrVolumeR;
+	const float fVolLDelta = v->fVolumeLDelta;
+	const float fVolRDelta = v->fVolumeRDelta;
+	uint32_t rampLen = v->volumeRampLength;
+	const uint8_t interpMode = inst->audio.interpolationType;
+	ft2_interp_tables_t *tables = ft2_interp_tables_get();
+	const float *sincLUT = v->fSincLUT;
+
+	for (uint32_t i = 0; i < numSamples; i++)
+	{
+		if (position >= v->sampleEnd)
+		{
+			v->active = false;
+			break;
+		}
+
+		const float fSampleL = sampleInterp24(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterp24(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
+
+		if (rampLen > 0)
+		{
+			fVolumeL += fVolLDelta;
+			fVolumeR += fVolRDelta;
+			rampLen--;
+		}
+
+		positionFrac += delta;
+		position += (int32_t)(positionFrac >> 32);
+		positionFrac &= 0xFFFFFFFF;
+	}
+
+	v->position = position;
+	v->positionFrac = positionFrac;
+	v->fCurrVolumeL = fVolumeL;
+	v->fCurrVolumeR = fVolumeR;
+	v->volumeRampLength = rampLen;
+}
+
+static void mixVoiceFloatNoLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
+{
+	const float *base = v->baseF;
+	const float *baseR = v->baseFR;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
+	int32_t position = v->position;
+	uint64_t positionFrac = v->positionFrac;
+	const uint64_t delta = v->delta;
+	float *fMixBufferL = inst->audio.fMixBufferL;
+	float *fMixBufferR = inst->audio.fMixBufferR;
+	float fVolumeL = v->fCurrVolumeL;
+	float fVolumeR = v->fCurrVolumeR;
+	const float fVolLDelta = v->fVolumeLDelta;
+	const float fVolRDelta = v->fVolumeRDelta;
+	uint32_t rampLen = v->volumeRampLength;
+	const uint8_t interpMode = inst->audio.interpolationType;
+	ft2_interp_tables_t *tables = ft2_interp_tables_get();
+	const float *sincLUT = v->fSincLUT;
+
+	for (uint32_t i = 0; i < numSamples; i++)
+	{
+		if (position >= v->sampleEnd)
+		{
+			v->active = false;
+			break;
+		}
+
+		const float fSampleL = sampleInterpF(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterpF(&baseR[position], positionFrac, interpMode, tables, sincLUT);
 			fMixBufferL[i] += fSampleL * fVolumeL;
 			fMixBufferR[i] += fSampleR * fVolumeR;
 		}
@@ -2662,6 +3159,128 @@ static void mixVoice16BitLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t num
 		if (isStereo)
 		{
 			const float fSampleR = sampleInterp16(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
+
+		if (rampLen > 0)
+		{
+			fVolumeL += fVolLDelta;
+			fVolumeR += fVolRDelta;
+			rampLen--;
+		}
+
+		positionFrac += delta;
+		position += (int32_t)(positionFrac >> 32);
+		positionFrac &= 0xFFFFFFFF;
+	}
+
+	v->position = position;
+	v->positionFrac = positionFrac;
+	v->fCurrVolumeL = fVolumeL;
+	v->fCurrVolumeR = fVolumeR;
+	v->volumeRampLength = rampLen;
+}
+
+static void mixVoice24BitLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
+{
+	const int32_t *base = v->base24;
+	const int32_t *baseR = v->base24R;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
+	int32_t position = v->position;
+	uint64_t positionFrac = v->positionFrac;
+	const uint64_t delta = v->delta;
+	float *fMixBufferL = inst->audio.fMixBufferL;
+	float *fMixBufferR = inst->audio.fMixBufferR;
+	float fVolumeL = v->fCurrVolumeL;
+	float fVolumeR = v->fCurrVolumeR;
+	const float fVolLDelta = v->fVolumeLDelta;
+	const float fVolRDelta = v->fVolumeRDelta;
+	uint32_t rampLen = v->volumeRampLength;
+	const int32_t loopStart = v->loopStart;
+	const int32_t loopEnd = loopStart + v->loopLength;
+	const uint8_t interpMode = inst->audio.interpolationType;
+	ft2_interp_tables_t *tables = ft2_interp_tables_get();
+	const float *sincLUT = v->fSincLUT;
+
+	for (uint32_t i = 0; i < numSamples; i++)
+	{
+		while (position >= loopEnd)
+		{
+			position -= v->loopLength;
+			v->hasLooped = true;
+		}
+
+		const float fSampleL = sampleInterp24(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterp24(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
+
+		if (rampLen > 0)
+		{
+			fVolumeL += fVolLDelta;
+			fVolumeR += fVolRDelta;
+			rampLen--;
+		}
+
+		positionFrac += delta;
+		position += (int32_t)(positionFrac >> 32);
+		positionFrac &= 0xFFFFFFFF;
+	}
+
+	v->position = position;
+	v->positionFrac = positionFrac;
+	v->fCurrVolumeL = fVolumeL;
+	v->fCurrVolumeR = fVolumeR;
+	v->volumeRampLength = rampLen;
+}
+
+static void mixVoiceFloatLoop(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
+{
+	const float *base = v->baseF;
+	const float *baseR = v->baseFR;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
+	int32_t position = v->position;
+	uint64_t positionFrac = v->positionFrac;
+	const uint64_t delta = v->delta;
+	float *fMixBufferL = inst->audio.fMixBufferL;
+	float *fMixBufferR = inst->audio.fMixBufferR;
+	float fVolumeL = v->fCurrVolumeL;
+	float fVolumeR = v->fCurrVolumeR;
+	const float fVolLDelta = v->fVolumeLDelta;
+	const float fVolRDelta = v->fVolumeRDelta;
+	uint32_t rampLen = v->volumeRampLength;
+	const int32_t loopStart = v->loopStart;
+	const int32_t loopEnd = loopStart + v->loopLength;
+	const uint8_t interpMode = inst->audio.interpolationType;
+	ft2_interp_tables_t *tables = ft2_interp_tables_get();
+	const float *sincLUT = v->fSincLUT;
+
+	for (uint32_t i = 0; i < numSamples; i++)
+	{
+		while (position >= loopEnd)
+		{
+			position -= v->loopLength;
+			v->hasLooped = true;
+		}
+
+		const float fSampleL = sampleInterpF(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterpF(&baseR[position], positionFrac, interpMode, tables, sincLUT);
 			fMixBufferL[i] += fSampleL * fVolumeL;
 			fMixBufferR[i] += fSampleR * fVolumeR;
 		}
@@ -2852,6 +3471,168 @@ static void mixVoice16BitBidi(ft2_instance_t *inst, ft2_voice_t *v, uint32_t num
 	v->samplingBackwards = backwards;
 }
 
+static void mixVoice24BitBidi(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
+{
+	const int32_t *base = v->base24;
+	const int32_t *baseR = v->base24R;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
+	int32_t position = v->position;
+	uint64_t positionFrac = v->positionFrac;
+	int64_t delta = v->delta;
+	float *fMixBufferL = inst->audio.fMixBufferL;
+	float *fMixBufferR = inst->audio.fMixBufferR;
+	float fVolumeL = v->fCurrVolumeL;
+	float fVolumeR = v->fCurrVolumeR;
+	const float fVolLDelta = v->fVolumeLDelta;
+	const float fVolRDelta = v->fVolumeRDelta;
+	uint32_t rampLen = v->volumeRampLength;
+	const int32_t loopStart = v->loopStart;
+	const int32_t loopEnd = loopStart + v->loopLength;
+	bool backwards = v->samplingBackwards;
+	const uint8_t interpMode = inst->audio.interpolationType;
+	ft2_interp_tables_t *tables = ft2_interp_tables_get();
+	const float *sincLUT = v->fSincLUT;
+
+	if (backwards)
+		delta = -delta;
+
+	for (uint32_t i = 0; i < numSamples; i++)
+	{
+		if (backwards)
+		{
+			while (position < loopStart)
+			{
+				position = loopStart + (loopStart - position);
+				backwards = false;
+				delta = -delta;
+				v->hasLooped = true;
+			}
+		}
+		else
+		{
+			while (position >= loopEnd)
+			{
+				position = loopEnd - 1 - (position - loopEnd);
+				backwards = true;
+				delta = -delta;
+				v->hasLooped = true;
+			}
+		}
+
+		const float fSampleL = sampleInterp24(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterp24(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
+
+		if (rampLen > 0)
+		{
+			fVolumeL += fVolLDelta;
+			fVolumeR += fVolRDelta;
+			rampLen--;
+		}
+
+		positionFrac += (uint64_t)delta;
+		position += (int32_t)(positionFrac >> 32);
+		positionFrac &= 0xFFFFFFFF;
+	}
+
+	v->position = position;
+	v->positionFrac = positionFrac;
+	v->fCurrVolumeL = fVolumeL;
+	v->fCurrVolumeR = fVolumeR;
+	v->volumeRampLength = rampLen;
+	v->samplingBackwards = backwards;
+}
+
+static void mixVoiceFloatBidi(ft2_instance_t *inst, ft2_voice_t *v, uint32_t numSamples)
+{
+	const float *base = v->baseF;
+	const float *baseR = v->baseFR;  /* NULL for mono */
+	const bool isStereo = v->isStereo;
+	int32_t position = v->position;
+	uint64_t positionFrac = v->positionFrac;
+	int64_t delta = v->delta;
+	float *fMixBufferL = inst->audio.fMixBufferL;
+	float *fMixBufferR = inst->audio.fMixBufferR;
+	float fVolumeL = v->fCurrVolumeL;
+	float fVolumeR = v->fCurrVolumeR;
+	const float fVolLDelta = v->fVolumeLDelta;
+	const float fVolRDelta = v->fVolumeRDelta;
+	uint32_t rampLen = v->volumeRampLength;
+	const int32_t loopStart = v->loopStart;
+	const int32_t loopEnd = loopStart + v->loopLength;
+	bool backwards = v->samplingBackwards;
+	const uint8_t interpMode = inst->audio.interpolationType;
+	ft2_interp_tables_t *tables = ft2_interp_tables_get();
+	const float *sincLUT = v->fSincLUT;
+
+	if (backwards)
+		delta = -delta;
+
+	for (uint32_t i = 0; i < numSamples; i++)
+	{
+		if (backwards)
+		{
+			while (position < loopStart)
+			{
+				position = loopStart + (loopStart - position);
+				backwards = false;
+				delta = -delta;
+				v->hasLooped = true;
+			}
+		}
+		else
+		{
+			while (position >= loopEnd)
+			{
+				position = loopEnd - 1 - (position - loopEnd);
+				backwards = true;
+				delta = -delta;
+				v->hasLooped = true;
+			}
+		}
+
+		const float fSampleL = sampleInterpF(&base[position], positionFrac, interpMode, tables, sincLUT);
+		if (isStereo)
+		{
+			const float fSampleR = sampleInterpF(&baseR[position], positionFrac, interpMode, tables, sincLUT);
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleR * fVolumeR;
+		}
+		else
+		{
+			fMixBufferL[i] += fSampleL * fVolumeL;
+			fMixBufferR[i] += fSampleL * fVolumeR;
+		}
+
+		if (rampLen > 0)
+		{
+			fVolumeL += fVolLDelta;
+			fVolumeR += fVolRDelta;
+			rampLen--;
+		}
+
+		positionFrac += (uint64_t)delta;
+		position += (int32_t)(positionFrac >> 32);
+		positionFrac &= 0xFFFFFFFF;
+	}
+
+	v->position = position;
+	v->positionFrac = positionFrac;
+	v->fCurrVolumeL = fVolumeL;
+	v->fCurrVolumeR = fVolumeR;
+	v->volumeRampLength = rampLen;
+	v->samplingBackwards = backwards;
+}
+
 /* --- Mix functions ---
 ** 6 variants: 8/16-bit x no-loop/forward-loop/bidi-loop */
 
@@ -2931,26 +3712,40 @@ void ft2_mix_voices(ft2_instance_t *inst, int32_t bufferPos, int32_t samplesToMi
 			continue;
 		}
 
-		const bool is16Bit = (v->base16 != NULL && v->base8 == NULL);
+		ft2_sample_format_t format = v->sampleFormat;
+		if (format != FT2_SMP_FORMAT_24BIT && format != FT2_SMP_FORMAT_FLOAT32)
+			format = (v->base16 != NULL && v->base8 == NULL) ? FT2_SMP_FORMAT_16BIT : FT2_SMP_FORMAT_8BIT;
 
 		switch (v->loopType)
 		{
 			case FT2_LOOP_OFF:
-				if (is16Bit)
+				if (format == FT2_SMP_FORMAT_24BIT)
+					mixVoice24BitNoLoop(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_FLOAT32)
+					mixVoiceFloatNoLoop(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_16BIT)
 					mixVoice16BitNoLoop(inst, v, samplesToMix);
 				else
 					mixVoice8BitNoLoop(inst, v, samplesToMix);
 				break;
 
 			case FT2_LOOP_FWD:
-				if (is16Bit)
+				if (format == FT2_SMP_FORMAT_24BIT)
+					mixVoice24BitLoop(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_FLOAT32)
+					mixVoiceFloatLoop(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_16BIT)
 					mixVoice16BitLoop(inst, v, samplesToMix);
 				else
 					mixVoice8BitLoop(inst, v, samplesToMix);
 				break;
 
 			case FT2_LOOP_BIDI:
-				if (is16Bit)
+				if (format == FT2_SMP_FORMAT_24BIT)
+					mixVoice24BitBidi(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_FLOAT32)
+					mixVoiceFloatBidi(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_16BIT)
 					mixVoice16BitBidi(inst, v, samplesToMix);
 				else
 					mixVoice8BitBidi(inst, v, samplesToMix);
@@ -2971,26 +3766,40 @@ void ft2_mix_voices(ft2_instance_t *inst, int32_t bufferPos, int32_t samplesToMi
 			continue;
 		}
 
-		const bool is16Bit = (v->base16 != NULL && v->base8 == NULL);
+		ft2_sample_format_t format = v->sampleFormat;
+		if (format != FT2_SMP_FORMAT_24BIT && format != FT2_SMP_FORMAT_FLOAT32)
+			format = (v->base16 != NULL && v->base8 == NULL) ? FT2_SMP_FORMAT_16BIT : FT2_SMP_FORMAT_8BIT;
 
 		switch (v->loopType)
 		{
 			case FT2_LOOP_OFF:
-				if (is16Bit)
+				if (format == FT2_SMP_FORMAT_24BIT)
+					mixVoice24BitNoLoop(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_FLOAT32)
+					mixVoiceFloatNoLoop(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_16BIT)
 					mixVoice16BitNoLoop(inst, v, samplesToMix);
 				else
 					mixVoice8BitNoLoop(inst, v, samplesToMix);
 				break;
 
 			case FT2_LOOP_FWD:
-				if (is16Bit)
+				if (format == FT2_SMP_FORMAT_24BIT)
+					mixVoice24BitLoop(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_FLOAT32)
+					mixVoiceFloatLoop(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_16BIT)
 					mixVoice16BitLoop(inst, v, samplesToMix);
 				else
 					mixVoice8BitLoop(inst, v, samplesToMix);
 				break;
 
 			case FT2_LOOP_BIDI:
-				if (is16Bit)
+				if (format == FT2_SMP_FORMAT_24BIT)
+					mixVoice24BitBidi(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_FLOAT32)
+					mixVoiceFloatBidi(inst, v, samplesToMix);
+				else if (format == FT2_SMP_FORMAT_16BIT)
 					mixVoice16BitBidi(inst, v, samplesToMix);
 				else
 					mixVoice8BitBidi(inst, v, samplesToMix);
@@ -3026,26 +3835,40 @@ void ft2_mix_voices_multiout(ft2_instance_t *inst, int32_t bufferPos, int32_t sa
 			const bool volRampFlag = (v->volumeRampLength > 0);
 			if (volRampFlag || v->fCurrVolumeL != 0.0f || v->fCurrVolumeR != 0.0f)
 			{
-				const bool is16Bit = (v->base16 != NULL && v->base8 == NULL);
+				ft2_sample_format_t format = v->sampleFormat;
+				if (format != FT2_SMP_FORMAT_24BIT && format != FT2_SMP_FORMAT_FLOAT32)
+					format = (v->base16 != NULL && v->base8 == NULL) ? FT2_SMP_FORMAT_16BIT : FT2_SMP_FORMAT_8BIT;
 
 				switch (v->loopType)
 				{
 					case FT2_LOOP_OFF:
-						if (is16Bit)
+						if (format == FT2_SMP_FORMAT_24BIT)
+							mixVoice24BitNoLoop(inst, v, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_FLOAT32)
+							mixVoiceFloatNoLoop(inst, v, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_16BIT)
 							mixVoice16BitNoLoop(inst, v, samplesToMix);
 						else
 							mixVoice8BitNoLoop(inst, v, samplesToMix);
 						break;
 
 					case FT2_LOOP_FWD:
-						if (is16Bit)
+						if (format == FT2_SMP_FORMAT_24BIT)
+							mixVoice24BitLoop(inst, v, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_FLOAT32)
+							mixVoiceFloatLoop(inst, v, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_16BIT)
 							mixVoice16BitLoop(inst, v, samplesToMix);
 						else
 							mixVoice8BitLoop(inst, v, samplesToMix);
 						break;
 
 					case FT2_LOOP_BIDI:
-						if (is16Bit)
+						if (format == FT2_SMP_FORMAT_24BIT)
+							mixVoice24BitBidi(inst, v, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_FLOAT32)
+							mixVoiceFloatBidi(inst, v, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_16BIT)
 							mixVoice16BitBidi(inst, v, samplesToMix);
 						else
 							mixVoice8BitBidi(inst, v, samplesToMix);
@@ -3068,26 +3891,40 @@ void ft2_mix_voices_multiout(ft2_instance_t *inst, int32_t bufferPos, int32_t sa
 			}
 			else
 			{
-				const bool is16Bit = (fadeV->base16 != NULL && fadeV->base8 == NULL);
+				ft2_sample_format_t format = fadeV->sampleFormat;
+				if (format != FT2_SMP_FORMAT_24BIT && format != FT2_SMP_FORMAT_FLOAT32)
+					format = (fadeV->base16 != NULL && fadeV->base8 == NULL) ? FT2_SMP_FORMAT_16BIT : FT2_SMP_FORMAT_8BIT;
 
 				switch (fadeV->loopType)
 				{
 					case FT2_LOOP_OFF:
-						if (is16Bit)
+						if (format == FT2_SMP_FORMAT_24BIT)
+							mixVoice24BitNoLoop(inst, fadeV, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_FLOAT32)
+							mixVoiceFloatNoLoop(inst, fadeV, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_16BIT)
 							mixVoice16BitNoLoop(inst, fadeV, samplesToMix);
 						else
 							mixVoice8BitNoLoop(inst, fadeV, samplesToMix);
 						break;
 
 					case FT2_LOOP_FWD:
-						if (is16Bit)
+						if (format == FT2_SMP_FORMAT_24BIT)
+							mixVoice24BitLoop(inst, fadeV, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_FLOAT32)
+							mixVoiceFloatLoop(inst, fadeV, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_16BIT)
 							mixVoice16BitLoop(inst, fadeV, samplesToMix);
 						else
 							mixVoice8BitLoop(inst, fadeV, samplesToMix);
 						break;
 
 					case FT2_LOOP_BIDI:
-						if (is16Bit)
+						if (format == FT2_SMP_FORMAT_24BIT)
+							mixVoice24BitBidi(inst, fadeV, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_FLOAT32)
+							mixVoiceFloatBidi(inst, fadeV, samplesToMix);
+						else if (format == FT2_SMP_FORMAT_16BIT)
 							mixVoice16BitBidi(inst, fadeV, samplesToMix);
 						else
 							mixVoice8BitBidi(inst, fadeV, samplesToMix);

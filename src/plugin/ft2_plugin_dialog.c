@@ -18,7 +18,8 @@
 #include "ft2_plugin_widgets.h"
 #include "ft2_plugin_ui.h"
 
-#define DIALOG_H 67         /* Fixed height (matches standalone) */
+#define DIALOG_H 67         /* Base height */
+#define DIALOG_LINE_GAP 5
 #define DIALOG_BUTTON_W 80
 #define DIALOG_BUTTON_H 16
 #define DIALOG_MIN_W 200
@@ -38,6 +39,50 @@
  * Width fits headline, text, input field, and buttons. Height is fixed.
  * Buttons are centered horizontally; dialog is centered horizontally at fixed Y.
  */
+static int countDialogLines(const char *text)
+{
+	if (text == NULL || text[0] == '\0')
+		return 1;
+
+	int lines = 1;
+	while (*text)
+	{
+		if (*text == '\n')
+			lines++;
+		text++;
+	}
+
+	return lines;
+}
+
+static int getDialogMaxLineWidth(const char *text)
+{
+	if (text == NULL || text[0] == '\0')
+		return 0;
+
+	int maxWidth = 0;
+	int lineWidth = 0;
+	while (*text)
+	{
+		if (*text == '\n')
+		{
+			if (lineWidth > maxWidth)
+				maxWidth = lineWidth;
+			lineWidth = 0;
+			text++;
+			continue;
+		}
+
+		lineWidth += charWidth(*text);
+		text++;
+	}
+
+	if (lineWidth > maxWidth)
+		maxWidth = lineWidth;
+
+	return maxWidth;
+}
+
 static void calculateDialogSize(ft2_dialog_t *dlg)
 {
 	/* Radio dialogs use fixed size/position to align with widget radio buttons */
@@ -61,8 +106,9 @@ static void calculateDialogSize(ft2_dialog_t *dlg)
 	}
 
 	int hlen = textWidth(dlg->headline);
-	int tlen = textWidth(dlg->text);
+	int tlen = getDialogMaxLineWidth(dlg->text);
 	int wlen = (hlen > tlen) ? hlen : tlen;
+	const int lineCount = countDialogLines(dlg->text);
 
 	/* Input dialogs need room for text field */
 	if (dlg->type == DIALOG_INPUT || dlg->type == DIALOG_INPUT_PREVIEW)
@@ -75,6 +121,7 @@ static void calculateDialogSize(ft2_dialog_t *dlg)
 		case DIALOG_INPUT_PREVIEW: numButtons = 3; break;
 		case DIALOG_ZAP:           numButtons = 4; break;
 		case DIALOG_STEREO:        numButtons = 3; break;
+		case DIALOG_DROP:          numButtons = 3; break;
 		default:                   numButtons = 2; break;
 	}
 
@@ -86,7 +133,7 @@ static void calculateDialogSize(ft2_dialog_t *dlg)
 	if (wlen > DIALOG_MAX_W) wlen = DIALOG_MAX_W;
 
 	dlg->w = (int16_t)wlen;
-	dlg->h = DIALOG_H;
+	dlg->h = (int16_t)(DIALOG_H + ((lineCount > 1) ? ((lineCount - 1) * (FONT8_CHAR_H + DIALOG_LINE_GAP)) : 0));
 	dlg->x = (int16_t)((SCREEN_W - wlen) / 2);
 	dlg->y = 249;
 
@@ -99,7 +146,7 @@ static void calculateDialogSize(ft2_dialog_t *dlg)
 	dlg->button4X = (int16_t)(buttonsStartX + 300);
 	dlg->buttonY = (int16_t)(dlg->y + dlg->h - 25);
 
-	/* Center text */
+	/* Center text (Y for first line; X is recalculated per line when drawing) */
 	dlg->textX = (int16_t)((SCREEN_W - tlen) / 2);
 	dlg->textY = (int16_t)(dlg->y + 24);
 
@@ -244,7 +291,7 @@ void ft2_dialog_show_yesno_cb(ft2_dialog_t *dlg, const char *headline, const cha
 	copyText(dlg->headline, sizeof(dlg->headline), headline);
 	copyText(dlg->text, sizeof(dlg->text), text);
 	dlg->inputBuffer[0] = '\0';
-	dlg->inputCursorPos = dlg->inputMaxLen = 0;
+	dlg->inputMaxLen = 0;
 	calculateDialogSize(dlg);
 }
 
@@ -265,7 +312,7 @@ void ft2_dialog_show_zap_cb(ft2_dialog_t *dlg, const char *headline, const char 
 	copyText(dlg->headline, sizeof(dlg->headline), headline);
 	copyText(dlg->text, sizeof(dlg->text), text);
 	dlg->inputBuffer[0] = '\0';
-	dlg->inputCursorPos = dlg->inputMaxLen = 0;
+	dlg->inputMaxLen = 0;
 	calculateDialogSize(dlg);
 }
 
@@ -277,10 +324,8 @@ static void initInputBuffer(ft2_dialog_t *dlg, const char *defaultValue, int max
 	dlg->inputMaxLen = (maxLen > 0 && maxLen < 256) ? maxLen : 255;
 	if (defaultValue != NULL) {
 		strncpy(dlg->inputBuffer, defaultValue, (size_t)dlg->inputMaxLen);
-		dlg->inputCursorPos = (int)strlen(dlg->inputBuffer);
 	} else {
 		dlg->inputBuffer[0] = '\0';
-		dlg->inputCursorPos = 0;
 	}
 }
 
@@ -382,7 +427,31 @@ void ft2_dialog_show_stereo_cb(ft2_dialog_t *dlg, const char *headline, const ch
 	copyText(dlg->headline, sizeof(dlg->headline), headline);
 	copyText(dlg->text, sizeof(dlg->text), text);
 	dlg->inputBuffer[0] = '\0';
-	dlg->inputCursorPos = dlg->inputMaxLen = 0;
+	dlg->inputMaxLen = 0;
+	dlg->radioCount = 0;
+	dlg->radioSelected = 0;
+	calculateDialogSize(dlg);
+}
+
+/* ---------- Drop dialog (3 buttons) ---------- */
+
+void ft2_dialog_show_drop_cb(ft2_dialog_t *dlg, const char *headline, const char *text,
+                             struct ft2_instance_t *inst,
+                             ft2_dialog_callback_t onComplete, void *userData)
+{
+	if (dlg == NULL) return;
+	dlg->active = true;
+	dlg->type = DIALOG_DROP;
+	dlg->result = DIALOG_RESULT_NONE;
+	dlg->button1Pressed = dlg->button2Pressed = dlg->button3Pressed = dlg->button4Pressed = false;
+	dlg->previewCallback = NULL;
+	dlg->instance = inst;
+	dlg->onComplete = onComplete;
+	dlg->userData = userData;
+	copyText(dlg->headline, sizeof(dlg->headline), headline);
+	copyText(dlg->text, sizeof(dlg->text), text);
+	dlg->inputBuffer[0] = '\0';
+	dlg->inputMaxLen = 0;
 	dlg->radioCount = 0;
 	dlg->radioSelected = 0;
 	calculateDialogSize(dlg);
@@ -407,7 +476,7 @@ void ft2_dialog_show_radio_cb(ft2_dialog_t *dlg, const char *headline,
 	copyText(dlg->headline, sizeof(dlg->headline), headline);
 	dlg->text[0] = '\0';
 	dlg->inputBuffer[0] = '\0';
-	dlg->inputCursorPos = dlg->inputMaxLen = 0;
+	dlg->inputMaxLen = 0;
 	dlg->radioCount = optionCount;
 	dlg->radioSelected = (defaultOption >= 0 && defaultOption < optionCount) ? defaultOption : 0;
 	for (int i = 0; i < optionCount; i++)
@@ -505,7 +574,7 @@ bool ft2_dialog_mouse_down(ft2_dialog_t *dlg, int x, int y, int button)
 
 	if (pointInButton(x, y, dlg->button1X, dlg->buttonY)) { dlg->button1Pressed = true; return true; }
 	if (dlg->type != DIALOG_OK && pointInButton(x, y, dlg->button2X, dlg->buttonY)) { dlg->button2Pressed = true; return true; }
-	if ((dlg->type == DIALOG_INPUT_PREVIEW || dlg->type == DIALOG_ZAP || dlg->type == DIALOG_STEREO) && pointInButton(x, y, dlg->button3X, dlg->buttonY)) { dlg->button3Pressed = true; return true; }
+	if ((dlg->type == DIALOG_INPUT_PREVIEW || dlg->type == DIALOG_ZAP || dlg->type == DIALOG_STEREO || dlg->type == DIALOG_DROP) && pointInButton(x, y, dlg->button3X, dlg->buttonY)) { dlg->button3Pressed = true; return true; }
 	if (dlg->type == DIALOG_ZAP && pointInButton(x, y, dlg->button4X, dlg->buttonY)) { dlg->button4Pressed = true; return true; }
 
 	return true; /* Consume click even if not on button */
@@ -515,7 +584,7 @@ bool ft2_dialog_mouse_up(ft2_dialog_t *dlg, int x, int y, int button)
 {
 	if (dlg == NULL || !dlg->active || button != 1) return false;
 
-	/* Button 1: OK/Yes/All/Read left */
+	/* Button 1: OK/Yes/All/Read left/Samples */
 	if (dlg->button1Pressed) {
 		if (pointInButton(x, y, dlg->button1X, dlg->buttonY)) {
 			ft2_dialog_result_t result;
@@ -525,6 +594,8 @@ bool ft2_dialog_mouse_up(ft2_dialog_t *dlg, int x, int y, int button)
 				result = DIALOG_RESULT_STEREO_LEFT;
 			else if (dlg->type == DIALOG_RADIO)
 				result = (ft2_dialog_result_t)(DIALOG_RESULT_RADIO_0 + dlg->radioSelected);
+			else if (dlg->type == DIALOG_DROP)
+				result = DIALOG_RESULT_SAMPLES;
 			else
 				result = DIALOG_RESULT_OK;
 			closeDialogWithResult(dlg, result);
@@ -533,7 +604,7 @@ bool ft2_dialog_mouse_up(ft2_dialog_t *dlg, int x, int y, int button)
 		return true;
 	}
 
-	/* Button 2: Cancel/No/Preview/Song/Read right (depends on dialog type) */
+	/* Button 2: Cancel/No/Preview/Song/Read right/Instruments (depends on dialog type) */
 	if (dlg->button2Pressed) {
 		if (pointInButton(x, y, dlg->button2X, dlg->buttonY)) {
 			if (dlg->type == DIALOG_INPUT_PREVIEW) {
@@ -545,6 +616,8 @@ bool ft2_dialog_mouse_up(ft2_dialog_t *dlg, int x, int y, int button)
 				closeDialogWithResult(dlg, DIALOG_RESULT_ZAP_SONG);
 			} else if (dlg->type == DIALOG_STEREO) {
 				closeDialogWithResult(dlg, DIALOG_RESULT_STEREO_RIGHT);
+			} else if (dlg->type == DIALOG_DROP) {
+				closeDialogWithResult(dlg, DIALOG_RESULT_INSTRUMENTS);
 			} else {
 				closeDialogWithResult(dlg, DIALOG_RESULT_CANCEL);
 			}
@@ -553,7 +626,7 @@ bool ft2_dialog_mouse_up(ft2_dialog_t *dlg, int x, int y, int button)
 		return true;
 	}
 
-	/* Button 3: Cancel (INPUT_PREVIEW/RADIO) or Instrs (ZAP) or Convert (STEREO) */
+	/* Button 3: Cancel (INPUT_PREVIEW/RADIO/DROP) or Instrs (ZAP) or Convert (STEREO) */
 	if (dlg->button3Pressed) {
 		if (pointInButton(x, y, dlg->button3X, dlg->buttonY)) {
 			if (dlg->type == DIALOG_ZAP)
@@ -601,6 +674,16 @@ bool ft2_dialog_key_down(ft2_dialog_t *dlg, int keycode)
 		return true;
 	}
 
+	/* Drop dialog: S/I/C keyboard shortcuts */
+	if (dlg->type == DIALOG_DROP) {
+		switch (keycode) {
+			case 's': case 'S': closeDialogWithResult(dlg, DIALOG_RESULT_SAMPLES); return true;
+			case 'i': case 'I': closeDialogWithResult(dlg, DIALOG_RESULT_INSTRUMENTS); return true;
+			case 'c': case 'C': closeDialogWithResult(dlg, DIALOG_RESULT_CANCEL); return true;
+		}
+		return true;
+	}
+
 	/* Stereo dialog: L/R/C keyboard shortcuts */
 	if (dlg->type == DIALOG_STEREO) {
 		switch (keycode) {
@@ -633,7 +716,10 @@ bool ft2_dialog_key_down(ft2_dialog_t *dlg, int keycode)
 	}
 
 	if (keycode == FT2_KEY_RETURN) {
-		closeDialogWithResult(dlg, DIALOG_RESULT_OK);
+		if (dlg->type == DIALOG_DROP)
+			closeDialogWithResult(dlg, DIALOG_RESULT_SAMPLES);
+		else
+			closeDialogWithResult(dlg, DIALOG_RESULT_OK);
 		return true;
 	}
 
@@ -660,7 +746,7 @@ bool ft2_dialog_char_input(ft2_dialog_t *dlg, char c)
 
 /* ---------- Drawing ---------- */
 
-/* Draw 3D beveled button (matches standalone drawPushButton style) */
+/* Draw 3D beveled button */
 static void drawButton(ft2_video_t *video, const ft2_bmp_t *bmp, int x, int y, int w, int h,
                        const char *text, bool pressed)
 {
@@ -688,6 +774,42 @@ static void drawButton(ft2_video_t *video, const ft2_bmp_t *bmp, int x, int y, i
 	int tx = x + (w - textLen) / 2 + (pressed ? 1 : 0);
 	int ty = y + (h - 8) / 2 + (pressed ? 1 : 0);
 	textOut(video, bmp, tx, ty, PAL_BTNTEXT, text);
+}
+
+static void drawDialogTextLines(ft2_dialog_t *dlg, ft2_video_t *video, const ft2_bmp_t *bmp)
+{
+	if (dlg == NULL || dlg->text[0] == '\0')
+		return;
+
+	const int lineHeight = FONT8_CHAR_H + DIALOG_LINE_GAP;
+	int y = dlg->textY;
+
+	char lineBuf[256];
+	int idx = 0;
+	const char *p = dlg->text;
+
+	while (true)
+	{
+		if (*p == '\n' || *p == '\0')
+		{
+			lineBuf[idx] = '\0';
+			const int lineWidth = textWidth(lineBuf);
+			const int x = (SCREEN_W - lineWidth) / 2;
+			textOutShadow(video, bmp, x, y, PAL_FORGRND, PAL_BUTTON2, lineBuf);
+			y += lineHeight;
+			idx = 0;
+
+			if (*p == '\0')
+				break;
+
+			p++;
+			continue;
+		}
+
+		if (idx < (int)(sizeof(lineBuf) - 1))
+			lineBuf[idx++] = *p;
+		p++;
+	}
 }
 
 void ft2_dialog_draw(ft2_dialog_t *dlg, ft2_video_t *video, const ft2_bmp_t *bmp)
@@ -721,11 +843,16 @@ void ft2_dialog_draw(ft2_dialog_t *dlg, ft2_video_t *video, const ft2_bmp_t *bmp
 
 	/* Body text (not shown for input or radio dialogs) */
 	if (dlg->type != DIALOG_INPUT && dlg->type != DIALOG_INPUT_PREVIEW && dlg->type != DIALOG_RADIO)
-		textOutShadow(video, bmp, dlg->textX, dlg->textY, PAL_FORGRND, PAL_BUTTON2, dlg->text);
+		drawDialogTextLines(dlg, video, bmp);
 
 	/* Radio button labels - widget radio buttons are drawn by widget system
 	   Widget positions: x=182, y=234/250/266/282, labels at x+14=196 */
 	if (dlg->type == DIALOG_RADIO) {
+		ft2_widgets_t *widgets = getWidgetsFromInst(dlg->instance);
+		if (widgets != NULL) {
+			for (int i = 0; i < dlg->radioCount && i < 4; i++)
+				drawRadioButton(widgets, video, bmp, RB_DIALOG_OPT_0 + i);
+		}
 		for (int i = 0; i < dlg->radioCount; i++) {
 			int labelY = 234 + i * 16 + 1;  /* Widget Y + 1 for vertical alignment */
 			int labelX = 182 + 14;           /* Widget X + 14 for label offset */
@@ -743,6 +870,7 @@ void ft2_dialog_draw(ft2_dialog_t *dlg, ft2_video_t *video, const ft2_bmp_t *bmp
 		case DIALOG_INPUT_PREVIEW: btn1 = "OK"; btn2 = "Preview"; btn3 = "Cancel"; break;
 		case DIALOG_ZAP:           btn1 = "All"; btn2 = "Song"; btn3 = "Instrs."; btn4 = "Cancel"; break;
 		case DIALOG_STEREO:        btn1 = "Read left"; btn2 = "Read right"; btn3 = "Convert"; break;
+		case DIALOG_DROP:          btn1 = "Samples"; btn2 = "Instruments"; btn3 = "Cancel"; break;
 		case DIALOG_RADIO:         btn1 = "OK"; btn2 = "Cancel"; break;
 		default: break;
 	}
@@ -750,13 +878,14 @@ void ft2_dialog_draw(ft2_dialog_t *dlg, ft2_video_t *video, const ft2_bmp_t *bmp
 	drawButton(video, bmp, dlg->button1X, dlg->buttonY, DIALOG_BUTTON_W, DIALOG_BUTTON_H, btn1, dlg->button1Pressed);
 	if (dlg->type != DIALOG_OK)
 		drawButton(video, bmp, dlg->button2X, dlg->buttonY, DIALOG_BUTTON_W, DIALOG_BUTTON_H, btn2, dlg->button2Pressed);
-	if (dlg->type == DIALOG_INPUT_PREVIEW || dlg->type == DIALOG_ZAP || dlg->type == DIALOG_STEREO)
+	if (dlg->type == DIALOG_INPUT_PREVIEW || dlg->type == DIALOG_ZAP || dlg->type == DIALOG_STEREO || dlg->type == DIALOG_DROP)
 		drawButton(video, bmp, dlg->button3X, dlg->buttonY, DIALOG_BUTTON_W, DIALOG_BUTTON_H, btn3, dlg->button3Pressed);
 	if (dlg->type == DIALOG_ZAP)
 		drawButton(video, bmp, dlg->button4X, dlg->buttonY, DIALOG_BUTTON_W, DIALOG_BUTTON_H, btn4, dlg->button4Pressed);
 
 	/* Input field uses textbox system */
 	if (dlg->type == DIALOG_INPUT || dlg->type == DIALOG_INPUT_PREVIEW)
-		ft2_textbox_draw(video, bmp, TB_DIALOG_INPUT, dlg->instance);
+		ft2_textbox_draw_with_cursor(video, bmp, TB_DIALOG_INPUT,
+			ft2_textbox_get_blink_state(dlg->instance), dlg->instance);
 }
 

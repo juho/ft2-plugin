@@ -29,23 +29,203 @@
 #include "ft2_plugin_replayer.h"
 #include "ft2_plugin_pattern_ed.h"
 #include "ft2_plugin_sample_ed.h"
+#include "ft2_plugin_sample_utils.h"
+#include "ft2_plugin_xm2_convert.h"
 #include "ft2_plugin_gui.h"
 #include "ft2_plugin_ui.h"
 #include "ft2_plugin_input.h"
 #include "ft2_instance.h"
 
 static ft2_instr_t *getInstrForInst(ft2_instance_t *inst);
+static double getSampleC4RateHz(const ft2_instance_t *inst, const ft2_sample_t *s);
+static void envelopeDeletePoint(ft2_instance_t *inst, int envNum);
+
+static void applyInstEditorLayout(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t *bmp)
+{
+	if (inst == NULL || inst->ui == NULL)
+		return;
+
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
+	const bool xm2Enabled = inst->config.enableXm2Features;
+
+	const int16_t vdefXDefault[6] = { 200, 222, 245, 268, 291, 314 };
+	const int16_t pdefXDefault[6] = { 200, 222, 245, 268, 291, 314 };
+	const int16_t vdefXXm2[6] = { 151, 173, 196, 219, 242, 265 };
+	const int16_t pdefXXm2[6] = { 151, 173, 196, 219, 242, 265 };
+
+	const int16_t vdefY = 175;
+	const int16_t pdefY = 262;
+
+	const int16_t vAddXDefault = 341;
+	const int16_t vDelXDefault = 389;
+	const int16_t pAddXDefault = 341;
+	const int16_t pDelXDefault = 389;
+	const int16_t addDelYDefault = 175;
+	const int16_t addDelYDefaultPan = 262;
+	const int16_t addWDefault = 47;
+	const int16_t delWDefault = 46;
+	const int16_t addDelHDefault = 16;
+
+	const int16_t vAddXXm2 = 290;
+	const int16_t vDelXXm2 = 314;
+	const int16_t pAddXXm2 = 290;
+	const int16_t pDelXXm2 = 314;
+	const int16_t addDelHXm2 = 12;
+	const int16_t addDelWXm2 = 24;
+
+	const int16_t lenUpX = 398;
+	const int16_t lenDownX = 416;
+	const int16_t lenVolY = 175;
+	const int16_t lenPanY = 262;
+	const int16_t lenW = 19;
+	const int16_t lenH = 13;
+
+	const int16_t *vdefX = xm2Enabled ? vdefXXm2 : vdefXDefault;
+	const int16_t *pdefX = xm2Enabled ? pdefXXm2 : pdefXDefault;
+
+	for (int i = 0; i < 6; i++)
+	{
+		widgets->pushButtons[PB_INST_VDEF1 + i].x = vdefX[i];
+		widgets->pushButtons[PB_INST_VDEF1 + i].y = vdefY;
+		widgets->pushButtons[PB_INST_PDEF1 + i].x = pdefX[i];
+		widgets->pushButtons[PB_INST_PDEF1 + i].y = pdefY;
+	}
+
+	if (xm2Enabled)
+	{
+		widgets->pushButtons[PB_INST_VP_ADD].x = vAddXXm2;
+		widgets->pushButtons[PB_INST_VP_ADD].y = vdefY;
+		widgets->pushButtons[PB_INST_VP_ADD].w = addDelWXm2;
+		widgets->pushButtons[PB_INST_VP_ADD].h = addDelHXm2;
+		widgets->pushButtons[PB_INST_VP_ADD].caption = "+";
+		widgets->pushButtons[PB_INST_VP_DEL].x = vDelXXm2;
+		widgets->pushButtons[PB_INST_VP_DEL].y = vdefY;
+		widgets->pushButtons[PB_INST_VP_DEL].w = addDelWXm2;
+		widgets->pushButtons[PB_INST_VP_DEL].h = addDelHXm2;
+		widgets->pushButtons[PB_INST_VP_DEL].caption = "-";
+
+		widgets->pushButtons[PB_INST_PP_ADD].x = pAddXXm2;
+		widgets->pushButtons[PB_INST_PP_ADD].y = pdefY;
+		widgets->pushButtons[PB_INST_PP_ADD].w = addDelWXm2;
+		widgets->pushButtons[PB_INST_PP_ADD].h = addDelHXm2;
+		widgets->pushButtons[PB_INST_PP_ADD].caption = "+";
+		widgets->pushButtons[PB_INST_PP_DEL].x = pDelXXm2;
+		widgets->pushButtons[PB_INST_PP_DEL].y = pdefY;
+		widgets->pushButtons[PB_INST_PP_DEL].w = addDelWXm2;
+		widgets->pushButtons[PB_INST_PP_DEL].h = addDelHXm2;
+		widgets->pushButtons[PB_INST_PP_DEL].caption = "-";
+
+		widgets->pushButtons[PB_INST_VLEN_UP].x = lenUpX;
+		widgets->pushButtons[PB_INST_VLEN_UP].y = lenVolY;
+		widgets->pushButtons[PB_INST_VLEN_UP].w = lenW;
+		widgets->pushButtons[PB_INST_VLEN_UP].h = lenH;
+		widgets->pushButtons[PB_INST_VLEN_UP].caption = ARROW_UP_STRING;
+		widgets->pushButtons[PB_INST_VLEN_UP].preDelay = 1;
+		widgets->pushButtons[PB_INST_VLEN_UP].delayFrames = 4;
+
+		widgets->pushButtons[PB_INST_VLEN_DOWN].x = lenDownX;
+		widgets->pushButtons[PB_INST_VLEN_DOWN].y = lenVolY;
+		widgets->pushButtons[PB_INST_VLEN_DOWN].w = lenW;
+		widgets->pushButtons[PB_INST_VLEN_DOWN].h = lenH;
+		widgets->pushButtons[PB_INST_VLEN_DOWN].caption = ARROW_DOWN_STRING;
+		widgets->pushButtons[PB_INST_VLEN_DOWN].preDelay = 1;
+		widgets->pushButtons[PB_INST_VLEN_DOWN].delayFrames = 4;
+
+		widgets->pushButtons[PB_INST_PLEN_UP].x = lenUpX;
+		widgets->pushButtons[PB_INST_PLEN_UP].y = lenPanY;
+		widgets->pushButtons[PB_INST_PLEN_UP].w = lenW;
+		widgets->pushButtons[PB_INST_PLEN_UP].h = lenH;
+		widgets->pushButtons[PB_INST_PLEN_UP].caption = ARROW_UP_STRING;
+		widgets->pushButtons[PB_INST_PLEN_UP].preDelay = 1;
+		widgets->pushButtons[PB_INST_PLEN_UP].delayFrames = 4;
+
+		widgets->pushButtons[PB_INST_PLEN_DOWN].x = lenDownX;
+		widgets->pushButtons[PB_INST_PLEN_DOWN].y = lenPanY;
+		widgets->pushButtons[PB_INST_PLEN_DOWN].w = lenW;
+		widgets->pushButtons[PB_INST_PLEN_DOWN].h = lenH;
+		widgets->pushButtons[PB_INST_PLEN_DOWN].caption = ARROW_DOWN_STRING;
+		widgets->pushButtons[PB_INST_PLEN_DOWN].preDelay = 1;
+		widgets->pushButtons[PB_INST_PLEN_DOWN].delayFrames = 4;
+
+		if (video != NULL && bmp != NULL)
+		{
+			showPushButton(widgets, video, bmp, PB_INST_VLEN_UP);
+			showPushButton(widgets, video, bmp, PB_INST_VLEN_DOWN);
+			showPushButton(widgets, video, bmp, PB_INST_PLEN_UP);
+			showPushButton(widgets, video, bmp, PB_INST_PLEN_DOWN);
+		}
+	}
+	else
+	{
+		widgets->pushButtons[PB_INST_VP_ADD].x = vAddXDefault;
+		widgets->pushButtons[PB_INST_VP_ADD].y = addDelYDefault;
+		widgets->pushButtons[PB_INST_VP_ADD].w = addWDefault;
+		widgets->pushButtons[PB_INST_VP_ADD].h = addDelHDefault;
+		widgets->pushButtons[PB_INST_VP_ADD].caption = "Add";
+		widgets->pushButtons[PB_INST_VP_DEL].x = vDelXDefault;
+		widgets->pushButtons[PB_INST_VP_DEL].y = addDelYDefault;
+		widgets->pushButtons[PB_INST_VP_DEL].w = delWDefault;
+		widgets->pushButtons[PB_INST_VP_DEL].h = addDelHDefault;
+		widgets->pushButtons[PB_INST_VP_DEL].caption = "Del";
+
+		widgets->pushButtons[PB_INST_PP_ADD].x = pAddXDefault;
+		widgets->pushButtons[PB_INST_PP_ADD].y = addDelYDefaultPan;
+		widgets->pushButtons[PB_INST_PP_ADD].w = addWDefault;
+		widgets->pushButtons[PB_INST_PP_ADD].h = addDelHDefault;
+		widgets->pushButtons[PB_INST_PP_ADD].caption = "Add";
+		widgets->pushButtons[PB_INST_PP_DEL].x = pDelXDefault;
+		widgets->pushButtons[PB_INST_PP_DEL].y = addDelYDefaultPan;
+		widgets->pushButtons[PB_INST_PP_DEL].w = delWDefault;
+		widgets->pushButtons[PB_INST_PP_DEL].h = addDelHDefault;
+		widgets->pushButtons[PB_INST_PP_DEL].caption = "Del";
+
+		hidePushButton(widgets, PB_INST_VLEN_UP);
+		hidePushButton(widgets, PB_INST_VLEN_DOWN);
+		hidePushButton(widgets, PB_INST_PLEN_UP);
+		hidePushButton(widgets, PB_INST_PLEN_DOWN);
+	}
+}
+
+#ifdef _WIN32
+#include <windows.h>
+static uint64_t getTickNs(void)
+{
+	static LARGE_INTEGER freq = {0};
+	if (freq.QuadPart == 0) QueryPerformanceFrequency(&freq);
+	LARGE_INTEGER count;
+	QueryPerformanceCounter(&count);
+	return (uint64_t)((double)count.QuadPart * 1e9 / (double)freq.QuadPart);
+}
+#elif defined(__APPLE__)
+#include <mach/mach_time.h>
+static uint64_t getTickNs(void)
+{
+	static mach_timebase_info_data_t info = {0};
+	if (info.denom == 0) mach_timebase_info(&info);
+	return mach_absolute_time() * info.numer / info.denom;
+}
+#else
+#include <time.h>
+static uint64_t getTickNs(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+}
+#endif
 
 /* ---------- Envelope drag modes ---------- */
 
 #define ENV_DRAG_NONE    0
 #define ENV_DRAG_NORMAL  1
 #define ENV_DRAG_STRETCH 2
+#define ENV_DRAG_CURVE   3
 
 /* ---------- Envelope data accessor ---------- */
 
 typedef struct {
 	int16_t (*points)[2];     /* Pointer to points array */
+	int8_t *curve;            /* Curve per segment (index i=segment i-1->i) */
 	uint8_t *length;          /* Pointer to envelope length */
 	uint8_t *sustain;         /* Pointer to sustain point */
 	uint8_t *loopStart;       /* Pointer to loop start */
@@ -62,6 +242,7 @@ static bool getEnvelopeData(ft2_instance_t *inst, int envNum, env_data_t *out)
 
 	if (envNum == 0) {
 		out->points = ins->volEnvPoints;
+		out->curve = ins->volEnvCurve;
 		out->length = &ins->volEnvLength;
 		out->sustain = &ins->volEnvSustain;
 		out->loopStart = &ins->volEnvLoopStart;
@@ -71,6 +252,7 @@ static bool getEnvelopeData(ft2_instance_t *inst, int envNum, env_data_t *out)
 		out->maxY = 64;
 	} else {
 		out->points = ins->panEnvPoints;
+		out->curve = ins->panEnvCurve;
 		out->length = &ins->panEnvLength;
 		out->sustain = &ins->panEnvSustain;
 		out->loopStart = &ins->panEnvLoopStart;
@@ -104,8 +286,10 @@ void setStdVolEnvelope(ft2_instance_t *inst, uint8_t num)
 	ins->autoVibDepth = (uint8_t)cfg->stdVibDepth[num];
 	ins->autoVibSweep = (uint8_t)cfg->stdVibSweep[num];
 	ins->autoVibType = (uint8_t)cfg->stdVibType[num];
+	ins->volEnvSpeed = (cfg->stdVolEnvSpeed[num] >= 1 && cfg->stdVolEnvSpeed[num] <= 16) ? cfg->stdVolEnvSpeed[num] : 1;
 	
 	memcpy(ins->volEnvPoints, cfg->stdEnvPoints[num][0], sizeof(int16_t) * 12 * 2);
+	memcpy(ins->volEnvCurve, cfg->stdEnvCurve[num][0], sizeof(ins->volEnvCurve));
 }
 
 /* Apply panning envelope preset from config */
@@ -123,8 +307,10 @@ void setStdPanEnvelope(ft2_instance_t *inst, uint8_t num)
 	ins->panEnvLoopStart = (uint8_t)cfg->stdPanEnvLoopStart[num];
 	ins->panEnvLoopEnd = (uint8_t)cfg->stdPanEnvLoopEnd[num];
 	ins->panEnvFlags = (uint8_t)cfg->stdPanEnvFlags[num];
+	ins->panEnvSpeed = (cfg->stdPanEnvSpeed[num] >= 1 && cfg->stdPanEnvSpeed[num] <= 16) ? cfg->stdPanEnvSpeed[num] : 1;
 	
 	memcpy(ins->panEnvPoints, cfg->stdEnvPoints[num][1], sizeof(int16_t) * 12 * 2);
+	memcpy(ins->panEnvCurve, cfg->stdEnvCurve[num][1], sizeof(ins->panEnvCurve));
 }
 
 /* Left-click = recall preset, right-click = store current envelope */
@@ -144,12 +330,14 @@ void setOrStoreVolEnvPreset(ft2_instance_t *inst, uint8_t num)
 		cfg->stdVolEnvLoopEnd[num] = ins->volEnvLoopEnd;
 		cfg->stdVolEnvLength[num] = ins->volEnvLength;
 		cfg->stdVolEnvFlags[num] = ins->volEnvFlags;
+		cfg->stdVolEnvSpeed[num] = ins->volEnvSpeed;
 		cfg->stdVibRate[num] = ins->autoVibRate;
 		cfg->stdVibDepth[num] = ins->autoVibDepth;
 		cfg->stdVibSweep[num] = ins->autoVibSweep;
 		cfg->stdVibType[num] = ins->autoVibType;
 		
 		memcpy(cfg->stdEnvPoints[num][0], ins->volEnvPoints, sizeof(int16_t) * 12 * 2);
+		memcpy(cfg->stdEnvCurve[num][0], ins->volEnvCurve, sizeof(ins->volEnvCurve));
 	} else if (isMouseLeftButtonReleased(w)) {
 		setStdVolEnvelope(inst, num);
 		inst->uiState.updateInstEditor = true;
@@ -172,12 +360,14 @@ void setOrStorePanEnvPreset(ft2_instance_t *inst, uint8_t num)
 		cfg->stdPanEnvLoopEnd[num] = ins->panEnvLoopEnd;
 		cfg->stdPanEnvLength[num] = ins->panEnvLength;
 		cfg->stdPanEnvFlags[num] = ins->panEnvFlags;
+		cfg->stdPanEnvSpeed[num] = ins->panEnvSpeed;
 		cfg->stdVibRate[num] = ins->autoVibRate;
 		cfg->stdVibDepth[num] = ins->autoVibDepth;
 		cfg->stdVibSweep[num] = ins->autoVibSweep;
 		cfg->stdVibType[num] = ins->autoVibType;
 		
 		memcpy(cfg->stdEnvPoints[num][1], ins->panEnvPoints, sizeof(int16_t) * 12 * 2);
+		memcpy(cfg->stdEnvCurve[num][1], ins->panEnvCurve, sizeof(ins->panEnvCurve));
 	} else if (isMouseLeftButtonReleased(w)) {
 		setStdPanEnvelope(inst, num);
 		inst->uiState.updateInstEditor = true;
@@ -380,9 +570,40 @@ static void writePianoNumber(ft2_instance_t *inst, uint8_t note, uint8_t key, ui
 	const uint16_t x = keyDigitXPos[key] + (octave * 77);
 
 	if (keyIsBlackTab[key])
-		pianoNumberOut(video, bmp, x, 361, PAL_FORGRND, PAL_BCKGRND, number);
+	{
+		const uint16_t baseY = 361;
+		if (number > 0x0F)
+		{
+			const uint16_t yOffset = (FONT8_CHAR_H / 2) + 1;
+			pianoNumberOut(video, bmp, x, baseY - yOffset, PAL_FORGRND, PAL_BCKGRND, number >> 4);
+			pianoNumberOut(video, bmp, x, baseY + yOffset, PAL_FORGRND, PAL_BCKGRND, number & 0x0F);
+		}
+		else
+		{
+			pianoNumberOut(video, bmp, x, baseY, PAL_FORGRND, PAL_BCKGRND, number);
+		}
+	}
 	else
-		pianoNumberOut(video, bmp, x, 385, PAL_BCKGRND, PAL_FORGRND, number);
+	{
+		const uint16_t baseY = 385;
+		if (number > 0x0F)
+		{
+			const uint8_t fgPal = PAL_BCKGRND;
+			const uint8_t bgPal = PAL_FORGRND;
+			const uint16_t gap = 1;
+			const uint16_t bottomY = baseY + 2;
+			const uint16_t topY = bottomY - (FONT8_CHAR_H + gap);
+			const int32_t rectY = (topY > 0) ? (topY - 1) : 0;
+			const uint16_t rectH = (uint16_t)((bottomY + FONT8_CHAR_H) - rectY);
+			fillRect(video, x, (uint16_t)rectY, FONT8_CHAR_W, rectH, bgPal);
+			pianoNumberOut(video, bmp, x, topY, fgPal, bgPal, number >> 4);
+			pianoNumberOut(video, bmp, x, bottomY, fgPal, bgPal, number & 0x0F);
+		}
+		else
+		{
+			pianoNumberOut(video, bmp, x, baseY, PAL_BCKGRND, PAL_FORGRND, number);
+		}
+	}
 }
 
 static void drawWhitePianoKey(ft2_video_t *video, int key, int octave, bool keyDown, const ft2_bmp_t *bmp)
@@ -459,6 +680,11 @@ void ft2_instr_ed_init(ft2_instrument_editor_t *editor)
 	if (editor == NULL) return;
 	memset(editor, 0, sizeof(ft2_instrument_editor_t));
 	editor->activeEnv = -1;
+	editor->activeEnvSegment = -1;
+	editor->hoverEnv = -1;
+	editor->hoverEnvSegment = -1;
+	editor->lastCurveClickEnv = -1;
+	editor->lastCurveClickSegment = -1;
 }
 
 /* 3x3 envelope point dot */
@@ -498,6 +724,193 @@ static void envelopeVertLine(ft2_video_t *video, int32_t envNum, int32_t x, int3
 	}
 }
 
+#define ENV_CURVE_HIT_DIST 2
+#define ENV_CURVE_DRAG_SCALE 2
+#define ENV_CURVE_DBLCLICK_NS 300000000ULL
+
+static double envelope_curve_eval(double t, int8_t curve)
+{
+	if (curve == 0) return t;
+	if (t <= 0.0) return 0.0;
+	if (t >= 1.0) return 1.0;
+
+	const double k = (double)curve * (FT2_ENV_CURVE_K_MAX / (double)FT2_ENV_CURVE_MAX);
+	if (fabs(k) < 1e-8) return t;
+	const double denom = exp(k) - 1.0;
+	if (denom == 0.0) return t;
+	return (exp(k * t) - 1.0) / denom;
+}
+
+static int8_t envelopePointIndex(const env_data_t *env, int x, int y, uint8_t ant)
+{
+	if (env == NULL)
+		return -1;
+
+	for (uint8_t i = 0; i < ant; i++)
+	{
+		const int32_t px = 8 + env->points[i][0];
+		const int32_t py = env->screenY + 1 + (env->maxY - env->points[i][1]);
+		if (x >= px - 2 && x <= px + 2 && y >= py - 2 && y <= py + 2)
+			return (int8_t)i;
+	}
+
+	return -1;
+}
+
+static int8_t getEnvelopeLineHitSegment(const env_data_t *env, int x, int y, bool useCurves)
+{
+	if (env == NULL || env->curve == NULL || *env->length < 2)
+		return -1;
+
+	uint8_t ant = *env->length;
+	if (ant > 12) ant = 12;
+
+	if (envelopePointIndex(env, x, y, ant) >= 0)
+		return -1;
+
+	int8_t bestSeg = -1;
+	int32_t bestDist = ENV_CURVE_HIT_DIST + 1;
+	for (uint8_t i = 1; i < ant; i++)
+	{
+		const int32_t x0 = 8 + env->points[i - 1][0];
+		const int32_t x1 = 8 + env->points[i][0];
+		if (x1 <= x0 || x < x0 || x > x1)
+			continue;
+
+		const double t = (double)(x - x0) / (double)(x1 - x0);
+		const int8_t curve = useCurves ? env->curve[i] : 0;
+		const double f = envelope_curve_eval(t, curve);
+		const double yVal = (double)env->points[i - 1][1] + ((double)(env->points[i][1] - env->points[i - 1][1]) * f);
+		const int32_t yScreen = env->screenY + 1 + (env->maxY - (int32_t)llround(yVal));
+		const int32_t dist = (yScreen > y) ? (yScreen - y) : (y - yScreen);
+		if (dist <= ENV_CURVE_HIT_DIST && dist < bestDist)
+		{
+			bestDist = dist;
+			bestSeg = (int8_t)i;
+		}
+	}
+
+	return bestSeg;
+}
+
+static bool envelopeInsertPointAt(ft2_instance_t *inst, int envNum, int x, int y)
+{
+	if (inst == NULL || inst->editor.curInstr == 0)
+		return false;
+
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return false;
+
+	if (*env.length < 2 || *env.length >= 12)
+		return false;
+
+	const bool useCurves = inst->config.enableXm2Features;
+	const int8_t seg = getEnvelopeLineHitSegment(&env, x, y, useCurves);
+	if (seg < 1)
+		return false;
+
+	const int16_t x0 = env.points[seg - 1][0];
+	const int16_t x1 = env.points[seg][0];
+	const int16_t xDiff = x1 - x0;
+	if (xDiff < 2)
+		return false;
+
+	int32_t newX = x - 8;
+	if (newX < x0 + 1) newX = x0 + 1;
+	if (newX > x1 - 1) newX = x1 - 1;
+	if (newX < 0) newX = 0;
+	if (newX > 324) newX = 324;
+
+	const double t = (double)(newX - x0) / (double)xDiff;
+	const int8_t curve = useCurves ? env.curve[seg] : 0;
+	const double f = envelope_curve_eval(t, curve);
+	const double yd = (double)env.points[seg - 1][1] + ((double)(env.points[seg][1] - env.points[seg - 1][1]) * f);
+	int32_t newY = (int32_t)llround(yd);
+	if (newY < 0) newY = 0;
+	if (newY > env.maxY) newY = env.maxY;
+
+	const int16_t ant = *env.length;
+	const int16_t insertIndex = seg;
+
+	for (int16_t j = ant; j > insertIndex; j--)
+	{
+		env.points[j][0] = env.points[j - 1][0];
+		env.points[j][1] = env.points[j - 1][1];
+	}
+	if (env.curve != NULL)
+	{
+		const int8_t oldCurve = env.curve[insertIndex];
+		for (int16_t j = ant; j > insertIndex; j--)
+			env.curve[j] = env.curve[j - 1];
+		env.curve[insertIndex] = oldCurve;
+		if (insertIndex + 1 < 12)
+			env.curve[insertIndex + 1] = 0;
+		env.curve[0] = 0;
+	}
+	if (*env.sustain >= insertIndex) (*env.sustain)++;
+	if (*env.loopStart >= insertIndex) (*env.loopStart)++;
+	if (*env.loopEnd >= insertIndex) (*env.loopEnd)++;
+
+	env.points[insertIndex][0] = (int16_t)newX;
+	env.points[insertIndex][1] = (int16_t)newY;
+
+	(*env.length)++;
+	*env.currPoint = (uint8_t)insertIndex;
+	inst->uiState.updateInstEditor = true;
+	if (env.curve != NULL)
+		ft2_xm2_update_usage(inst);
+
+	return true;
+}
+
+static bool envelopeDeletePointAt(ft2_instance_t *inst, int envNum, int x, int y)
+{
+	if (inst == NULL || inst->editor.curInstr == 0)
+		return false;
+
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return false;
+
+	uint8_t ant = *env.length;
+	if (ant > 12) ant = 12;
+
+	const int8_t idx = envelopePointIndex(&env, x, y, ant);
+	if (idx < 0)
+		return false;
+
+	*env.currPoint = (uint8_t)idx;
+	envelopeDeletePoint(inst, envNum);
+	return true;
+}
+
+static void drawEnvelopeSegment(ft2_video_t *video, int32_t envNum, int16_t x0, int16_t y0,
+	int16_t x1, int16_t y1, int8_t curve, bool curvesEnabled, uint8_t pal)
+{
+	if (x1 <= x0)
+		return;
+
+	if (!curvesEnabled || curve == 0)
+	{
+		envelopeLine(video, envNum, x0 + 8, 65 - y0, x1 + 8, 65 - y1, pal);
+		return;
+	}
+
+	int32_t prevX = x0;
+	int32_t prevY = y0;
+	for (int32_t x = x0; x <= x1; x++)
+	{
+		const double t = (double)(x - x0) / (double)(x1 - x0);
+		const double f = envelope_curve_eval(t, curve);
+		const double yd = (double)y0 + ((double)(y1 - y0) * f);
+		int32_t yi = (int32_t)llround(yd);
+		envelopeLine(video, envNum, prevX + 8, 65 - prevY, x + 8, 65 - yi, pal);
+		prevX = x;
+		prevY = yi;
+	}
+}
+
 /*
  * Draw envelope (vol=0, pan=1): grid, points, lines, sustain/loop markers.
  * Uses while+break loops to avoid MSVC optimizer bug with for(i<=N) loops.
@@ -531,7 +944,17 @@ void ft2_instr_ed_draw_envelope(ft2_instance_t *inst, int envNum)
 	if (ins == NULL) return;
 	int16_t nd, sp, ls, le;
 	int16_t (*curEnvP)[2];
+	int8_t *curEnvCurve = NULL;
 	int8_t selected;
+	const bool curvesEnabled = inst->config.enableXm2Features;
+	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
+	int8_t hoverEnv = editor->hoverEnv;
+	int8_t hoverSeg = editor->hoverEnvSegment;
+	if (editor->envDragMode == ENV_DRAG_CURVE && editor->activeEnv == envNum)
+	{
+		hoverEnv = (int8_t)envNum;
+		hoverSeg = editor->activeEnvSegment;
+	}
 
 	if (envNum == 0) {
 		nd = ins->volEnvLength;
@@ -539,6 +962,7 @@ void ft2_instr_ed_draw_envelope(ft2_instance_t *inst, int envNum)
 		if (ins->volEnvFlags & ENV_LOOP) { ls = ins->volEnvLoopStart; le = ins->volEnvLoopEnd; }
 		else { ls = -1; le = -1; }
 		curEnvP = ins->volEnvPoints;
+		curEnvCurve = ins->volEnvCurve;
 		selected = inst->editor.currVolEnvPoint;
 		if (selected < 0) selected = 0; if (selected >= 12) selected = 11;
 	} else {
@@ -547,6 +971,7 @@ void ft2_instr_ed_draw_envelope(ft2_instance_t *inst, int envNum)
 		if (ins->panEnvFlags & ENV_LOOP) { ls = ins->panEnvLoopStart; le = ins->panEnvLoopEnd; }
 		else { ls = -1; le = -1; }
 		curEnvP = ins->panEnvPoints;
+		curEnvCurve = ins->panEnvCurve;
 		selected = inst->editor.currPanEnvPoint;
 		if (selected < 0) selected = 0; if (selected >= 12) selected = 11;
 	}
@@ -586,7 +1011,12 @@ void ft2_instr_ed_draw_envelope(ft2_instance_t *inst, int envNum)
 				envelopeVertLine(video, envNum, x + 8, 1, PAL_PATTEXT);
 			}
 		}
-		if (i > 0 && lx < x) envelopeLine(video, envNum, lx + 8, 65 - ly, x + 8, 65 - y, PAL_PATTEXT);
+		if (i > 0 && lx < x)
+		{
+			const bool highlight = curvesEnabled && hoverEnv == envNum && hoverSeg == i;
+			const uint8_t pal = highlight ? PAL_BLCKTXT : PAL_PATTEXT;
+			drawEnvelopeSegment(video, envNum, lx, ly, x, y, curEnvCurve != NULL ? curEnvCurve[i] : 0, curvesEnabled, pal);
+		}
 		lx = x; ly = y;
 	}
 }
@@ -599,18 +1029,6 @@ void ft2_instr_ed_draw_vol_env(ft2_instance_t *inst)
 void ft2_instr_ed_draw_pan_env(ft2_instance_t *inst)
 {
 	ft2_instr_ed_draw_envelope(inst, 1);
-}
-
-void ft2_instr_ed_draw_note_map(ft2_instance_t *inst)
-{
-	if (inst == NULL || inst->ui == NULL) return;
-	ft2_video_t *video = FT2_VIDEO(inst);
-	const ft2_bmp_t *bmp = FT2_BMP(inst);
-	if (video == NULL || video->frameBuffer == NULL) return;
-
-	drawFramework(video, 400, 189, 232, 67, FRAMEWORK_TYPE2);
-	textOutShadow(video, bmp, 404, 193, PAL_FORGRND, PAL_DSKTOP2, "Note-Sample Map");
-	/* Note: full bar graph not implemented - piano shows sample numbers */
 }
 
 void ft2_instr_ed_draw_piano(ft2_instance_t *inst)
@@ -641,6 +1059,8 @@ void updateInstEditor(ft2_instance_t *inst)
 	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
 	if (video == NULL || video->frameBuffer == NULL) return;
 
+	applyInstEditorLayout(inst, video, bmp);
+
 	ft2_instr_t *ins = NULL;
 	ft2_sample_t *s = NULL;
 	int16_t curInstr = inst->editor.curInstr;
@@ -651,9 +1071,35 @@ void updateInstEditor(ft2_instance_t *inst)
 		ins = inst->replayer.instr[curInstr];
 	}
 
-	if (ins != NULL && curSmp >= 0 && curSmp < FT2_MAX_SMP_PER_INST)
+	const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+	if (ins != NULL && curSmp >= 0 && curSmp < maxSamples)
 	{
 		s = &ins->smp[curSmp];
+	}
+
+	const bool xm2Enabled = inst->config.enableXm2Features;
+
+	if (xm2Enabled)
+	{
+		/* Draw volume envelope length - decimal */
+		{
+			char str[4];
+			uint8_t val = (ins != NULL) ? ins->volEnvSpeed : 1;
+			if (val < 1) val = 1;
+			if (val > 16) val = 16;
+			snprintf(str, sizeof(str), "%02d", val);
+			textOutFixed(video, bmp, 382, 177, PAL_FORGRND, PAL_DESKTOP, str);
+		}
+
+		/* Draw pan envelope length - decimal */
+		{
+			char str[4];
+			uint8_t val = (ins != NULL) ? ins->panEnvSpeed : 1;
+			if (val < 1) val = 1;
+			if (val > 16) val = 16;
+			snprintf(str, sizeof(str), "%02d", val);
+			textOutFixed(video, bmp, 382, 264, PAL_FORGRND, PAL_DESKTOP, str);
+		}
 	}
 
 	/* Draw Volume (hex at 505, 177) */
@@ -759,21 +1205,29 @@ void updateInstEditor(ft2_instance_t *inst)
 	fillRect(video, 472, 299, 64, 8, PAL_DESKTOP);
 	if (s != NULL)
 	{
-		/* Calculate C-4 frequency based on relative note and finetune */
-		double dC4Hz = 8363.0;
-		if (s->relativeNote != 0 || s->finetune != 0)
+		const double c4Rate = getSampleC4RateHz(inst, s);
+		if (c4Rate <= 0.0)
 		{
-			double dNote = s->relativeNote + (s->finetune / 128.0);
-			dC4Hz = dC4Hz * pow(2.0, dNote / 12.0);
+			textOut(video, bmp, 472, 299, PAL_FORGRND, "0Hz");
 		}
-		char freqStr[16];
-		snprintf(freqStr, sizeof(freqStr), "%.0fHz", dC4Hz);
-		textOut(video, bmp, 472, 299, PAL_FORGRND, freqStr);
-			}
+		else
+		{
+			char freqStr[32];
+			if (c4Rate < 1000.0)
+				snprintf(freqStr, sizeof(freqStr), "%.3fHz", c4Rate);
+			else if (c4Rate < 10000.0)
+				snprintf(freqStr, sizeof(freqStr), "%.2fHz", c4Rate);
+			else if (c4Rate < 100000.0)
+				snprintf(freqStr, sizeof(freqStr), "%.1fHz", c4Rate);
+			else
+				snprintf(freqStr, sizeof(freqStr), "%dHz", (int32_t)(c4Rate + 0.5));
+			textOut(video, bmp, 472, 299, PAL_FORGRND, freqStr);
+		}
+	}
 	else
 	{
-		textOut(video, bmp, 472, 299, PAL_FORGRND, "8363Hz");
-		}
+		textOut(video, bmp, 472, 299, PAL_FORGRND, "0Hz");
+	}
 
 	/* Draw Relative note (at 600, 299) - exact match to standalone drawRelativeNote() */
 	fillRect(video, 600, 299, 8 * 3, 8, PAL_BCKGRND);
@@ -785,7 +1239,7 @@ void updateInstEditor(ft2_instance_t *inst)
 		uint8_t note = (uint8_t)(note2 % 12);
 		char octaChar = '0' + (note2 / 12);
 		
-		/* Use sharp note names - matches standalone when config.ptnAcc == 0 */
+		/* Use sharp note names */
 		static const char sharpNote1Char[12] = { 'C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B' };
 		static const char sharpNote2Char[12] = { '-', '#', '-', '#', '-', '-', '#', '-', '#', '-', '#', '-' };
 		
@@ -800,7 +1254,7 @@ void updateInstEditor(ft2_instance_t *inst)
 		charOutBg(video, bmp, 616, 299, PAL_FORGRND, PAL_BCKGRND, '4');
 	}
 
-	/* Draw volume envelope sustain point (at 382, 206) - decimal, matches standalone */
+	/* Draw volume envelope sustain point (at 382, 206) - decimal */
 	{
 		char str[4];
 		uint8_t val = (ins != NULL) ? ins->volEnvSustain : 0;
@@ -809,7 +1263,7 @@ void updateInstEditor(ft2_instance_t *inst)
 		textOutFixed(video, bmp, 382, 206, PAL_FORGRND, PAL_DESKTOP, str);
 	}
 
-	/* Draw volume envelope loop start (at 382, 233) - decimal, matches standalone */
+	/* Draw volume envelope loop start (at 382, 233) - decimal */
 	{
 		char str[4];
 		uint8_t val = (ins != NULL) ? ins->volEnvLoopStart : 0;
@@ -818,7 +1272,7 @@ void updateInstEditor(ft2_instance_t *inst)
 		textOutFixed(video, bmp, 382, 233, PAL_FORGRND, PAL_DESKTOP, str);
 	}
 
-	/* Draw volume envelope loop end (at 382, 247) - decimal, matches standalone */
+	/* Draw volume envelope loop end (at 382, 247) - decimal */
 	{
 		char str[4];
 		uint8_t val = (ins != NULL) ? ins->volEnvLoopEnd : 0;
@@ -827,7 +1281,7 @@ void updateInstEditor(ft2_instance_t *inst)
 		textOutFixed(video, bmp, 382, 247, PAL_FORGRND, PAL_DESKTOP, str);
 	}
 
-	/* Draw pan envelope sustain point (at 382, 293) - decimal, matches standalone */
+	/* Draw pan envelope sustain point (at 382, 293) - decimal */
 	{
 		char str[4];
 		uint8_t val = (ins != NULL) ? ins->panEnvSustain : 0;
@@ -836,7 +1290,7 @@ void updateInstEditor(ft2_instance_t *inst)
 		textOutFixed(video, bmp, 382, 293, PAL_FORGRND, PAL_DESKTOP, str);
 	}
 
-	/* Draw pan envelope loop start (at 382, 320) - decimal, matches standalone */
+	/* Draw pan envelope loop start (at 382, 320) - decimal */
 	{
 		char str[4];
 		uint8_t val = (ins != NULL) ? ins->panEnvLoopStart : 0;
@@ -845,7 +1299,7 @@ void updateInstEditor(ft2_instance_t *inst)
 		textOutFixed(video, bmp, 382, 320, PAL_FORGRND, PAL_DESKTOP, str);
 	}
 
-	/* Draw pan envelope loop end (at 382, 334) - decimal, matches standalone */
+	/* Draw pan envelope loop end (at 382, 334) - decimal */
 	{
 		char str[4];
 		uint8_t val = (ins != NULL) ? ins->panEnvLoopEnd : 0;
@@ -932,15 +1386,22 @@ void ft2_instr_ed_draw(ft2_instance_t *inst)
 	drawFramework(video, 593, 296,  36,  15, FRAMEWORK_TYPE2);
 
 	/* Draw text labels - exact match to standalone showInstEditor() */
+	const bool xm2Enabled = inst->config.enableXm2Features;
 		textOutShadow(video, bmp, 20,  176, PAL_FORGRND, PAL_DSKTOP2, "Volume envelope:");
-		textOutShadow(video, bmp, 153, 176, PAL_FORGRND, PAL_DSKTOP2, "Predef.");
+		if (xm2Enabled)
+			textOutShadow(video, bmp, 342, 177, PAL_FORGRND, PAL_DSKTOP2, "Len.:");
+		else
+			textOutShadow(video, bmp, 153, 176, PAL_FORGRND, PAL_DSKTOP2, "Predef.");
 		textOutShadow(video, bmp, 358, 194, PAL_FORGRND, PAL_DSKTOP2, "Sustain:");
 		textOutShadow(video, bmp, 342, 206, PAL_FORGRND, PAL_DSKTOP2, "Point");
 		textOutShadow(video, bmp, 358, 219, PAL_FORGRND, PAL_DSKTOP2, "Env.loop:");
 		textOutShadow(video, bmp, 342, 233, PAL_FORGRND, PAL_DSKTOP2, "Start");
 		textOutShadow(video, bmp, 342, 247, PAL_FORGRND, PAL_DSKTOP2, "End");
 		textOutShadow(video, bmp, 20,  263, PAL_FORGRND, PAL_DSKTOP2, "Panning envelope:");
-		textOutShadow(video, bmp, 152, 263, PAL_FORGRND, PAL_DSKTOP2, "Predef.");
+		if (xm2Enabled)
+			textOutShadow(video, bmp, 342, 264, PAL_FORGRND, PAL_DSKTOP2, "Len.:");
+		else
+			textOutShadow(video, bmp, 152, 263, PAL_FORGRND, PAL_DSKTOP2, "Predef.");
 		textOutShadow(video, bmp, 358, 281, PAL_FORGRND, PAL_DSKTOP2, "Sustain:");
 		textOutShadow(video, bmp, 342, 293, PAL_FORGRND, PAL_DSKTOP2, "Point");
 		textOutShadow(video, bmp, 358, 306, PAL_FORGRND, PAL_DSKTOP2, "Env.loop:");
@@ -1041,6 +1502,7 @@ static bool handleEnvelopeClick(ft2_instance_t *inst, int x, int y, int button, 
 			editor->saveMouseX = 8 + (editor->lastMouseX - px);
 			editor->saveMouseY = (env.screenY + 1) + (editor->lastMouseY - py);
 			editor->activeEnv = (int8_t)envNum;
+			editor->activeEnvSegment = -1;
 
 			if (button == MOUSE_BUTTON_RIGHT && i > 0)
 				editor->envDragMode = ENV_DRAG_STRETCH;
@@ -1054,6 +1516,90 @@ static bool handleEnvelopeClick(ft2_instance_t *inst, int x, int y, int button, 
 	while (++i < ant);
 
 	return false;
+}
+
+static bool handleEnvelopeCurveClick(ft2_instance_t *inst, int x, int y, int envNum)
+{
+	if (inst == NULL || inst->editor.curInstr == 0)
+		return false;
+	if (!inst->config.enableXm2Features)
+		return false;
+
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return false;
+	if (*env.length < 2)
+		return false;
+
+	int8_t bestSeg = getEnvelopeLineHitSegment(&env, x, y, true);
+
+	if (bestSeg < 1)
+		return false;
+
+	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
+	const uint64_t now = getTickNs();
+	if (editor->lastCurveClickEnv == envNum && editor->lastCurveClickSegment == bestSeg &&
+		now - editor->lastCurveClickNs <= ENV_CURVE_DBLCLICK_NS)
+	{
+		env.curve[bestSeg] = 0;
+		editor->lastCurveClickNs = 0;
+		editor->activeEnv = -1;
+		editor->activeEnvSegment = -1;
+		editor->envDragMode = ENV_DRAG_NONE;
+		ft2_xm2_update_usage(inst);
+		ft2_song_mark_modified(inst);
+		inst->uiState.updateInstEditor = true;
+		return true;
+	}
+
+	editor->lastCurveClickNs = now;
+	editor->lastCurveClickEnv = (int8_t)envNum;
+	editor->lastCurveClickSegment = bestSeg;
+	editor->activeEnv = (int8_t)envNum;
+	editor->activeEnvSegment = bestSeg;
+	editor->envDragMode = ENV_DRAG_CURVE;
+	editor->curveDragStart = env.curve[bestSeg];
+	editor->curveDragStartY = y;
+	editor->lastMouseY = y;
+	inst->uiState.updateInstEditor = true;
+	return true;
+}
+
+static void handleEnvelopeDragCurve(ft2_instance_t *inst, int x, int y, int envNum)
+{
+	(void)x;
+	if (inst == NULL || inst->editor.curInstr == 0)
+		return;
+	if (!inst->config.enableXm2Features)
+		return;
+
+	env_data_t env;
+	if (!getEnvelopeData(inst, envNum, &env))
+		return;
+	if (*env.length < 2 || env.curve == NULL)
+		return;
+
+	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
+	const int8_t seg = editor->activeEnvSegment;
+	if (seg < 1 || seg >= *env.length)
+		return;
+
+	const int32_t dy = y - editor->curveDragStartY;
+	const int32_t y0 = env.points[seg - 1][1];
+	const int32_t y1 = env.points[seg][1];
+	const int32_t slopeSign = (y1 < y0) ? -1 : 1;
+	int32_t newCurve = (int32_t)editor->curveDragStart + ((dy * slopeSign) / ENV_CURVE_DRAG_SCALE);
+	if (newCurve > FT2_ENV_CURVE_MAX) newCurve = FT2_ENV_CURVE_MAX;
+	else if (newCurve < -FT2_ENV_CURVE_MAX) newCurve = -FT2_ENV_CURVE_MAX;
+
+	if (newCurve != env.curve[seg])
+	{
+		env.curve[seg] = (int8_t)newCurve;
+		env.curve[0] = 0;
+		ft2_xm2_update_usage(inst);
+		ft2_song_mark_modified(inst);
+		inst->uiState.updateInstEditor = true;
+	}
 }
 
 /* Handle normal envelope point drag (left-click) */
@@ -1201,16 +1747,45 @@ void ft2_instr_ed_mouse_click(ft2_instance_t *inst, int x, int y, int button)
 	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
 	editor->lastMouseX = x;
 	editor->lastMouseY = y;
+	const uint8_t mods = (inst->ui != NULL) ? FT2_UI(inst)->input.modifiers : 0;
+	const bool shiftDown = (mods & FT2_MOD_SHIFT) != 0;
+	const bool altCmdDown = (mods & (FT2_MOD_ALT | FT2_MOD_CMD)) != 0;
 
 	/* Check envelope areas */
 	if (y >= VOL_ENV_Y && y <= VOL_ENV_Y + ENV_HEIGHT && x >= 7 && x <= 334)
 	{
-		handleEnvelopeClick(inst, x, y, button, 0);
+		if (button == MOUSE_BUTTON_LEFT && altCmdDown)
+		{
+			envelopeDeletePointAt(inst, 0, x, y);
+			return;
+		}
+		if (button == MOUSE_BUTTON_LEFT && shiftDown)
+		{
+			if (envelopeInsertPointAt(inst, 0, x, y))
+				return;
+		}
+		if (handleEnvelopeClick(inst, x, y, button, 0))
+			return;
+		if (button == MOUSE_BUTTON_LEFT && handleEnvelopeCurveClick(inst, x, y, 0))
+			return;
 		return;
 	}
 	if (y >= PAN_ENV_Y && y <= PAN_ENV_Y + ENV_HEIGHT && x >= 7 && x <= 334)
 	{
-		handleEnvelopeClick(inst, x, y, button, 1);
+		if (button == MOUSE_BUTTON_LEFT && altCmdDown)
+		{
+			envelopeDeletePointAt(inst, 1, x, y);
+			return;
+		}
+		if (button == MOUSE_BUTTON_LEFT && shiftDown)
+		{
+			if (envelopeInsertPointAt(inst, 1, x, y))
+				return;
+		}
+		if (handleEnvelopeClick(inst, x, y, button, 1))
+			return;
+		if (button == MOUSE_BUTTON_LEFT && handleEnvelopeCurveClick(inst, x, y, 1))
+			return;
 		return;
 	}
 
@@ -1261,6 +1836,53 @@ void ft2_instr_ed_mouse_click(ft2_instance_t *inst, int x, int y, int button)
 	}
 
 	(void)button;
+}
+
+void ft2_instr_ed_mouse_move(ft2_instance_t *inst, int x, int y)
+{
+	if (inst == NULL || inst->ui == NULL)
+		return;
+
+	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
+	int8_t newHoverEnv = -1;
+	int8_t newHoverSeg = -1;
+
+	if (inst->config.enableXm2Features)
+	{
+		if (y >= VOL_ENV_Y && y <= VOL_ENV_Y + ENV_HEIGHT && x >= 7 && x <= 334)
+		{
+			env_data_t env;
+			if (getEnvelopeData(inst, 0, &env))
+			{
+				const int8_t seg = getEnvelopeLineHitSegment(&env, x, y, true);
+				if (seg >= 1)
+				{
+					newHoverEnv = 0;
+					newHoverSeg = seg;
+				}
+			}
+		}
+		else if (y >= PAN_ENV_Y && y <= PAN_ENV_Y + ENV_HEIGHT && x >= 7 && x <= 334)
+		{
+			env_data_t env;
+			if (getEnvelopeData(inst, 1, &env))
+			{
+				const int8_t seg = getEnvelopeLineHitSegment(&env, x, y, true);
+				if (seg >= 1)
+				{
+					newHoverEnv = 1;
+					newHoverSeg = seg;
+				}
+			}
+		}
+	}
+
+	if (newHoverEnv != editor->hoverEnv || newHoverSeg != editor->hoverEnvSegment)
+	{
+		editor->hoverEnv = newHoverEnv;
+		editor->hoverEnvSegment = newHoverSeg;
+		inst->uiState.updateInstEditor = true;
+	}
 }
 
 void ft2_instr_ed_mouse_drag(ft2_instance_t *inst, int x, int y)
@@ -1321,6 +1943,8 @@ void ft2_instr_ed_mouse_drag(ft2_instance_t *inst, int x, int y)
 			handleEnvelopeDragNormal(inst, x, y, editor->activeEnv);
 		else if (editor->envDragMode == ENV_DRAG_STRETCH)
 			handleEnvelopeDragStretch(inst, x, y, editor->activeEnv);
+		else if (editor->envDragMode == ENV_DRAG_CURVE)
+			handleEnvelopeDragCurve(inst, x, y, editor->activeEnv);
 		return;
 	}
 }
@@ -1331,9 +1955,13 @@ void ft2_instr_ed_mouse_up(ft2_instance_t *inst)
 		return;
 
 	ft2_instrument_editor_t *editor = FT2_INSTR_ED(inst);
+	const bool wasDraggingPiano = editor->draggingPiano;
 	editor->activeEnv = -1;
 	editor->envDragMode = ENV_DRAG_NONE;
+	editor->activeEnvSegment = -1;
 	editor->draggingPiano = false;
+	if (wasDraggingPiano)
+		ft2_xm2_update_usage(inst);
 }
 
 /* ---------- Visibility ---------- */
@@ -1352,6 +1980,8 @@ void showInstEditor(ft2_instance_t *inst)
 
 	hidePatternEditor(inst);
 	inst->uiState.instEditorShown = true;
+
+	applyInstEditorLayout(inst, video, bmp);
 
 	/* Scrollbars */
 	showScrollBar(widgets, video, SB_INST_VOL);
@@ -1477,6 +2107,10 @@ void hideInstEditor(ft2_instance_t *inst)
 	hidePushButton(widgets, PB_INST_PREPS_DOWN);
 	hidePushButton(widgets, PB_INST_PREPE_UP);
 	hidePushButton(widgets, PB_INST_PREPE_DOWN);
+	hidePushButton(widgets, PB_INST_VLEN_UP);
+	hidePushButton(widgets, PB_INST_VLEN_DOWN);
+	hidePushButton(widgets, PB_INST_PLEN_UP);
+	hidePushButton(widgets, PB_INST_PLEN_DOWN);
 	hidePushButton(widgets, PB_INST_VOL_DOWN);
 	hidePushButton(widgets, PB_INST_VOL_UP);
 	hidePushButton(widgets, PB_INST_PAN_DOWN);
@@ -1677,8 +2311,14 @@ static ft2_instr_t *getInstrForInst(ft2_instance_t *inst)
 static ft2_sample_t *getCurSmp(ft2_instance_t *inst)
 {
 	ft2_instr_t *instr = getInstrForInst(inst);
-	if (instr == NULL || inst->editor.curSmp >= 16) return NULL;
+	const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+	if (instr == NULL || inst->editor.curSmp >= maxSamples) return NULL;
 	return &instr->smp[inst->editor.curSmp];
+}
+
+static double getSampleC4RateHz(const ft2_instance_t *inst, const ft2_sample_t *s)
+{
+	return ft2_sample_get_playback_rate(inst, s);
 }
 
 /* ---------- Callbacks ---------- */
@@ -1729,6 +2369,18 @@ static void envelopeAddPoint(ft2_instance_t *inst, int envNum)
 		env.points[j][0] = env.points[j - 1][0];
 		env.points[j][1] = env.points[j - 1][1];
 	}
+	if (env.curve != NULL)
+	{
+		int8_t oldCurve = 0;
+		if (i < ant - 1)
+			oldCurve = env.curve[i + 1];
+		for (int16_t j = ant; j > i + 1; j--)
+			env.curve[j] = env.curve[j - 1];
+		env.curve[i + 1] = oldCurve;
+		if (i + 2 < 12)
+			env.curve[i + 2] = 0;
+		env.curve[0] = 0;
+	}
 	if (*env.sustain > i) (*env.sustain)++;
 	if (*env.loopStart > i) (*env.loopStart)++;
 	if (*env.loopEnd > i) (*env.loopEnd)++;
@@ -1749,6 +2401,8 @@ static void envelopeAddPoint(ft2_instance_t *inst, int envNum)
 
 	(*env.length)++;
 	inst->uiState.updateInstEditor = true;
+	if (env.curve != NULL)
+		ft2_xm2_update_usage(inst);
 }
 
 static void envelopeDeletePoint(ft2_instance_t *inst, int envNum)
@@ -1773,6 +2427,13 @@ static void envelopeDeletePoint(ft2_instance_t *inst, int envNum)
 		env.points[j][0] = env.points[j + 1][0];
 		env.points[j][1] = env.points[j + 1][1];
 	}
+	if (env.curve != NULL)
+	{
+		for (int16_t j = i; j < *env.length; j++)
+			env.curve[j] = env.curve[j + 1];
+		env.curve[*env.length - 1] = 0;
+		env.curve[0] = 0;
+	}
 	if (*env.sustain > i) (*env.sustain)--;
 	if (*env.loopStart > i) (*env.loopStart)--;
 	if (*env.loopEnd > i) (*env.loopEnd)--;
@@ -1786,6 +2447,8 @@ static void envelopeDeletePoint(ft2_instance_t *inst, int envNum)
 	else if (*env.currPoint >= *env.length) *env.currPoint = *env.length - 1;
 
 	inst->uiState.updateInstEditor = true;
+	if (env.curve != NULL)
+		ft2_xm2_update_usage(inst);
 }
 
 static void envAdjustSustain(ft2_instance_t *inst, int envNum, int delta)
@@ -1842,12 +2505,41 @@ static void envAdjustLoopEnd(ft2_instance_t *inst, int envNum, int delta)
 	}
 }
 
+static void envAdjustSpeed(ft2_instance_t *inst, int envNum, int delta)
+{
+	if (inst == NULL || inst->editor.curInstr == 0)
+		return;
+
+	ft2_instr_t *ins = getInstrForInst(inst);
+	if (ins == NULL)
+		return;
+
+	uint8_t *speed = (envNum == 0) ? &ins->volEnvSpeed : &ins->panEnvSpeed;
+	int32_t value = (int32_t)(*speed) + delta;
+	if (value < 1) value = 1;
+	else if (value > 16) value = 16;
+
+	if ((uint8_t)value == *speed)
+		return;
+
+	*speed = (uint8_t)value;
+	inst->uiState.updateInstEditor = true;
+	ft2_xm2_update_usage(inst);
+}
+
 /* ---------- Envelope point callbacks ---------- */
 
 void pbVolEnvAdd(ft2_instance_t *inst) { envelopeAddPoint(inst, 0); }
 void pbVolEnvDel(ft2_instance_t *inst) { envelopeDeletePoint(inst, 0); }
 void pbPanEnvAdd(ft2_instance_t *inst) { envelopeAddPoint(inst, 1); }
 void pbPanEnvDel(ft2_instance_t *inst) { envelopeDeletePoint(inst, 1); }
+
+/* ---------- Envelope length callbacks (XM2) ---------- */
+
+void pbVolEnvLenUp(ft2_instance_t *inst) { envAdjustSpeed(inst, 0, +1); }
+void pbVolEnvLenDown(ft2_instance_t *inst) { envAdjustSpeed(inst, 0, -1); }
+void pbPanEnvLenUp(ft2_instance_t *inst) { envAdjustSpeed(inst, 1, +1); }
+void pbPanEnvLenDown(ft2_instance_t *inst) { envAdjustSpeed(inst, 1, -1); }
 
 /* ---------- Sustain/loop point callbacks ---------- */
 

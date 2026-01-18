@@ -125,7 +125,7 @@ checkBox_t checkBoxes[NUM_CHECKBOXES] =
 	{ 114,  68, 180, 12, NULL },  /* Allow Fxx speed changes */
 
 	/* XM2 features (plugin-specific) */
-	{ 405, 133, 180, 12, NULL },  /* Enable XM2 features */
+	{ 404, 137, 180, 12, NULL },  /* Enable XM2 features */
 
 	/* WAV renderer */
 	{ 62, 157, 159, 24, NULL },

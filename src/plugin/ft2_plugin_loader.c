@@ -21,6 +21,7 @@
 #include "ft2_plugin_load_s3m.h"
 #include "ft2_plugin_timemap.h"
 #include "ft2_plugin_gui.h"
+#include "ft2_plugin_xm2_convert.h"
 
 #define SAMPLE_16BIT  16
 #define SAMPLE_STEREO 32
@@ -101,15 +102,16 @@ xm_instr_header_t;
 #pragma pack(pop)
 #endif
 
-/* Extra sample lengths when instrument has >16 samples */
-static uint32_t extraSampleLengths[32 - FT2_MAX_SMP_PER_INST];
-
 typedef struct xm_loader_state_t {
 	mem_reader_t reader;
 	ft2_instance_t *inst;
 	xm_header_t header;
 	bool linearPeriodsFlag;
 	bool isXm2;  /* True for XM2 format (stereo samples preserved) */
+	bool allowXm2; /* XM2 features enabled in config */
+	int32_t maxSamples; /* Runtime max sample slots (16 or 96) */
+	int32_t extraSampleCount;
+	uint32_t *extraSampleLengths;
 } xm_loader_state_t;
 
 /* ---------- Pattern unpacking ---------- */
@@ -230,6 +232,46 @@ static void delta_to_sample(int8_t *p, int8_t *pR, int32_t length, uint8_t smpFl
 	}
 }
 
+static uint32_t xm2_file_bytes_per_sample(ft2_sample_format_t format)
+{
+	switch (format)
+	{
+		case FT2_SMP_FORMAT_16BIT: return 2;
+		case FT2_SMP_FORMAT_24BIT: return 3;
+		case FT2_SMP_FORMAT_FLOAT32: return 4;
+		case FT2_SMP_FORMAT_8BIT:
+		default: return 1;
+	}
+}
+
+static void delta_decode_8bit(int8_t *p, int32_t length)
+{
+	int8_t old = 0;
+	for (int32_t i = 0; i < length; i++)
+		old = p[i] += old;
+}
+
+static void delta_decode_16bit(int16_t *p, int32_t length)
+{
+	int16_t old = 0;
+	for (int32_t i = 0; i < length; i++)
+		old = p[i] += old;
+}
+
+static void clear_extra_sample_lengths(xm_loader_state_t *state)
+{
+	if (state == NULL)
+		return;
+
+	if (state->extraSampleLengths != NULL)
+	{
+		free(state->extraSampleLengths);
+		state->extraSampleLengths = NULL;
+	}
+
+	state->extraSampleCount = 0;
+}
+
 /* ModPlug ADPCM: 4-bit delta with 16-byte LUT per sample */
 static bool load_adpcm_sample(mem_reader_t *r, ft2_sample_t *s)
 {
@@ -261,7 +303,7 @@ static bool load_instr_header(xm_loader_state_t *state, uint16_t instrNum)
 	ft2_replayer_state_t *rep = &inst->replayer;
 	ft2_song_t *song = &rep->song;
 
-	memset(extraSampleLengths, 0, sizeof(extraSampleLengths));
+	clear_extra_sample_lengths(state);
 
 	xm_instr_header_t ih;
 	memset(&ih, 0, sizeof(ih));
@@ -276,10 +318,25 @@ static bool load_instr_header(xm_loader_state_t *state, uint16_t instrNum)
 	if (!mem_read(r, &ih, readSize)) return false;
 
 	/* Skip extended header data */
+	ft2_xm2_ins_ext_t xm2Ext;
+	bool xm2ExtValid = false;
+	uint32_t extraBytesToSkip = 0;
 	if (ih.instrSize > INSTR_HEADER_SIZE)
-		if (!mem_skip(r, ih.instrSize - INSTR_HEADER_SIZE)) return false;
+	{
+		extraBytesToSkip = ih.instrSize - INSTR_HEADER_SIZE;
+		if (state->isXm2 && extraBytesToSkip >= sizeof(ft2_xm2_ins_ext_t))
+		{
+			if (!mem_read(r, &xm2Ext, sizeof(ft2_xm2_ins_ext_t))) return false;
+			if (xm2Ext.id == FT2_XM2_INS_EXT_ID && xm2Ext.version >= 1)
+				xm2ExtValid = true;
+			extraBytesToSkip -= (uint32_t)sizeof(ft2_xm2_ins_ext_t);
+		}
+		if (extraBytesToSkip > 0)
+			if (!mem_skip(r, extraBytesToSkip)) return false;
+	}
 
-	if (ih.numSamples < 0 || ih.numSamples > 32) return false;
+	const int32_t fileMaxSamples = state->isXm2 ? FT2_XM2_MAX_SMP_PER_INST : 32;
+	if (ih.numSamples < 0 || ih.numSamples > fileMaxSamples) return false;
 
 	if (instrNum <= FT2_MAX_INST)
 		memcpy(song->instrName[instrNum], ih.name, 22);
@@ -311,23 +368,89 @@ static bool load_instr_header(xm_loader_state_t *state, uint16_t instrNum)
 		ins->midiProgram = ih.midiProgram;
 		ins->midiBend = ih.midiBend;
 		ins->mute = (ih.mute == 1);
-		ins->numSamples = ih.numSamples;
+		ins->numSamples = (ih.numSamples > state->maxSamples) ? state->maxSamples : ih.numSamples;
+		ins->volEnvSpeed = 1;
+		ins->panEnvSpeed = 1;
+		if (xm2ExtValid)
+		{
+			memcpy(ins->volEnvCurve, xm2Ext.volEnvCurve, sizeof(ins->volEnvCurve));
+			memcpy(ins->panEnvCurve, xm2Ext.panEnvCurve, sizeof(ins->panEnvCurve));
+			if (xm2Ext.version >= 2)
+			{
+				ins->volEnvSpeed = (xm2Ext.volEnvSpeed == 0) ? 1 : xm2Ext.volEnvSpeed;
+				ins->panEnvSpeed = (xm2Ext.panEnvSpeed == 0) ? 1 : xm2Ext.panEnvSpeed;
+			}
+		}
 		ft2_sanitize_instrument(ins);
+		if (state->maxSamples < FT2_MAX_SMP_PER_INST)
+		{
+			for (int32_t i = 0; i < 96; i++)
+				if (ins->note2SampleLUT[i] >= state->maxSamples)
+					ins->note2SampleLUT[i] = (uint8_t)(state->maxSamples - 1);
+		}
 
 		int32_t sampleHeadersToRead = ih.numSamples;
-		if (sampleHeadersToRead > FT2_MAX_SMP_PER_INST)
-			sampleHeadersToRead = FT2_MAX_SMP_PER_INST;
+		if (sampleHeadersToRead > state->maxSamples)
+			sampleHeadersToRead = state->maxSamples;
 
-		xm_sample_header_t smpHdrs[FT2_MAX_SMP_PER_INST];
-		if (!mem_read(r, smpHdrs, sampleHeadersToRead * sizeof(xm_sample_header_t)))
-			return false;
+		xm_sample_header_t *smpHdrs = NULL;
+		ft2_xm2_smp_ext_t *xm2Ext = NULL;
+		bool *xm2ExtValid = NULL;
+		bool ok = false;
+		if (sampleHeadersToRead > 0)
+		{
+			smpHdrs = (xm_sample_header_t *)calloc((size_t)sampleHeadersToRead, sizeof(xm_sample_header_t));
+			if (smpHdrs == NULL)
+				return false;
+			if (!mem_read(r, smpHdrs, sampleHeadersToRead * sizeof(xm_sample_header_t)))
+				goto load_fail;
 
-		/* Store lengths of extra samples (>16) for skipping later */
-		if (ih.numSamples > FT2_MAX_SMP_PER_INST) {
-			const int32_t samplesToSkip = ih.numSamples - FT2_MAX_SMP_PER_INST;
-			for (int32_t j = 0; j < samplesToSkip; j++) {
-				if (!mem_read(r, &extraSampleLengths[j], 4)) return false;
-				if (!mem_skip(r, sizeof(xm_sample_header_t) - 4)) return false;
+			xm2Ext = (ft2_xm2_smp_ext_t *)calloc((size_t)sampleHeadersToRead, sizeof(ft2_xm2_smp_ext_t));
+			xm2ExtValid = (bool *)calloc((size_t)sampleHeadersToRead, sizeof(bool));
+			if (xm2Ext == NULL || xm2ExtValid == NULL)
+				goto load_fail;
+		}
+
+		uint32_t sampleHeaderSize = ih.sampleSize;
+		if (sampleHeaderSize < sizeof(xm_sample_header_t))
+			sampleHeaderSize = (uint32_t)sizeof(xm_sample_header_t);
+
+		uint32_t extraBytes = 0;
+		if (sampleHeaderSize > sizeof(xm_sample_header_t))
+			extraBytes = sampleHeaderSize - (uint32_t)sizeof(xm_sample_header_t);
+
+		if (extraBytes > 0 && sampleHeadersToRead > 0)
+		{
+			for (int32_t j = 0; j < sampleHeadersToRead; j++)
+			{
+				if (state->isXm2 && extraBytes >= sizeof(ft2_xm2_smp_ext_t))
+				{
+					if (!mem_read(r, &xm2Ext[j], sizeof(ft2_xm2_smp_ext_t))) goto load_fail;
+					if (xm2Ext[j].id == FT2_XM2_SMP_EXT_ID && xm2Ext[j].version >= FT2_XM2_SMP_EXT_VERSION)
+						xm2ExtValid[j] = true;
+					if (extraBytes > sizeof(ft2_xm2_smp_ext_t))
+						if (!mem_skip(r, extraBytes - sizeof(ft2_xm2_smp_ext_t))) goto load_fail;
+				}
+				else
+				{
+					if (!mem_skip(r, extraBytes)) goto load_fail;
+				}
+			}
+		}
+
+		/* Store lengths of extra samples (beyond runtime max) for skipping later */
+		if (ih.numSamples > sampleHeadersToRead)
+		{
+			const int32_t samplesToSkip = ih.numSamples - sampleHeadersToRead;
+			state->extraSampleLengths = (uint32_t *)calloc((size_t)samplesToSkip, sizeof(uint32_t));
+			if (state->extraSampleLengths == NULL) goto load_fail;
+			state->extraSampleCount = samplesToSkip;
+
+			for (int32_t j = 0; j < samplesToSkip; j++)
+			{
+				if (!mem_read(r, &state->extraSampleLengths[j], 4)) goto load_fail;
+				if (sampleHeaderSize > 4)
+					if (!mem_skip(r, sampleHeaderSize - 4)) goto load_fail;
 			}
 		}
 
@@ -343,10 +466,44 @@ static bool load_instr_header(xm_loader_state_t *state, uint16_t instrNum)
 			s->panning = src->panning;
 			s->relativeNote = src->relativeNote;
 			memcpy(s->name, src->name, 22);
+			s->format = (s->flags & SAMPLE_16BIT) ? FT2_SMP_FORMAT_16BIT : FT2_SMP_FORMAT_8BIT;
+			s->sampleRate = 0;
+
+			if (state->isXm2 && xm2ExtValid[j])
+			{
+				switch ((ft2_sample_format_t)xm2Ext[j].format)
+				{
+					case FT2_SMP_FORMAT_8BIT:
+					case FT2_SMP_FORMAT_16BIT:
+					case FT2_SMP_FORMAT_24BIT:
+					case FT2_SMP_FORMAT_FLOAT32:
+						s->format = (ft2_sample_format_t)xm2Ext[j].format;
+						break;
+					default:
+						break;
+				}
+
+				s->sampleRate = xm2Ext[j].sampleRate;
+			}
+
+			if (s->format == FT2_SMP_FORMAT_16BIT)
+				s->flags |= SAMPLE_16BIT;
+			else
+				s->flags &= ~SAMPLE_16BIT;
 			/* ModPlug ADPCM: nameLength=0xAD, must be 8-bit mono */
 			if (src->nameLength == 0xAD && !(src->flags & (SAMPLE_16BIT | SAMPLE_STEREO)))
 				s->flags |= SAMPLE_ADPCM;
 		}
+
+		ok = true;
+load_fail:
+		free(smpHdrs);
+		free(xm2Ext);
+		free(xm2ExtValid);
+		if (!ok)
+			clear_extra_sample_lengths(state);
+		if (!ok)
+			return false;
 	}
 	return true;
 }
@@ -363,7 +520,7 @@ static bool load_instr_sample(xm_loader_state_t *state, uint16_t instrNum)
 
 	ft2_instr_t *ins = rep->instr[instrNum];
 	uint16_t k = ins->numSamples;
-	if (k > FT2_MAX_SMP_PER_INST) k = FT2_MAX_SMP_PER_INST;
+	if (k > state->maxSamples) k = (uint16_t)state->maxSamples;
 
 	/* Instruments >128 loaded but samples skipped */
 	if (instrNum > FT2_MAX_INST) {
@@ -378,55 +535,201 @@ static bool load_instr_sample(xm_loader_state_t *state, uint16_t instrNum)
 		if (s->length <= 0) { s->length = 0; s->loopStart = 0; s->loopLength = 0; s->flags = 0; continue; }
 
 		const int32_t lengthInFile = s->length;
-		bool sample16Bit = !!(s->flags & SAMPLE_16BIT);
-		bool stereoSample = !!(s->flags & SAMPLE_STEREO);
-		bool adpcmSample = !!(s->flags & SAMPLE_ADPCM);
-		bool keepStereo = isXm2 && stereoSample;
+		const ft2_sample_format_t format = s->format;
+		const bool stereoSample = !!(s->flags & SAMPLE_STEREO);
+		const bool adpcmSample = !!(s->flags & SAMPLE_ADPCM);
+		const bool keepStereo = isXm2 && stereoSample;
+		const uint32_t fileBytesPerSample = xm2_file_bytes_per_sample(format);
+		const uint32_t internalBytesPerSample = ft2_sample_format_bytes(format);
 
-		/* Length in file is bytes; convert to samples for 16-bit */
-		if (sample16Bit) { s->length >>= 1; s->loopStart >>= 1; s->loopLength >>= 1; }
+		/* Length in file is bytes; convert to samples */
+		if (fileBytesPerSample == 0) return false;
+		s->length /= (int32_t)fileBytesPerSample;
+		s->loopStart /= (int32_t)fileBytesPerSample;
+		s->loopLength /= (int32_t)fileBytesPerSample;
 		if (s->length > FT2_MAX_SAMPLE_LEN) s->length = FT2_MAX_SAMPLE_LEN;
 
-		/* For stereo in XM2, length in file includes both channels */
-		int32_t sampleLength = s->length;
+		int32_t frameLength = s->length;
+		if (stereoSample)
+			frameLength >>= 1;
+
+		const int32_t padding = (int32_t)(FT2_MAX_TAPS * internalBytesPerSample);
+		const size_t allocSize = (size_t)padding + ((size_t)frameLength * internalBytesPerSample) + (size_t)padding;
+
+		/* Allocate left channel */
+		if (format == FT2_SMP_FORMAT_24BIT)
+		{
+			s->origDataPtr24 = (int32_t *)calloc(allocSize, 1);
+			if (!s->origDataPtr24) return false;
+			s->dataPtr24 = (int32_t *)((uint8_t *)s->origDataPtr24 + padding);
+		}
+		else if (format == FT2_SMP_FORMAT_FLOAT32)
+		{
+			s->origDataPtrF = (float *)calloc(allocSize, 1);
+			if (!s->origDataPtrF) return false;
+			s->dataPtrF = (float *)((uint8_t *)s->origDataPtrF + padding);
+		}
+		else
+		{
+			s->origDataPtr = (int8_t *)calloc(allocSize, 1);
+			if (!s->origDataPtr) return false;
+			s->dataPtr = s->origDataPtr + padding;
+		}
+
+		/* Allocate right channel for XM2 stereo */
 		if (keepStereo)
-			sampleLength >>= 1;  /* Actual sample length is half (L and R stored sequentially) */
-
-		/* Allocate with padding for interpolation taps */
-		const int32_t bytesPerSample = sample16Bit ? 2 : 1;
-		const uint32_t allocLen = (sampleLength + FT2_MAX_TAPS * 2) * bytesPerSample;
-		s->origDataPtr = (int8_t *)malloc(allocLen + FT2_MAX_TAPS * 2);
-		if (s->origDataPtr == NULL) return false;
-		s->dataPtr = s->origDataPtr + FT2_MAX_TAPS * bytesPerSample;
-		memset(s->origDataPtr, 0, allocLen + FT2_MAX_TAPS * 2);
-
-		/* Allocate right channel for stereo in XM2 */
-		if (keepStereo) {
-			s->origDataPtrR = (int8_t *)malloc(allocLen + FT2_MAX_TAPS * 2);
-			if (s->origDataPtrR == NULL) {
-				free(s->origDataPtr);
-				s->origDataPtr = s->dataPtr = NULL;
-				return false;
+		{
+			if (format == FT2_SMP_FORMAT_24BIT)
+			{
+				s->origDataPtr24R = (int32_t *)calloc(allocSize, 1);
+				if (!s->origDataPtr24R) return false;
+				s->dataPtr24R = (int32_t *)((uint8_t *)s->origDataPtr24R + padding);
 			}
-			s->dataPtrR = s->origDataPtrR + FT2_MAX_TAPS * bytesPerSample;
-			memset(s->origDataPtrR, 0, allocLen + FT2_MAX_TAPS * 2);
-		} else {
+			else if (format == FT2_SMP_FORMAT_FLOAT32)
+			{
+				s->origDataPtrFR = (float *)calloc(allocSize, 1);
+				if (!s->origDataPtrFR) return false;
+				s->dataPtrFR = (float *)((uint8_t *)s->origDataPtrFR + padding);
+			}
+			else
+			{
+				s->origDataPtrR = (int8_t *)calloc(allocSize, 1);
+				if (!s->origDataPtrR) return false;
+				s->dataPtrR = s->origDataPtrR + padding;
+			}
+		}
+		else
+		{
 			s->origDataPtrR = NULL;
 			s->dataPtrR = NULL;
+			s->origDataPtr24R = NULL;
+			s->dataPtr24R = NULL;
+			s->origDataPtrFR = NULL;
+			s->dataPtrFR = NULL;
 		}
 
-		if (adpcmSample) {
+		if (adpcmSample)
+		{
 			if (!load_adpcm_sample(r, s)) return false;
-		} else {
-			const int32_t sampleLengthInBytes = s->length * bytesPerSample;
-			if (!mem_read(r, s->dataPtr, sampleLengthInBytes)) return false;
-			if (sampleLengthInBytes < lengthInFile)
-				if (!mem_skip(r, lengthInFile - sampleLengthInBytes)) return false;
-
-			delta_to_sample(s->dataPtr, s->dataPtrR, s->length, s->flags, keepStereo);
-
-			if (stereoSample) { s->length >>= 1; s->loopStart >>= 1; s->loopLength >>= 1; }
 		}
+		else if (format == FT2_SMP_FORMAT_24BIT)
+		{
+			const int32_t bytesPerChan = frameLength * (int32_t)fileBytesPerSample;
+			const int32_t totalBytes = s->length * (int32_t)fileBytesPerSample;
+			uint8_t *tmp = (uint8_t *)malloc(bytesPerChan);
+			if (tmp == NULL) return false;
+
+			if (stereoSample && !keepStereo)
+			{
+				uint8_t *tmpR = (uint8_t *)malloc(bytesPerChan);
+				if (tmpR == NULL) { free(tmp); return false; }
+
+				if (!mem_read(r, tmp, bytesPerChan)) { free(tmpR); free(tmp); return false; }
+				if (!mem_read(r, tmpR, bytesPerChan)) { free(tmpR); free(tmp); return false; }
+
+				int32_t *dst = s->dataPtr24;
+				for (int32_t i = 0; i < frameLength; i++)
+				{
+					uint32_t vL = (uint32_t)tmp[i * 3] | ((uint32_t)tmp[i * 3 + 1] << 8) | ((uint32_t)tmp[i * 3 + 2] << 16);
+					uint32_t vR = (uint32_t)tmpR[i * 3] | ((uint32_t)tmpR[i * 3 + 1] << 8) | ((uint32_t)tmpR[i * 3 + 2] << 16);
+					int32_t sL = (vL & 0x800000) ? (int32_t)(vL | 0xFF000000) : (int32_t)vL;
+					int32_t sR = (vR & 0x800000) ? (int32_t)(vR | 0xFF000000) : (int32_t)vR;
+					dst[i] = (sL + sR) >> 1;
+				}
+
+				free(tmpR);
+			}
+			else
+			{
+				if (!mem_read(r, tmp, bytesPerChan)) { free(tmp); return false; }
+				int32_t *dst = s->dataPtr24;
+				for (int32_t i = 0; i < frameLength; i++)
+				{
+					uint32_t v = (uint32_t)tmp[i * 3] | ((uint32_t)tmp[i * 3 + 1] << 8) | ((uint32_t)tmp[i * 3 + 2] << 16);
+					dst[i] = (v & 0x800000) ? (int32_t)(v | 0xFF000000) : (int32_t)v;
+				}
+				if (keepStereo && s->dataPtr24R != NULL)
+				{
+					if (!mem_read(r, tmp, bytesPerChan)) { free(tmp); return false; }
+					int32_t *dstR = s->dataPtr24R;
+					for (int32_t i = 0; i < frameLength; i++)
+					{
+						uint32_t v = (uint32_t)tmp[i * 3] | ((uint32_t)tmp[i * 3 + 1] << 8) | ((uint32_t)tmp[i * 3 + 2] << 16);
+						dstR[i] = (v & 0x800000) ? (int32_t)(v | 0xFF000000) : (int32_t)v;
+					}
+				}
+			}
+
+			free(tmp);
+			if (totalBytes < lengthInFile)
+				if (!mem_skip(r, lengthInFile - totalBytes)) return false;
+		}
+		else if (format == FT2_SMP_FORMAT_FLOAT32)
+		{
+			const int32_t bytesPerChan = frameLength * (int32_t)fileBytesPerSample;
+			const int32_t totalBytes = s->length * (int32_t)fileBytesPerSample;
+
+			if (stereoSample && !keepStereo)
+			{
+				float *tmp = (float *)malloc(bytesPerChan);
+				float *tmpR = (float *)malloc(bytesPerChan);
+				if (tmp == NULL || tmpR == NULL) { free(tmp); free(tmpR); return false; }
+				if (!mem_read(r, tmp, bytesPerChan)) { free(tmp); free(tmpR); return false; }
+				if (!mem_read(r, tmpR, bytesPerChan)) { free(tmp); free(tmpR); return false; }
+				for (int32_t i = 0; i < frameLength; i++)
+					s->dataPtrF[i] = (tmp[i] + tmpR[i]) * 0.5f;
+				free(tmp);
+				free(tmpR);
+			}
+			else
+			{
+				if (!mem_read(r, s->dataPtrF, bytesPerChan)) return false;
+				if (keepStereo && s->dataPtrFR != NULL)
+					if (!mem_read(r, s->dataPtrFR, bytesPerChan)) return false;
+			}
+
+			if (totalBytes < lengthInFile)
+				if (!mem_skip(r, lengthInFile - totalBytes)) return false;
+		}
+		else
+		{
+			const int32_t bytesPerChan = frameLength * (int32_t)fileBytesPerSample;
+			const int32_t totalBytes = s->length * (int32_t)fileBytesPerSample;
+
+			if (stereoSample && !keepStereo)
+			{
+				int8_t *tmp = (int8_t *)malloc(totalBytes);
+				if (tmp == NULL) return false;
+				if (!mem_read(r, tmp, totalBytes)) { free(tmp); return false; }
+				delta_to_sample(tmp, NULL, s->length, s->flags, false);
+				memcpy(s->dataPtr, tmp, bytesPerChan);
+				free(tmp);
+			}
+			else
+			{
+				if (!mem_read(r, s->dataPtr, bytesPerChan)) return false;
+				if (keepStereo && s->dataPtrR != NULL)
+					if (!mem_read(r, s->dataPtrR, bytesPerChan)) return false;
+
+				if (format == FT2_SMP_FORMAT_16BIT)
+				{
+					delta_decode_16bit((int16_t *)s->dataPtr, frameLength);
+					if (keepStereo && s->dataPtrR != NULL)
+						delta_decode_16bit((int16_t *)s->dataPtrR, frameLength);
+				}
+				else
+				{
+					delta_decode_8bit(s->dataPtr, frameLength);
+					if (keepStereo && s->dataPtrR != NULL)
+						delta_decode_8bit(s->dataPtrR, frameLength);
+				}
+			}
+
+			if (totalBytes < lengthInFile)
+				if (!mem_skip(r, lengthInFile - totalBytes)) return false;
+		}
+
+		if (stereoSample) { s->length >>= 1; s->loopStart >>= 1; s->loopLength >>= 1; }
 
 		/* Clear stereo flag for standard XM (downmixed), keep for XM2 */
 		if (!keepStereo && (s->flags & SAMPLE_STEREO))
@@ -436,13 +739,16 @@ static bool load_instr_sample(xm_loader_state_t *state, uint16_t instrNum)
 		ft2_fix_sample(s);
 	}
 
-	/* Skip extra sample data (>16 samples) */
-	if (ins->numSamples > FT2_MAX_SMP_PER_INST) {
-		const int32_t samplesToSkip = ins->numSamples - FT2_MAX_SMP_PER_INST;
-		for (int32_t j = 0; j < samplesToSkip; j++)
-			if (extraSampleLengths[j] > 0)
-				if (!mem_skip(r, extraSampleLengths[j])) return false;
+	/* Skip extra sample data (beyond runtime max) */
+	if (state->extraSampleCount > 0 && state->extraSampleLengths != NULL)
+	{
+		for (int32_t j = 0; j < state->extraSampleCount; j++)
+		{
+			if (state->extraSampleLengths[j] > 0)
+				if (!mem_skip(r, state->extraSampleLengths[j])) return false;
+		}
 	}
+	clear_extra_sample_lengths(state);
 	return true;
 }
 
@@ -512,6 +818,10 @@ bool ft2_load_xm_from_memory(ft2_instance_t *inst, const uint8_t *data, uint32_t
 
 	/* Detect XM2 format: "Extended Module2:" or version 0x0200+ */
 	state.isXm2 = (memcmp(h->id, "Extended Module2:", 17) == 0) || (h->version >= 0x0200);
+	state.allowXm2 = state.isXm2 && inst->config.enableXm2Features;
+	state.maxSamples = state.allowXm2 ? FT2_XM2_MAX_SMP_PER_INST : FT2_XM_MAX_SMP_PER_INST;
+	state.extraSampleCount = 0;
+	state.extraSampleLengths = NULL;
 
 	/* Accept both standard XM and XM2 headers */
 	if (memcmp(h->id, "Extended Module: ", 17) != 0 && memcmp(h->id, "Extended Module2:", 17) != 0)
@@ -565,15 +875,15 @@ bool ft2_load_xm_from_memory(ft2_instance_t *inst, const uint8_t *data, uint32_t
 	 * v1.04: patterns, then instruments with samples interleaved */
 	if (h->version < 0x0104) {
 		for (uint16_t i = 1; i <= h->numInstr; i++)
-			if (!load_instr_header(&state, i)) return false;
+			if (!load_instr_header(&state, i)) { clear_extra_sample_lengths(&state); return false; }
 		if (!load_patterns(&state, h->numPatterns)) return false;
 		for (uint16_t i = 1; i <= h->numInstr; i++)
-			if (!load_instr_sample(&state, i)) return false;
+			if (!load_instr_sample(&state, i)) { clear_extra_sample_lengths(&state); return false; }
 	} else {
 		if (!load_patterns(&state, h->numPatterns)) return false;
 		for (uint16_t i = 1; i <= h->numInstr; i++) {
-			if (!load_instr_header(&state, i)) return false;
-			if (!load_instr_sample(&state, i)) return false;
+			if (!load_instr_header(&state, i)) { clear_extra_sample_lengths(&state); return false; }
+			if (!load_instr_sample(&state, i)) { clear_extra_sample_lengths(&state); return false; }
 		}
 	}
 
@@ -585,10 +895,10 @@ bool ft2_load_xm_from_memory(ft2_instance_t *inst, const uint8_t *data, uint32_t
 		}
 	}
 
-	/* Clamp sample counts to FT2 limit */
+	/* Clamp sample counts to runtime limit */
 	for (int32_t i = 1; i <= FT2_MAX_INST; i++)
-		if (rep->instr[i] != NULL && rep->instr[i]->numSamples > FT2_MAX_SMP_PER_INST)
-			rep->instr[i]->numSamples = FT2_MAX_SMP_PER_INST;
+		if (rep->instr[i] != NULL && rep->instr[i]->numSamples > state.maxSamples)
+			rep->instr[i]->numSamples = state.maxSamples;
 
 	song->pattNum = song->orders[0];
 	if (song->pattNum >= FT2_MAX_PATTERNS) song->pattNum = 0;
@@ -599,9 +909,7 @@ bool ft2_load_xm_from_memory(ft2_instance_t *inst, const uint8_t *data, uint32_t
 	song->songPos = 0;
 	song->row = 0;
 
-	/* Mark as using XM2 features if loaded from XM2 format */
-	if (state.isXm2)
-		song->usesXm2Features = true;
+	ft2_xm2_update_usage(inst);
 
 	inst->uiState.updatePosEdScrollBar = true;
 	inst->uiState.updatePosSections = true;

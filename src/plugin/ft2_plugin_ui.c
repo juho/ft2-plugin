@@ -20,10 +20,12 @@
 #include "ft2_plugin_scopes.h"
 #include "ft2_plugin_pattern_ed.h"
 #include "ft2_plugin_sample_ed.h"
+#include "ft2_plugin_sample_utils.h"
 #include "ft2_plugin_modal_panels.h"
 #include "ft2_plugin_echo_panel.h"
 #include "ft2_plugin_wave_panel.h"
 #include "ft2_plugin_filter_panel.h"
+#include "ft2_plugin_format_panel.h"
 #include "ft2_plugin_smpfx.h"
 #include "ft2_plugin_instr_ed.h"
 #include "ft2_plugin_about.h"
@@ -89,6 +91,7 @@ void ft2_ui_shutdown(ft2_ui_t *ui)
 {
 	if (!ui) return;
 	if (ui->bmpLoaded) { ft2_bmp_free(&ui->bmp); ui->bmpLoaded = false; }
+	ft2_sample_ed_free(&ui->sampleEditor);
 	ft2_video_free(&ui->video);
 	ft2_textbox_free(&ui->textbox);
 }
@@ -131,6 +134,17 @@ void ft2_ui_draw(ft2_ui_t *ui, void *inst)
 
 	if (ui->needsFullRedraw && ft2inst)
 		drawGUILayout(ft2inst, video, bmp);
+
+	if (ui->needsFullRedraw && ft2inst && ft2inst->uiState.sampleEditorShown)
+	{
+		ft2_sample_editor_t *editor = FT2_SAMPLE_ED(ft2inst);
+		if (editor)
+		{
+			editor->waveformDirty = true;
+			editor->overlaysDirty = true;
+			editor->peakCacheValid = false;
+		}
+	}
 
 	/* Top screen: scopes or overlay panels that replace them */
 	if (ft2inst)
@@ -192,8 +206,7 @@ static void handleRedrawing(ft2_ui_t *ui, ft2_instance_t *inst)
 	ft2_video_t *video = &ui->video;
 	const ft2_bmp_t *bmp = ui->bmpLoaded ? &ui->bmp : NULL;
 
-	static uint32_t textCursorCounter = 0;
-	textCursorCounter = ft2_textbox_is_editing(inst) ? textCursorCounter + 1 : 0;
+	ft2_textbox_tick_cursor(inst);
 
 	if (!inst->uiState.configScreenShown && !inst->uiState.helpScreenShown)
 	{
@@ -259,7 +272,7 @@ static void handleRedrawing(ft2_ui_t *ui, ft2_instance_t *inst)
 			{
 				int16_t activeBox = ft2_textbox_get_active(inst);
 				if (activeBox >= 0)
-					ft2_textbox_draw_with_cursor(video, bmp, (uint16_t)activeBox, (textCursorCounter & 0x10) == 0, inst);
+					ft2_textbox_draw_with_cursor(video, bmp, (uint16_t)activeBox, ft2_textbox_get_blink_state(inst), inst);
 			}
 			else
 			{
@@ -366,17 +379,42 @@ uint32_t *ft2_ui_get_framebuffer(ft2_ui_t *ui)
 /*                        MOUSE INPUT                                        */
 /* ------------------------------------------------------------------------- */
 
-void ft2_ui_mouse_press(ft2_ui_t *ui, void *inst, int x, int y, bool leftButton, bool rightButton)
+void ft2_ui_mouse_press(ft2_ui_t *ui, void *inst, int x, int y, bool leftButton, bool rightButton, int modifiers)
 {
 	if (!ui) return;
 
 	ft2_instance_t *ft2inst = (ft2_instance_t *)inst;
-	int button = leftButton ? MOUSE_BUTTON_LEFT : (rightButton ? MOUSE_BUTTON_RIGHT : 0);
+	ui->input.modifiers = (uint8_t)modifiers;
+	int button = 0;
+	if (leftButton)
+		button = MOUSE_BUTTON_LEFT;
+	else if (rightButton)
+		button = MOUSE_BUTTON_RIGHT;
 
 	/* Modal panels */
 	if (ft2_modal_panel_is_any_active(ft2inst))
 	{
-		if (ft2_modal_panel_get_active(ft2inst) == MODAL_PANEL_ECHO)
+		const modal_panel_type_t activePanel = ft2_modal_panel_get_active(ft2inst);
+		int16_t textBoxHit = -1;
+
+		switch (activePanel)
+		{
+			case MODAL_PANEL_WAVE:
+				textBoxHit = ft2_textbox_test_mouse_down_id(ft2inst, TB_WAVE_INPUT, x, y, rightButton);
+				break;
+			case MODAL_PANEL_FILTER:
+				textBoxHit = ft2_textbox_test_mouse_down_id(ft2inst, TB_FILTER_INPUT, x, y, rightButton);
+				break;
+			case MODAL_PANEL_FORMAT:
+				textBoxHit = ft2_textbox_test_mouse_down_id(ft2inst, TB_FORMAT_RATE, x, y, rightButton);
+				break;
+			default: break;
+		}
+
+		if (textBoxHit >= 0)
+			return;
+
+		if (activePanel == MODAL_PANEL_ECHO)
 			ft2_echo_panel_mouse_down(ft2inst, x, y, button);
 		ft2_widgets_mouse_down(&ui->widgets, ft2inst, &ui->video, x, y, true);
 		return;
@@ -388,7 +426,43 @@ void ft2_ui_mouse_press(ft2_ui_t *ui, void *inst, int x, int y, bool leftButton,
 		return;
 	}
 
-	ft2_input_mouse_down(&ui->input, x, y, button);
+	if (leftButton && rightButton)
+	{
+		ft2_input_mouse_down(&ui->input, x, y, MOUSE_BUTTON_LEFT);
+		ft2_input_mouse_down(&ui->input, x, y, MOUSE_BUTTON_RIGHT);
+	}
+	else if (button != 0)
+	{
+		ft2_input_mouse_down(&ui->input, x, y, button);
+	}
+
+	const uint8_t leftMask = (uint8_t)(1u << MOUSE_BUTTON_LEFT);
+	const uint8_t rightMask = (uint8_t)(1u << MOUSE_BUTTON_RIGHT);
+	const bool leftHeld = (ui->input.mouseButtons & leftMask) != 0;
+	const bool rightHeld = (ui->input.mouseButtons & rightMask) != 0;
+	const ft2_bmp_t *bmp = ui->bmpLoaded ? &ui->bmp : NULL;
+
+	if (leftHeld && rightHeld)
+	{
+		if (ft2inst && ft2inst->uiState.scopesShown)
+		{
+			if (ft2_scopes_mouse_down(&ui->scopes, &ui->video, bmp, x, y, true, true))
+			{
+				for (int i = 0; i < ft2inst->replayer.song.numChannels; i++)
+				{
+					ft2inst->replayer.channel[i].channelOff = ui->scopes.channelMuted[i];
+					if (ui->scopes.channelMuted[i])
+					{
+						ft2inst->replayer.channel[i].realVol = 0;
+						ft2inst->replayer.channel[i].outVol = 0;
+						ft2inst->replayer.channel[i].fFinalVol = 0.0f;
+						ft2_scope_stop(&ui->scopes, i);
+					}
+				}
+			}
+		}
+		return;
+	}
 
 	/* Instrument switcher first (FT2 behavior: left=select, right=edit name) */
 	if (ft2inst) testInstrSwitcherMouseDown(ft2inst, x, y);
@@ -417,8 +491,7 @@ void ft2_ui_mouse_press(ft2_ui_t *ui, void *inst, int x, int y, bool leftButton,
 	/* Scopes (mute/rec/solo) */
 	if (ft2inst && ft2inst->uiState.scopesShown)
 	{
-		const ft2_bmp_t *bmp = ui->bmpLoaded ? &ui->bmp : NULL;
-		if (ft2_scopes_mouse_down(&ui->scopes, &ui->video, bmp, x, y, leftButton, rightButton))
+		if (ft2_scopes_mouse_down(&ui->scopes, &ui->video, bmp, x, y, leftHeld, rightHeld))
 		{
 			for (int i = 0; i < ft2inst->replayer.song.numChannels; i++)
 			{
@@ -495,10 +568,11 @@ void ft2_ui_mouse_release(ft2_ui_t *ui, void *inst, int x, int y, int button)
 	if (ft2inst && ft2inst->uiState.instEditorShown) ft2_instr_ed_mouse_up(ft2inst);
 }
 
-void ft2_ui_mouse_move(ft2_ui_t *ui, void *inst, int x, int y)
+void ft2_ui_mouse_move(ft2_ui_t *ui, void *inst, int x, int y, int modifiers)
 {
 	if (!ui) return;
 
+	ui->input.modifiers = (uint8_t)modifiers;
 	ft2_input_mouse_move(&ui->input, x, y);
 	ft2_widgets_mouse_move(&ui->widgets, x, y);
 
@@ -513,6 +587,9 @@ void ft2_ui_mouse_move(ft2_ui_t *ui, void *inst, int x, int y)
 
 	if (ft2inst->uiState.instEditorShown && ui->input.mouseDragging)
 		ft2_instr_ed_mouse_drag(ft2inst, x, y);
+
+	if (ft2inst->uiState.instEditorShown)
+		ft2_instr_ed_mouse_move(ft2inst, x, y);
 }
 
 void ft2_ui_mouse_wheel(ft2_ui_t *ui, void *inst, int x, int y, int delta, int modifiers)
@@ -592,15 +669,20 @@ void ft2_ui_mouse_wheel(ft2_ui_t *ui, void *inst, int x, int y, int delta, int m
 			else if (y >= 94)
 			{
 				/* Sample area - change selection and auto-scroll */
+				const int32_t maxSamples = ft2_get_max_samples_per_instr(ft2inst);
+				const int32_t maxIndex = (maxSamples > 0) ? (maxSamples - 1) : 0;
+				const int32_t maxOffset = (maxSamples > 5) ? (maxSamples - 5) : 0;
+
 				if (up && ft2inst->editor.curSmp > 0) {
 					ft2inst->editor.curSmp--;
 					ft2inst->editor.sampleBankOffset = (ft2inst->editor.curSmp / 5) * 5;
-				} else if (!up && ft2inst->editor.curSmp < 15) {
+				} else if (!up && ft2inst->editor.curSmp < maxIndex) {
 					ft2inst->editor.curSmp++;
 					ft2inst->editor.sampleBankOffset = (ft2inst->editor.curSmp / 5) * 5;
-					if (ft2inst->editor.sampleBankOffset > 11)
-						ft2inst->editor.sampleBankOffset = 11;
 				}
+
+				if (ft2inst->editor.sampleBankOffset > maxOffset)
+					ft2inst->editor.sampleBankOffset = (uint8_t)maxOffset;
 
 				ft2_widgets_t *widgets = ft2inst->ui ? &((ft2_ui_t *)ft2inst->ui)->widgets : NULL;
 				if (widgets)
@@ -661,6 +743,7 @@ void ft2_ui_key_press(ft2_ui_t *ui, void *inst, int key, int modifiers)
 	/* Modal panels with text input */
 	if (ft2_wave_panel_is_active(ft2inst)) { ft2_wave_panel_key_down(ft2inst, key); return; }
 	if (ft2_filter_panel_is_active(ft2inst)) { ft2_filter_panel_key_down(ft2inst, key); return; }
+	if (ft2_format_panel_is_active(ft2inst)) { ft2_format_panel_key_down(ft2inst, key); return; }
 	if (ft2_modal_panel_is_any_active(ft2inst)) return;
 	if (ft2_dialog_is_active(&ui->dialog)) { ft2_dialog_key_down(&ui->dialog, key); return; }
 
@@ -681,6 +764,7 @@ void ft2_ui_text_input(ft2_ui_t *ui, void *inst, char c)
 
 	if (ft2_wave_panel_is_active(ft2inst)) { ft2_wave_panel_char_input(ft2inst, c); return; }
 	if (ft2_filter_panel_is_active(ft2inst)) { ft2_filter_panel_char_input(ft2inst, c); return; }
+	if (ft2_format_panel_is_active(ft2inst)) { ft2_format_panel_char_input(ft2inst, c); return; }
 	if (ft2_dialog_is_active(&ui->dialog)) { ft2_dialog_char_input(&ui->dialog, c); return; }
 	if (ft2_textbox_is_editing(ft2inst)) ft2_textbox_input_char(ft2inst, c);
 }

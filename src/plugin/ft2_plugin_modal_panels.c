@@ -14,6 +14,8 @@
 #include "ft2_plugin_mix_panel.h"
 #include "ft2_plugin_wave_panel.h"
 #include "ft2_plugin_filter_panel.h"
+#include "ft2_plugin_format_panel.h"
+#include "ft2_plugin_channels_panel.h"
 #include "ft2_plugin_ui.h"
 #include "../ft2_instance.h"
 
@@ -31,6 +33,8 @@ void ft2_modal_panel_init(ft2_modal_state_t *state)
 	
 	/* Resample panel defaults */
 	state->resample.relReSmp = 0;
+	state->resample.targetRateHz = 8363;
+	state->resample.targetBits = 16;
 	
 	/* Echo panel defaults */
 	state->echo.echoNum = 1;
@@ -44,15 +48,21 @@ void ft2_modal_panel_init(ft2_modal_state_t *state)
 	/* Wave panel defaults */
 	state->wave.waveType = WAVE_TYPE_TRIANGLE;
 	strcpy(state->wave.inputBuffer, "64");
-	state->wave.inputCursorPos = 2;
 	state->wave.lastWaveLength = 64;
 	
 	/* Filter panel defaults */
 	state->filter.filterType = FILTER_TYPE_LOWPASS;
 	strcpy(state->filter.inputBuffer, "2000");
-	state->filter.inputCursorPos = 4;
 	state->filter.lastLpCutoff = 2000;
 	state->filter.lastHpCutoff = 200;
+
+	/* Format panel defaults */
+	strcpy(state->format.rateBuffer, "44100");
+	state->format.targetFormat = FT2_SMP_FORMAT_16BIT;
+
+	/* Channels panel defaults */
+	state->channels.toMonoMode = FT2_CHNS_TO_MONO_DOWNMIX;
+	state->channels.toStereoMode = FT2_CHNS_TO_STEREO_YES;
 }
 
 bool ft2_modal_panel_is_any_active(ft2_instance_t *inst)
@@ -79,6 +89,8 @@ void ft2_modal_panel_draw_active(ft2_instance_t *inst, ft2_video_t *video, const
 		case MODAL_PANEL_MIX:      ft2_mix_panel_draw(inst, video, bmp); break;
 		case MODAL_PANEL_WAVE:     ft2_wave_panel_draw(inst, video, bmp); break;
 		case MODAL_PANEL_FILTER:   ft2_filter_panel_draw(inst, video, bmp); break;
+		case MODAL_PANEL_FORMAT:   ft2_format_panel_draw(inst, video, bmp); break;
+		case MODAL_PANEL_CHANNELS: ft2_channels_panel_draw(inst, video, bmp); break;
 		default: break;
 	}
 }
@@ -95,6 +107,8 @@ void ft2_modal_panel_close_active(ft2_instance_t *inst)
 		case MODAL_PANEL_MIX:      ft2_mix_panel_hide(inst); break;
 		case MODAL_PANEL_WAVE:     ft2_wave_panel_hide(inst); break;
 		case MODAL_PANEL_FILTER:   ft2_filter_panel_hide(inst); break;
+		case MODAL_PANEL_FORMAT:   ft2_format_panel_hide(inst); break;
+		case MODAL_PANEL_CHANNELS: ft2_channels_panel_hide(inst); break;
 		default: break;
 	}
 }

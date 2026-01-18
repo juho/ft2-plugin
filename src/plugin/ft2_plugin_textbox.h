@@ -21,6 +21,7 @@ enum {
 	TB_INST1, TB_INST2, TB_INST3, TB_INST4, TB_INST5, TB_INST6, TB_INST7, TB_INST8,
 	TB_SAMP1, TB_SAMP2, TB_SAMP3, TB_SAMP4, TB_SAMP5,
 	TB_SONG_NAME, TB_DISKOP_FILENAME, TB_DIALOG_INPUT,
+	TB_WAVE_INPUT, TB_FILTER_INPUT, TB_FORMAT_RATE,
 	NUM_TEXTBOXES
 };
 
@@ -31,6 +32,9 @@ typedef struct textBox_t {
 	uint8_t tx, ty;         /* Text inset */
 	uint16_t maxChars;      /* Max character count */
 	bool rightMouseButton;  /* Requires right-click to edit */
+	bool numbersOnly;       /* Restrict input to digits */
+	bool useBgPalOverride;  /* Use custom background palette */
+	uint8_t bgPalOverride;  /* Background override palette index */
 	char *textPtr;          /* Pointer to text buffer */
 	bool visible, active;   /* State flags */
 	int16_t cursorPos;      /* Cursor position in characters */
@@ -46,6 +50,7 @@ typedef struct ft2_textbox_state_t {
 	int16_t activeTextBox;
 	bool textEditActive;
 	int16_t textBoxNeedsRedraw;
+	uint32_t cursorBlinkCounter;
 } ft2_textbox_state_t;
 
 /* Initialization */
@@ -55,6 +60,7 @@ void ft2_textbox_free(ft2_textbox_state_t *state);
 
 /* Mouse input */
 int16_t ft2_textbox_test_mouse_down(struct ft2_instance_t *inst, int32_t x, int32_t y, bool rightButton);
+int16_t ft2_textbox_test_mouse_down_id(struct ft2_instance_t *inst, uint16_t textBoxID, int32_t x, int32_t y, bool rightButton);
 void ft2_textbox_mouse_drag(struct ft2_instance_t *inst, int32_t x, int32_t y);
 
 /* Keyboard input */
@@ -66,6 +72,8 @@ void ft2_textbox_exit_editing(struct ft2_instance_t *inst);
 bool ft2_textbox_is_editing(struct ft2_instance_t *inst);
 int16_t ft2_textbox_get_active(struct ft2_instance_t *inst);
 int16_t ft2_textbox_get_needs_redraw(struct ft2_instance_t *inst);
+void ft2_textbox_tick_cursor(struct ft2_instance_t *inst);
+bool ft2_textbox_get_blink_state(struct ft2_instance_t *inst);
 
 /* Visibility */
 void ft2_textbox_show(struct ft2_instance_t *inst, uint16_t textBoxID);
@@ -87,6 +95,11 @@ void ft2_textbox_set_cursor_end(struct ft2_instance_t *inst, uint16_t textBoxID)
 void ft2_textbox_configure_dialog(struct ft2_instance_t *inst, uint16_t x, uint16_t y, uint16_t w, uint16_t h, char *textPtr, uint16_t maxChars);
 void ft2_textbox_activate_dialog(struct ft2_instance_t *inst);
 void ft2_textbox_deactivate_dialog(struct ft2_instance_t *inst);
+
+/* Generic configuration */
+void ft2_textbox_configure(struct ft2_instance_t *inst, uint16_t textBoxID, char *textPtr, uint16_t maxChars,
+                           bool numbersOnly, bool useBgOverride, uint8_t bgOverride);
+void ft2_textbox_activate_id(struct ft2_instance_t *inst, uint16_t textBoxID);
 
 #ifdef __cplusplus
 }

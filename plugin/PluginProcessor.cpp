@@ -767,6 +767,9 @@ void FT2PluginProcessor::saveGlobalConfig()
     // Sample editor settings
     props->setValue("config_smpEdNote", cfg.smpEdNote);
     
+    // XM2 features
+    props->setValue("config_enableXm2Features", cfg.enableXm2Features);
+    
     // Miscellaneous settings
     props->setValue("config_smpCutToBuffer", cfg.smpCutToBuffer);
     props->setValue("config_ptnCutToBuffer", cfg.ptnCutToBuffer);
@@ -907,6 +910,9 @@ void FT2PluginProcessor::loadGlobalConfig()
     
     // Sample editor settings
     cfg.smpEdNote = static_cast<uint8_t>(props->getIntValue("config_smpEdNote", cfg.smpEdNote));
+    
+    // XM2 features
+    cfg.enableXm2Features = props->getBoolValue("config_enableXm2Features", cfg.enableXm2Features);
     
     // Miscellaneous settings
     cfg.smpCutToBuffer = props->getBoolValue("config_smpCutToBuffer", cfg.smpCutToBuffer);

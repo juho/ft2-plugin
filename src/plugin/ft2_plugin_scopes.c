@@ -139,6 +139,31 @@ static bool calcScopeIntrpLUT(ft2_scopes_t *scopes)
 	const int16_t *t = lut + (((frac) >> (SCOPE_FRAC_BITS - SCOPE_INTRP_PHASES_BITS)) << SCOPE_INTRP_WIDTH_BITS); \
 	sample = ((p[-1] * t[0]) + (p[0] * t[1]) + (p[1] * t[2]) + (p[2] * t[3])) >> SCOPE_INTRP_SCALE_BITS; }
 
+/* 24-bit sample access macros (stored as int32) */
+#define SCOPE_SMP24_NEAREST(s, pos, sample) sample = s->base24[pos] >> 8;
+#define SCOPE_SMP24_LINEAR(s, pos, frac, sample) { \
+	const int32_t *p = s->base24 + pos; \
+	const float f = (float)((frac) >> (SCOPE_FRAC_BITS - 15)) * (1.0f / 32768.0f); \
+	const float v = (float)p[0] + ((float)(p[1] - p[0]) * f); \
+	sample = (int32_t)(v / 256.0f); }
+#define SCOPE_SMP24_CUBIC(s, pos, frac, lut, sample) { \
+	const int32_t *p = s->base24 + pos; \
+	const int16_t *t = lut + (((frac) >> (SCOPE_FRAC_BITS - SCOPE_INTRP_PHASES_BITS)) << SCOPE_INTRP_WIDTH_BITS); \
+	const float v = (p[-1] * t[0]) + (p[0] * t[1]) + (p[1] * t[2]) + (p[2] * t[3]); \
+	sample = (int32_t)((v / (float)SCOPE_INTRP_SCALE) / 256.0f); }
+
+/* Float sample access macros */
+#define SCOPE_SMPF_NEAREST(s, pos, sample) sample = (int32_t)(s->baseF[pos] * 32768.0f);
+#define SCOPE_SMPF_LINEAR(s, pos, frac, sample) { \
+	const float *p = s->baseF + pos; \
+	const float f = (float)((frac) >> (SCOPE_FRAC_BITS - 15)) * (1.0f / 32768.0f); \
+	sample = (int32_t)((p[0] + ((p[1] - p[0]) * f)) * 32768.0f); }
+#define SCOPE_SMPF_CUBIC(s, pos, frac, lut, sample) { \
+	const float *p = s->baseF + pos; \
+	const int16_t *t = lut + (((frac) >> (SCOPE_FRAC_BITS - SCOPE_INTRP_PHASES_BITS)) << SCOPE_INTRP_WIDTH_BITS); \
+	const float v = (p[-1] * t[0]) + (p[0] * t[1]) + (p[1] * t[2]) + (p[2] * t[3]); \
+	sample = (int32_t)((v / (float)SCOPE_INTRP_SCALE) * 32768.0f); }
+
 /* Interpolated sample fetch - 8-bit */
 static inline int32_t getScopeSample8(scope_t *s, int32_t pos, uint64_t frac, uint8_t interpMode, int16_t *lut)
 {
@@ -157,6 +182,36 @@ static inline int32_t getScopeSample16(scope_t *s, int32_t pos, uint64_t frac, u
 	else if (interpMode == INTERP_LINEAR) { SCOPE_SMP16_LINEAR(s, pos, frac, sample); }
 	else { SCOPE_SMP16_CUBIC(s, pos, frac, lut, sample); }
 	return sample;
+}
+
+static inline int32_t getScopeSample24(scope_t *s, int32_t pos, uint64_t frac, uint8_t interpMode, int16_t *lut)
+{
+	int32_t sample;
+	if (interpMode == INTERP_DISABLED) { SCOPE_SMP24_NEAREST(s, pos, sample); }
+	else if (interpMode == INTERP_LINEAR) { SCOPE_SMP24_LINEAR(s, pos, frac, sample); }
+	else { SCOPE_SMP24_CUBIC(s, pos, frac, lut, sample); }
+	return sample;
+}
+
+static inline int32_t getScopeSampleF(scope_t *s, int32_t pos, uint64_t frac, uint8_t interpMode, int16_t *lut)
+{
+	int32_t sample;
+	if (interpMode == INTERP_DISABLED) { SCOPE_SMPF_NEAREST(s, pos, sample); }
+	else if (interpMode == INTERP_LINEAR) { SCOPE_SMPF_LINEAR(s, pos, frac, sample); }
+	else { SCOPE_SMPF_CUBIC(s, pos, frac, lut, sample); }
+	return sample;
+}
+
+static inline int32_t getScopeSample(scope_t *s, int32_t pos, uint64_t frac, uint8_t interpMode, int16_t *lut)
+{
+	switch (s->sampleFormat)
+	{
+		default:
+		case FT2_SMP_FORMAT_8BIT:    return getScopeSample8(s, pos, frac, interpMode, lut);
+		case FT2_SMP_FORMAT_16BIT:   return getScopeSample16(s, pos, frac, interpMode, lut);
+		case FT2_SMP_FORMAT_24BIT:   return getScopeSample24(s, pos, frac, interpMode, lut);
+		case FT2_SMP_FORMAT_FLOAT32: return getScopeSampleF(s, pos, frac, interpMode, lut);
+	}
 }
 
 
@@ -333,17 +388,24 @@ static void scopeDrawBidiLoop_8bit(scope_t *s, uint32_t x, uint32_t lineY, uint3
 
 static void scopeDrawNoLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY, uint32_t w, ft2_video_t *video, ft2_scopes_t *scopes)
 {
-	(void)scopes;
 	const uint32_t color = video->palette[PAL_PATTEXT];
 	uint32_t width = x + w;
 	int32_t sample;
 	int32_t position = s->position;
 	uint64_t positionFrac = s->positionFrac;
+	const bool useFast16 = (s->sampleFormat == FT2_SMP_FORMAT_16BIT);
+	const uint8_t interp = INTERP_DISABLED;
+	int16_t *lut = scopes->scopeIntrpLUT;
 
 	for (; x < width; x++)
 	{
 		if (s->active)
-			sample = (s->base16[position] * s->volume) >> (16+2);
+		{
+			if (useFast16)
+				sample = (s->base16[position] * s->volume) >> (16+2);
+			else
+				sample = (getScopeSample(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
+		}
 		else
 			sample = 0;
 
@@ -360,17 +422,24 @@ static void scopeDrawNoLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY, uint32
 
 static void scopeDrawLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY, uint32_t w, ft2_video_t *video, ft2_scopes_t *scopes)
 {
-	(void)scopes;
 	const uint32_t color = video->palette[PAL_PATTEXT];
 	uint32_t width = x + w;
 	int32_t sample;
 	int32_t position = s->position;
 	uint64_t positionFrac = s->positionFrac;
+	const bool useFast16 = (s->sampleFormat == FT2_SMP_FORMAT_16BIT);
+	const uint8_t interp = INTERP_DISABLED;
+	int16_t *lut = scopes->scopeIntrpLUT;
 
 	for (; x < width; x++)
 	{
 		if (s->active)
-			sample = (s->base16[position] * s->volume) >> (16+2);
+		{
+			if (useFast16)
+				sample = (s->base16[position] * s->volume) >> (16+2);
+			else
+				sample = (getScopeSample(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
+		}
 		else
 			sample = 0;
 
@@ -393,13 +462,15 @@ static void scopeDrawLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY, uint32_t
 
 static void scopeDrawBidiLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY, uint32_t w, ft2_video_t *video, ft2_scopes_t *scopes)
 {
-	(void)scopes;
 	const uint32_t color = video->palette[PAL_PATTEXT];
 	uint32_t width = x + w;
 	int32_t sample;
 	int32_t actualPos, position = s->position;
 	uint64_t positionFrac = s->positionFrac;
 	bool samplingBackwards = s->samplingBackwards;
+	const bool useFast16 = (s->sampleFormat == FT2_SMP_FORMAT_16BIT);
+	const uint8_t interp = INTERP_DISABLED;
+	int16_t *lut = scopes->scopeIntrpLUT;
 
 	for (; x < width; x++)
 	{
@@ -409,7 +480,10 @@ static void scopeDrawBidiLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY, uint
 				actualPos = (s->sampleEnd - 1) - (position - s->loopStart);
 			else
 				actualPos = position;
-			sample = (s->base16[actualPos] * s->volume) >> (16+2);
+			if (useFast16)
+				sample = (s->base16[actualPos] * s->volume) >> (16+2);
+			else
+				sample = (getScopeSample(s, actualPos, positionFrac, interp, lut) * s->volume) >> (16+2);
 		}
 		else
 		{
@@ -458,7 +532,7 @@ static void linedScopeDrawNoLoop_8bit(scope_t *s, uint32_t x, uint32_t lineY, ui
 
 	/* Get first sample */
 	if (s->active)
-		sample = (getScopeSample8(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
+		sample = (getScopeSample(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
 	else
 		sample = 0;
 	smpY1 = lineY - sample;
@@ -471,7 +545,7 @@ static void linedScopeDrawNoLoop_8bit(scope_t *s, uint32_t x, uint32_t lineY, ui
 	for (; x < width; x++)
 	{
 		if (s->active)
-			sample = (getScopeSample8(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
+			sample = (getScopeSample(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
 		else
 			sample = 0;
 
@@ -501,7 +575,7 @@ static void linedScopeDrawLoop_8bit(scope_t *s, uint32_t x, uint32_t lineY, uint
 
 	/* Get first sample */
 	if (s->active)
-		sample = (getScopeSample8(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
+		sample = (getScopeSample(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
 	else
 		sample = 0;
 	smpY1 = lineY - sample;
@@ -520,7 +594,7 @@ static void linedScopeDrawLoop_8bit(scope_t *s, uint32_t x, uint32_t lineY, uint
 	for (; x < width; x++)
 	{
 		if (s->active)
-			sample = (getScopeSample8(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
+			sample = (getScopeSample(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
 		else
 			sample = 0;
 
@@ -562,7 +636,7 @@ static void linedScopeDrawBidiLoop_8bit(scope_t *s, uint32_t x, uint32_t lineY, 
 			actualPos = (s->sampleEnd - 1) - (position - s->loopStart);
 		else
 			actualPos = position;
-		sample = (getScopeSample8(s, actualPos, positionFrac, interp, lut) * s->volume) >> (16+2);
+		sample = (getScopeSample(s, actualPos, positionFrac, interp, lut) * s->volume) >> (16+2);
 	}
 	else
 	{
@@ -597,7 +671,7 @@ static void linedScopeDrawBidiLoop_8bit(scope_t *s, uint32_t x, uint32_t lineY, 
 				actualPos = (s->sampleEnd - 1) - (position - s->loopStart);
 			else
 				actualPos = position;
-			sample = (getScopeSample8(s, actualPos, positionFrac, interp, lut) * s->volume) >> (16+2);
+			sample = (getScopeSample(s, actualPos, positionFrac, interp, lut) * s->volume) >> (16+2);
 		}
 		else
 		{
@@ -644,7 +718,7 @@ static void linedScopeDrawNoLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY, u
 
 	/* Get first sample */
 	if (s->active)
-		sample = (getScopeSample16(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
+		sample = (getScopeSample(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
 	else
 		sample = 0;
 	smpY1 = lineY - sample;
@@ -657,7 +731,7 @@ static void linedScopeDrawNoLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY, u
 	for (; x < width; x++)
 	{
 		if (s->active)
-			sample = (getScopeSample16(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
+			sample = (getScopeSample(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
 		else
 			sample = 0;
 
@@ -687,7 +761,7 @@ static void linedScopeDrawLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY, uin
 
 	/* Get first sample */
 	if (s->active)
-		sample = (getScopeSample16(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
+		sample = (getScopeSample(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
 	else
 		sample = 0;
 	smpY1 = lineY - sample;
@@ -706,7 +780,7 @@ static void linedScopeDrawLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY, uin
 	for (; x < width; x++)
 	{
 		if (s->active)
-			sample = (getScopeSample16(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
+			sample = (getScopeSample(s, position, positionFrac, interp, lut) * s->volume) >> (16+2);
 		else
 			sample = 0;
 
@@ -748,7 +822,7 @@ static void linedScopeDrawBidiLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY,
 			actualPos = (s->sampleEnd - 1) - (position - s->loopStart);
 		else
 			actualPos = position;
-		sample = (getScopeSample16(s, actualPos, positionFrac, interp, lut) * s->volume) >> (16+2);
+		sample = (getScopeSample(s, actualPos, positionFrac, interp, lut) * s->volume) >> (16+2);
 	}
 	else
 	{
@@ -783,7 +857,7 @@ static void linedScopeDrawBidiLoop_16bit(scope_t *s, uint32_t x, uint32_t lineY,
 				actualPos = (s->sampleEnd - 1) - (position - s->loopStart);
 			else
 				actualPos = position;
-			sample = (getScopeSample16(s, actualPos, positionFrac, interp, lut) * s->volume) >> (16+2);
+			sample = (getScopeSample(s, actualPos, positionFrac, interp, lut) * s->volume) >> (16+2);
 		}
 		else
 		{
@@ -901,7 +975,7 @@ void ft2_scopes_free(ft2_scopes_t *scopes)
 /* Triggers scope playback from sync queue entry */
 static void scopeTriggerFromEntry(scope_t *s, const ft2_scope_sync_entry_t *entry)
 {
-	if ((!entry->base8 && !entry->base16) || entry->length < 1)
+	if ((!entry->base8 && !entry->base16 && !entry->base24 && !entry->baseF) || entry->length < 1)
 	{
 		s->active = false;
 		return;
@@ -911,7 +985,10 @@ static void scopeTriggerFromEntry(scope_t *s, const ft2_scope_sync_entry_t *entr
 
 	s->base8 = entry->base8;
 	s->base16 = entry->base16;
-	s->sample16Bit = entry->sample16Bit;
+	s->base24 = entry->base24;
+	s->baseF = entry->baseF;
+	s->sampleFormat = entry->sampleFormat;
+	s->sampleRate = entry->sampleRate;
 	s->loopType = loopType;
 	s->hasLooped = false;
 	s->samplingBackwards = false;
@@ -999,6 +1076,12 @@ void ft2_scopes_update(ft2_scopes_t *scopes, struct ft2_instance_t *inst)
 		{
 			s->delta = ft2_period_to_scope_delta(inst, entry.period);
 			s->drawDelta = ft2_period_to_scope_draw_delta(inst, entry.period);
+			if (entry.sampleRate > 0)
+			{
+				const double ratio = (double)entry.sampleRate / 8363.0;
+				s->delta = (uint64_t)llround((double)s->delta * ratio);
+				s->drawDelta = (uint64_t)llround((double)s->drawDelta * ratio);
+			}
 		}
 		if (entry.status & FT2_SCOPE_TRIGGER_VOICE) scopeTriggerFromEntry(s, &entry);
 	}
@@ -1075,7 +1158,8 @@ void ft2_scopes_draw(ft2_scopes_t *scopes, ft2_video_t *video, const ft2_bmp_t *
 			clearRect(video, scopeXOffs, scopeYOffs, scopeDrawLen, SCOPE_HEIGHT);
 
 			/* Draw scope */
-			int routineIdx = (scopes->linedScopes ? 6 : 0) + (s->sample16Bit ? 3 : 0) + s->loopType;
+			const bool use16BitPath = (s->sampleFormat != FT2_SMP_FORMAT_8BIT);
+			int routineIdx = (scopes->linedScopes ? 6 : 0) + (use16BitPath ? 3 : 0) + s->loopType;
 			scopeDrawRoutineTable[routineIdx](s, scopeXOffs, scopeLineY, scopeDrawLen, video, scopes);
 		}
 		else

@@ -428,7 +428,14 @@ const pushButton_t pushButtonsTemplate[NUM_PUSHBUTTONS] =
 	{ 492, 134, 16, 11, 1, 4, ARROW_UP_STRING, NULL, NULL, NULL }, { 508, 134, 16, 11, 1, 4, ARROW_DOWN_STRING, NULL, NULL, NULL },
 
 	/* I/O Routing reset button */
-	{ 440, 153, 80, 16, 0, 0, "Reset", NULL, NULL, NULL }
+	{ 440, 153, 80, 16, 0, 0, "Reset", NULL, NULL, NULL },
+
+	/* Sample editor XM2 format/channels */
+	{ 430, 365, 54, 16, 0, 0, "Format", NULL, NULL, NULL },
+	{ 430, 382, 54, 16, 0, 0, "Chns", NULL, NULL, NULL },
+
+	/* Instrument editor envelope length (XM2 layout, positioned dynamically) */
+	{ 0 }, { 0 }, { 0 }, { 0 }
 };
 
 /* ------------------------------------------------------------------------- */

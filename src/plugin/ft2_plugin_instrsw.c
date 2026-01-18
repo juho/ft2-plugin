@@ -20,6 +20,7 @@
 #include "ft2_plugin_scrollbars.h"
 #include "ft2_plugin_textbox.h"
 #include "ft2_plugin_ui.h"
+#include "ft2_plugin_sample_utils.h"
 #include "ft2_instance.h"
 
 void updateInstrumentSwitcher(struct ft2_instance_t *inst, struct ft2_video_t *video,
@@ -94,18 +95,23 @@ void updateInstrumentSwitcher(struct ft2_instance_t *inst, struct ft2_video_t *v
 		clearRect(video, 424, 99, 15, 54);
 		clearRect(video, 446, 99, 116, 54);
 
+		const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+		const int32_t maxOffset = (maxSamples > 5) ? (maxSamples - 5) : 0;
+
 		uint8_t srcSmp = inst->editor.srcSmp;
 		uint8_t smpOffset = inst->editor.sampleBankOffset;
+		if (smpOffset > maxOffset)
+			smpOffset = (uint8_t)maxOffset;
 
 		/* Source sample highlight */
-		if (srcSmp >= smpOffset && srcSmp <= smpOffset + 4) {
+		if (srcSmp < maxSamples && srcSmp >= smpOffset && srcSmp <= smpOffset + 4) {
 			int16_t y = 99 + ((srcSmp - smpOffset) * 11);
 			if (y >= 36 && y <= 143) fillRect(video, 424, y, 15, 10, PAL_BUTTONS);
 		}
 
 		/* Destination sample highlight */
 		uint8_t curSmp = inst->editor.curSmp;
-		if (curSmp >= smpOffset && curSmp <= smpOffset + 4) {
+		if (curSmp < maxSamples && curSmp >= smpOffset && curSmp <= smpOffset + 4) {
 			int16_t y = 99 + ((curSmp - smpOffset) * 11);
 			if (y >= 36 && y <= 143) fillRect(video, 446, y, 115, 10, PAL_BUTTONS);
 		}
@@ -113,7 +119,8 @@ void updateInstrumentSwitcher(struct ft2_instance_t *inst, struct ft2_video_t *v
 		/* Sample numbers and names */
 		for (int16_t i = 0; i < 5; i++) {
 			uint8_t smpNum = smpOffset + i;
-			hexOut(video, bmp, 424, 99 + (i * 11), PAL_FORGRND, smpNum, 2);
+			if (smpNum < maxSamples)
+				hexOut(video, bmp, 424, 99 + (i * 11), PAL_FORGRND, smpNum, 2);
 			ft2_textbox_draw(video, bmp, TB_SAMP1 + i, inst);
 		}
 	}
@@ -154,6 +161,15 @@ void showInstrumentSwitcher(struct ft2_instance_t *inst, struct ft2_video_t *vid
 		fillRect(video, 445, 3, 142, 91, PAL_BCKGRND);
 		fillRect(video, 421, 97, 21, 58, PAL_BCKGRND);
 		fillRect(video, 445, 97, 118, 58, PAL_BCKGRND);
+
+		const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
+		const int32_t maxOffset = (maxSamples > widgets->scrollBarState[SB_SAMPLE_LIST].page)
+			? (maxSamples - widgets->scrollBarState[SB_SAMPLE_LIST].page) : 0;
+		if (inst->editor.sampleBankOffset > maxOffset)
+			inst->editor.sampleBankOffset = (uint8_t)maxOffset;
+		widgets->scrollBarState[SB_SAMPLE_LIST].end = maxSamples;
+		widgets->scrollBarState[SB_SAMPLE_LIST].pos = inst->editor.sampleBankOffset;
+
 		showPushButton(widgets, video, bmp, PB_SAMPLE_LIST_UP);
 		showPushButton(widgets, video, bmp, PB_SAMPLE_LIST_DOWN);
 		showScrollBar(widgets, video, SB_SAMPLE_LIST);
@@ -244,6 +260,7 @@ bool testInstrSwitcherMouseDown(struct ft2_instance_t *inst, int32_t mouseX, int
 	} else {
 		/* Normal: single column */
 		if (mouseX < 424 || mouseX > 585) return false;
+		const int32_t maxSamples = ft2_get_max_samples_per_instr(inst);
 
 		if (mouseY >= 5 && mouseY <= 91) {
 			/* Instruments */
@@ -271,7 +288,7 @@ bool testInstrSwitcherMouseDown(struct ft2_instance_t *inst, int32_t mouseX, int
 			if (mouseX >= 446 && mouseX <= 560) {
 				if ((mouseY - 99) % 11 == 10) return true;
 				uint8_t newEntry = inst->editor.sampleBankOffset + (uint8_t)((mouseY - 99) / 11);
-				if (newEntry > 15) newEntry = 15;
+				if (newEntry >= maxSamples) newEntry = (uint8_t)(maxSamples - 1);
 				if (inst->editor.curSmp != newEntry) {
 					inst->editor.curSmp = newEntry;
 					inst->uiState.updateInstrSwitcher = true;
@@ -282,7 +299,7 @@ bool testInstrSwitcherMouseDown(struct ft2_instance_t *inst, int32_t mouseX, int
 			} else if (mouseX >= 423 && mouseX <= 438) {
 				if ((mouseY - 99) % 11 == 10) return true;
 				uint8_t newEntry = inst->editor.sampleBankOffset + (uint8_t)((mouseY - 99) / 11);
-				if (newEntry > 15) newEntry = 15;
+				if (newEntry >= maxSamples) newEntry = (uint8_t)(maxSamples - 1);
 				if (inst->editor.srcSmp != newEntry) {
 					inst->editor.srcSmp = newEntry;
 					inst->uiState.updateInstrSwitcher = true;

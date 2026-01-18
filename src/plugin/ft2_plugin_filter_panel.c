@@ -16,6 +16,7 @@
 #include "ft2_plugin_pushbuttons.h"
 #include "ft2_plugin_smpfx.h"
 #include "ft2_plugin_input.h"
+#include "ft2_plugin_textbox.h"
 #include "ft2_plugin_ui.h"
 #include "../ft2_instance.h"
 
@@ -90,16 +91,7 @@ static void drawFrame(ft2_instance_t *inst, ft2_video_t *video, const ft2_bmp_t 
 	int hlen = textWidth(headline);
 	textOut(video, bmp, (632 - hlen) / 2, y + 4, PAL_FORGRND, headline);
 
-	int inputX = x + 10, inputY = y + 28, inputW = w - 20, inputH = 12;
-	fillRect(video, inputX, inputY, inputW, inputH, PAL_DESKTOP);
-	hLine(video, inputX, inputY, inputW, PAL_BUTTON2);
-	vLine(video, inputX, inputY, inputH, PAL_BUTTON2);
-	hLine(video, inputX, inputY + inputH - 1, inputW, PAL_BUTTON1);
-	vLine(video, inputX + inputW - 1, inputY, inputH, PAL_BUTTON1);
-	textOut(video, bmp, inputX + 2, inputY + 2, PAL_FORGRND, state->inputBuffer);
-
-	int cursorX = inputX + 2 + textWidth(state->inputBuffer);
-	vLine(video, cursorX, inputY + 2, 8, PAL_FORGRND);
+	(void)state;
 }
 
 void ft2_filter_panel_show(ft2_instance_t *inst, filter_type_t filterType)
@@ -112,7 +104,8 @@ void ft2_filter_panel_show(ft2_instance_t *inst, filter_type_t filterType)
 
 	snprintf(state->inputBuffer, sizeof(state->inputBuffer), "%d",
 	         (filterType == FILTER_TYPE_LOWPASS) ? state->lastLpCutoff : state->lastHpCutoff);
-	state->inputCursorPos = (int)strlen(state->inputBuffer);
+	ft2_textbox_configure(inst, TB_FILTER_INPUT, state->inputBuffer, 6, true, true, PAL_BCKGRND);
+	ft2_textbox_activate_id(inst, TB_FILTER_INPUT);
 
 	setupWidgets(inst);
 	ft2_modal_panel_set_active(inst, MODAL_PANEL_FILTER);
@@ -125,6 +118,7 @@ void ft2_filter_panel_hide(ft2_instance_t *inst)
 	if (!state->active) return;
 	
 	hideWidgets(inst);
+	ft2_textbox_hide(inst, TB_FILTER_INPUT);
 	state->active = false;
 	inst->uiState.updateSampleEditor = true;
 	ft2_modal_panel_set_inactive(inst, MODAL_PANEL_FILTER);
@@ -143,6 +137,7 @@ void ft2_filter_panel_draw(ft2_instance_t *inst, ft2_video_t *video, const ft2_b
 	if (!state->active) return;
 	
 	drawFrame(inst, video, bmp);
+	ft2_textbox_draw_with_cursor(video, bmp, TB_FILTER_INPUT, ft2_textbox_get_blink_state(inst), inst);
 
 	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
 	for (int i = 0; i < 8; i++)
@@ -157,11 +152,7 @@ bool ft2_filter_panel_key_down(ft2_instance_t *inst, int keycode)
 
 	if (keycode == FT2_KEY_RETURN) { applyFilter(inst); ft2_filter_panel_hide(inst); return true; }
 	if (keycode == FT2_KEY_ESCAPE) { ft2_filter_panel_hide(inst); return true; }
-	if (keycode == FT2_KEY_BACKSPACE) {
-		int len = (int)strlen(state->inputBuffer);
-		if (len > 0) { state->inputBuffer[len - 1] = '\0'; state->inputCursorPos = len - 1; }
-		return true;
-	}
+	ft2_textbox_handle_key(inst, keycode, 0);
 	return true;
 }
 
@@ -171,9 +162,6 @@ bool ft2_filter_panel_char_input(ft2_instance_t *inst, char c)
 	filter_panel_state_t *state = FILTER_STATE(inst);
 	if (!state->active) return false;
 	
-	if (c >= '0' && c <= '9') {
-		int len = (int)strlen(state->inputBuffer);
-		if (len < 5) { state->inputBuffer[len] = c; state->inputBuffer[len + 1] = '\0'; state->inputCursorPos = len + 1; }
-	}
+	ft2_textbox_input_char(inst, c);
 	return true;
 }

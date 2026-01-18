@@ -57,6 +57,8 @@ public:
 
 private:
     FT2PluginProcessor& audioProcessor;
+    friend void onDropDialogResult(ft2_instance_t* inst, ft2_dialog_result_t result,
+                                   const char* inputText, void* userData);
     
     // OpenGL context
     juce::OpenGLContext openGLContext;
@@ -70,6 +72,28 @@ private:
     
     // Upscale factor
     int upscaleFactor = 2;
+
+    // Mouse button state tracking (for combo clicks)
+    bool leftButtonHeld = false;
+    bool rightButtonHeld = false;
+
+    void handleMouseButtonTransitions(juce::Point<int> localPos, const juce::ModifierKeys& mods);
+
+    enum class DropQueueMode
+    {
+        None,
+        Samples,
+        Instruments
+    };
+
+    juce::StringArray dropQueueFiles;
+    int dropQueueIndex = 0;
+    int dropQueueStartInstr = 1;
+    int dropQueueStartSample = 0;
+    int dropQueueSampleCount = 0;
+    int dropQueueInstrumentCount = 0;
+    DropQueueMode dropQueueMode = DropQueueMode::None;
+    bool dropQueueActive = false;
     
     // Convert screen coordinates to FT2 coordinates
     juce::Point<int> screenToFT2(juce::Point<int> screenPos);
@@ -85,6 +109,11 @@ private:
     void deleteDiskOpFile();
     void renameDiskOpFile();
     void makeDiskOpDirectory();
+
+    void clearDropQueue();
+    void startDropQueue(DropQueueMode mode);
+    void processDropQueue();
+    void handleDropDialogResult(ft2_dialog_result_t result);
 
     // Update checker
     UpdateChecker updateChecker;

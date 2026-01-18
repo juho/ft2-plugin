@@ -16,8 +16,10 @@
 #include "ft2_plugin_pushbuttons.h"
 #include "ft2_plugin_scrollbars.h"
 #include "ft2_plugin_sample_ed.h"
+#include "ft2_plugin_sample_utils.h"
 #include "ft2_plugin_replayer.h"
 #include "ft2_plugin_ui.h"
+#include "ft2_plugin_xm2_convert.h"
 #include "../ft2_instance.h"
 
 #define MIX_STATE(inst) (&FT2_UI(inst)->modalPanels.mix)
@@ -127,69 +129,146 @@ static void applyMixToSample(ft2_instance_t *inst)
 
 	ft2_sample_t *s = &dstInstr->smp[dstSmp];
 
-	int8_t *dstPtr = NULL; uint8_t dstFlags = 0; int32_t dstLen = 0;
-	if (s->dataPtr) { dstPtr = s->dataPtr; dstLen = s->length; dstFlags = s->flags; }
+	ft2_sample_format_t dstFormat = ft2_sample_get_format(s);
+	bool dstHasData = ft2_sample_has_data(s, dstFormat);
+	int32_t dstLen = dstHasData ? s->length : 0;
+	bool dstStereo = dstHasData ? ft2_sample_is_stereo(s, dstFormat) : false;
 
-	int8_t *mixPtr = NULL; uint8_t mixFlags = 0; int32_t mixLen = 0;
-	if (mixIns > 0 && mixIns <= 128) {
+	ft2_sample_t *mixSample = NULL;
+	ft2_sample_format_t mixFormat = FT2_SMP_FORMAT_8BIT;
+	bool mixHasData = false;
+	int32_t mixLen = 0;
+	bool mixStereo = false;
+
+	if (mixIns > 0 && mixIns <= 128)
+	{
 		ft2_instr_t *mixInstr = inst->replayer.instr[mixIns];
-		if (mixInstr) {
-			ft2_sample_t *mixSample = &mixInstr->smp[mixSmp];
-			if (mixSample->dataPtr) {
-				mixPtr = mixSample->dataPtr; mixLen = mixSample->length; mixFlags = mixSample->flags;
-			}
+		if (mixInstr)
+		{
+			mixSample = &mixInstr->smp[mixSmp];
+			mixFormat = ft2_sample_get_format(mixSample);
+			mixHasData = ft2_sample_has_data(mixSample, mixFormat);
+			mixLen = mixHasData ? mixSample->length : 0;
+			mixStereo = mixHasData ? ft2_sample_is_stereo(mixSample, mixFormat) : false;
 		}
 	}
 
-	if (!dstPtr && !mixPtr) return;
+	if (!dstHasData && !mixHasData) return;
 
-	int32_t newLen = (dstLen > mixLen) ? dstLen : mixLen;
-	bool newIs16Bit = ((dstFlags | mixFlags) & FT2_SAMPLE_16BIT) != 0;
+	const int32_t newLen = (dstLen > mixLen) ? dstLen : mixLen;
+	if (newLen <= 0) return;
 
-	int32_t bytesPerSample = newIs16Bit ? 2 : 1;
-	int32_t padding = FT2_MAX_TAPS * bytesPerSample;
-	size_t allocSize = (size_t)(padding * 2 + newLen * bytesPerSample);
+	ft2_sample_format_t outFormat = dstHasData ? dstFormat : mixFormat;
+	if (dstHasData && mixHasData && mixFormat > outFormat)
+		outFormat = mixFormat;
 
-	int8_t *newOrigPtr = (int8_t *)calloc(allocSize, 1);
-	if (!newOrigPtr) return;
-	int8_t *newData = newOrigPtr + padding;
+	const bool outStereo = dstStereo || mixStereo;
+	const uint32_t bytesPerSample = ft2_sample_format_bytes(outFormat);
+	const int32_t padding = (int32_t)(FT2_MAX_TAPS * bytesPerSample);
+	const size_t allocSize = (size_t)padding + ((size_t)newLen * bytesPerSample) + (size_t)padding;
+
+	void *newOrigL = calloc(allocSize, 1);
+	if (!newOrigL) return;
+	void *newOrigR = NULL;
+	if (outStereo)
+	{
+		newOrigR = calloc(allocSize, 1);
+		if (!newOrigR) { free(newOrigL); return; }
+	}
+
+	uint8_t *newDataL = (uint8_t *)newOrigL + padding;
+	uint8_t *newDataR = outStereo ? (uint8_t *)newOrigR + padding : NULL;
 
 	ft2_stop_sample_voices(inst, s);
 	ft2_unfix_sample(s);
 
-	double dMixA = (100 - state->mixBalance) / 100.0;
-	double dMixB = state->mixBalance / 100.0;
-	bool dstIs16 = (dstFlags & FT2_SAMPLE_16BIT) != 0;
-	bool mixIs16 = (mixFlags & FT2_SAMPLE_16BIT) != 0;
+	ft2_sample_t outSmp = *s;
+	outSmp.origDataPtr = outSmp.dataPtr = NULL;
+	outSmp.origDataPtrR = outSmp.dataPtrR = NULL;
+	outSmp.origDataPtr24 = outSmp.dataPtr24 = NULL;
+	outSmp.origDataPtr24R = outSmp.dataPtr24R = NULL;
+	outSmp.origDataPtrF = outSmp.dataPtrF = NULL;
+	outSmp.origDataPtrFR = outSmp.dataPtrFR = NULL;
 
-	if (newIs16Bit) {
-		int16_t *newPtr16 = (int16_t *)newData;
-		for (int32_t i = 0; i < newLen; i++) {
-			double dSmpA = 0.0, dSmpB = 0.0;
-			if (i < mixLen && mixPtr) dSmpA = mixIs16 ? ((int16_t *)mixPtr)[i] : mixPtr[i] * 256.0;
-			if (i < dstLen && dstPtr) dSmpB = dstIs16 ? ((int16_t *)dstPtr)[i] : dstPtr[i] * 256.0;
-			int32_t smp32 = (int32_t)(dSmpA * dMixA + dSmpB * dMixB);
-			if (smp32 < -32768) smp32 = -32768; else if (smp32 > 32767) smp32 = 32767;
-			newPtr16[i] = (int16_t)smp32;
+	if (outFormat == FT2_SMP_FORMAT_24BIT)
+	{
+		outSmp.origDataPtr24 = (int32_t *)newOrigL;
+		outSmp.dataPtr24 = (int32_t *)newDataL;
+		if (outStereo)
+		{
+			outSmp.origDataPtr24R = (int32_t *)newOrigR;
+			outSmp.dataPtr24R = (int32_t *)newDataR;
 		}
-		s->flags |= FT2_SAMPLE_16BIT;
-	} else {
-		for (int32_t i = 0; i < newLen; i++) {
-			double dSmpA = (i < mixLen && mixPtr) ? mixPtr[i] : 0.0;
-			double dSmpB = (i < dstLen && dstPtr) ? dstPtr[i] : 0.0;
-			int32_t smp32 = (int32_t)(dSmpA * dMixA + dSmpB * dMixB);
-			if (smp32 < -128) smp32 = -128; else if (smp32 > 127) smp32 = 127;
-			newData[i] = (int8_t)smp32;
+	}
+	else if (outFormat == FT2_SMP_FORMAT_FLOAT32)
+	{
+		outSmp.origDataPtrF = (float *)newOrigL;
+		outSmp.dataPtrF = (float *)newDataL;
+		if (outStereo)
+		{
+			outSmp.origDataPtrFR = (float *)newOrigR;
+			outSmp.dataPtrFR = (float *)newDataR;
+		}
+	}
+	else
+	{
+		outSmp.origDataPtr = (int8_t *)newOrigL;
+		outSmp.dataPtr = (int8_t *)newDataL;
+		if (outStereo)
+		{
+			outSmp.origDataPtrR = (int8_t *)newOrigR;
+			outSmp.dataPtrR = (int8_t *)newDataR;
 		}
 	}
 
-	free(s->origDataPtr);
-	s->origDataPtr = newOrigPtr;
-	s->dataPtr = newData;
-	s->length = newLen;
+	double dMixA = (100 - state->mixBalance) / 100.0;
+	double dMixB = state->mixBalance / 100.0;
 
+	for (int32_t i = 0; i < newLen; i++)
+	{
+		for (int ch = 0; ch < (outStereo ? 2 : 1); ch++)
+		{
+			const bool rightChannel = (ch == 1);
+			float a = 0.0f, b = 0.0f;
+			if (mixHasData && i < mixLen)
+			{
+				const bool mixRight = mixStereo ? rightChannel : false;
+				a = ft2_sample_get_float(mixSample, mixFormat, mixRight, i);
+			}
+			if (dstHasData && i < dstLen)
+			{
+				const bool dstRight = dstStereo ? rightChannel : false;
+				b = ft2_sample_get_float(s, dstFormat, dstRight, i);
+			}
+			ft2_sample_set_float(&outSmp, outFormat, rightChannel, i, (float)(a * dMixA + b * dMixB));
+		}
+	}
+
+	outSmp.length = newLen;
+	outSmp.format = outFormat;
+	if (outFormat == FT2_SMP_FORMAT_16BIT)
+		outSmp.flags |= FT2_SAMPLE_16BIT;
+	else
+		outSmp.flags &= ~FT2_SAMPLE_16BIT;
+	if (outStereo)
+		outSmp.flags |= FT2_SAMPLE_STEREO;
+	else
+		outSmp.flags &= ~FT2_SAMPLE_STEREO;
+	outSmp.isFixed = false;
+	outSmp.fixedPos = 0;
+
+	if (!dstHasData && mixHasData)
+	{
+		outSmp.sampleRate = mixSample->sampleRate;
+		outSmp.relativeNote = mixSample->relativeNote;
+		outSmp.finetune = mixSample->finetune;
+	}
+
+	ft2_sample_free_buffers(s);
+	*s = outSmp;
 	ft2_fix_sample(s);
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
+	ft2_xm2_update_usage(inst);
 }
 
 void ft2_mix_panel_show(ft2_instance_t *inst)
