@@ -2,11 +2,9 @@
 
 <img width="4112" height="2658" alt="image_2025-12-29_01-04-36" src="https://github.com/user-attachments/assets/572e056a-48d6-42e2-b7dc-0b37e6ab08e2" />
 
-This is a fork of [8bitbubsy's standalone ft2-clone](https://github.com/8bitbubsy/ft2-clone), including *a full rewrite* of the code to a multi-instance aware VST3/AU/LV2 plugin by [Blamstrain/TPOLM](https://blamstrain.com).
+This is a full rewrite of [8bitbubsy's standalone ft2-clone](https://github.com/8bitbubsy/ft2-clone) to a multi-instance aware VST3/AU/LV2 plugin by [Blamstrain/TPOLM](https://blamstrain.com). This version removes SDL and uses JUCE as the plugin framework.
 
-**Standalone builds are not a concern in this repository.** If you're looking for the standalone version, you can find it [here](https://github.com/8bitbubsy/ft2-clone). Standalone code is kept around so that we can compare and integrate changes to the plugin from the standalone version.
-
-**All credit goes to [8bitbubsy](https://16-bits.org) for his tireless work on the port from original, on which the plugin is based on. If you wish to donate, please consider supporting:**
+Credit goes to [8bitbubsy](https://16-bits.org) for his work on the port from the original DOS version, on which the plugin is based on. **If you wish to donate, please consider supporting:**
 
 - [8bitbubsy](https://16-bits.org/donate.php) for his work on the standalone version.
 - [Transgender Europe (EU)](https://www.tgeu.org/), the largest pro-transgender rights organization in Europe.
@@ -16,15 +14,33 @@ This is a fork of [8bitbubsy's standalone ft2-clone](https://github.com/8bitbubs
 
 ## Plugin-specific features
 
-- DAW sync capabilities; sync BPM, transport and position from DAW host. Can also disable Fxx speed changes for "perfect" sync.
-- Module state saves with the plugin in your DAW session (no need to save/load modules manually, though still recommended for backup)
-- Multi-instance support, including per-instance config
-- Multi-output support (can map any of the 32 channels to 15 busses plus a main mix)
+- DAW sync capabilities; sync BPM, transport and position from DAW host. Can also disable Fxx speed changes for "perfect" sync. In this mode, you can choose between speeds 6 and 3.
+- Module state saves with the plugin in your DAW session (no need to save/load modules manually, though still recommended for backup).
+- Multi-instance support, including per-instance config.
+- Multi-output support (can map any of the 32 channels to 15 busses plus a main mix).
 - MIDI input and output support, including aftertouch, bender and mod wheel recording.
-- Drag and drop modules or samples to the plugin
-- Right-click drag in instrument editor to "stretch" envelope points without having to move all of them
+- Recycle-style sample slicer for slicing breaks.
+- Drag and drop modules or samples to the plugin (including multiple samples at the same time).
+- Right-click drag in instrument editor to "stretch" envelope points without having to move all of them.
+- Right-click in envelope editor to move all points to the right of the selected point.
+- Shift-click to add points on a line in envelope editor, cmd/alt-click to remove a point.
 
-### New keyboard shortcuts:
+[Please check the changelog for changes and new features.](https://github.com/juho/ft2-plugin/blob/master/plugin/CHANGELOG.md)
+
+### XM2/XI2 format (beta)
+
+Includes an **OPTIONAL** "XM2 mode", enabled via the config, which extends the existing XM format for some modern nice-to-haves:
+
+- Stereo and natively supported hi-res samples.
+- Curved (log/exp) envelopes + envelope length multiplier.
+- Max. 96 samples in an instrument.
+- New resampler / bitcrusher in S.E.Ext.
+
+Existing XM support is unchanged. You can convert an XM2 module into XM (losing new features) and vice versa.
+
+### Keyboard shortcuts:
+
+Most of the original keyboard shortcuts work as they are, however some have been changed for ease of use, mainly:
 
 **Pattern editor clipboard (cut/copy/paste):**
 
@@ -42,9 +58,7 @@ This is a fork of [8bitbubsy's standalone ft2-clone](https://github.com/8bitbubs
 | Track | Shift+V | Shift+V |
 | Pattern | Ctrl+V | (use block after marking all) |
 
-### Under active development!
-
-Note that there are lots of updates coming at a rapid pace right now, and I am taking input for reasonable feature requests and of course want to fix any bugs. If there is a newer version than the one you have already downloaded (look at the "About" screen for your plugin's version), issues might have been fixed already. [Please check the changelog for changes.](https://github.com/juho/ft2-plugin/blob/master/plugin/CHANGELOG.md)
+For the rest, please see the in-plugin help.
 
 ## Download
 
