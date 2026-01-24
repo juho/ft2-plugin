@@ -126,6 +126,7 @@ void ft2_input_init(ft2_input_state_t *input);
 /* Keyboard */
 void ft2_input_key_down(struct ft2_instance_t *inst, ft2_input_state_t *input, int keyCode, int modifiers);
 void ft2_input_key_up(struct ft2_instance_t *inst, ft2_input_state_t *input, int keyCode, int modifiers);
+void ft2_input_insert_keyoff(struct ft2_instance_t *inst, ft2_input_state_t *input);
 
 /* Mouse */
 void ft2_input_mouse_down(ft2_input_state_t *input, int x, int y, int button);

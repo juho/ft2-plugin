@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.1.1 (Jan 24, 2026)
+
+- Fix: Keyboard handling fixes (note-off/add/delete and other hotkeys)
+
 ## 1.1.0 (Jan 22, 2026)
 
 - Feat: New XM2 format for new features (beta), which only work with this plugin. Plugin can convert between XM and XM2 formats, with destructive changes when going from XM2 to XM. **THIS IS OPT-IN; check the "Enable XM2 features" checkbox in config to enable it.** Songs that use XM2 features use .XM2 file extension when saving. **XM format support is unchanged.**

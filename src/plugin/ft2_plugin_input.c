@@ -83,11 +83,14 @@ int8_t ft2_key_to_note(int key, int8_t octave)
 	return adjustedNote;
 }
 
+static void handlePatternInsertDelete(ft2_instance_t *inst, int keyCode, int modifiers);
+
 /* ---------- Playback control ---------- */
 
 static void handlePlaybackKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 {
 	if (inst == NULL) return;
+	(void)modifiers;
 
 	switch (keyCode) {
 		case FT2_KEY_SPACE:
@@ -101,46 +104,32 @@ static void handlePlaybackKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 			inst->uiState.updatePosSections = true;
 			break;
 
-		case FT2_KEY_RETURN:
-		case '\n':
-			/* Enter: play song, Ctrl+Enter: play pattern */
-			if (modifiers & FT2_MOD_CTRL)
-				ft2_instance_play(inst, FT2_PLAYMODE_PATT, 0);
-			else
-				ft2_instance_play(inst, FT2_PLAYMODE_SONG, 0);
-			break;
-
-		case FT2_KEY_F5:
-			if (!(modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT))) {
-				inst->replayer.song.songPos = 0;
-				inst->replayer.song.row = 0;
-				ft2_instance_play(inst, FT2_PLAYMODE_SONG, 0);
-			}
-			break;
-
-		case FT2_KEY_F6:
-			if (!(modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT)))
-				ft2_instance_play(inst, FT2_PLAYMODE_SONG, 0);
-			break;
-
-		case FT2_KEY_F7:
-			if (!(modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT))) {
-				inst->replayer.song.row = 0;
-				ft2_instance_play(inst, FT2_PLAYMODE_PATT, 0);
-			}
-			break;
-
-		case FT2_KEY_F8:
-			if (!(modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT)))
-				ft2_instance_stop(inst);
-			break;
-
 		default:
 			break;
 	}
 }
 
 /* ---------- Pattern navigation ---------- */
+
+static void jumpToPatternRow(ft2_instance_t *inst, uint8_t index)
+{
+	if (inst == NULL || index >= 4)
+		return;
+
+	uint16_t numRows = inst->replayer.song.currNumRows;
+	if (numRows == 0)
+		numRows = 1;
+
+	int16_t row = inst->editor.ptnJumpPos[index];
+	if (row >= (int16_t)numRows)
+		row = (int16_t)(numRows - 1);
+
+	inst->replayer.song.row = row;
+	if (!inst->replayer.songPlaying)
+		inst->editor.row = (uint8_t)row;
+
+	inst->uiState.updatePatternEditor = true;
+}
 
 static void handleNavigationKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 {
@@ -280,6 +269,11 @@ static void handleNavigationKeys(ft2_instance_t *inst, int keyCode, int modifier
 				cursorTabRight(inst);
 			break;
 
+		case FT2_KEY_F9:  jumpToPatternRow(inst, 0); break;
+		case FT2_KEY_F10: jumpToPatternRow(inst, 1); break;
+		case FT2_KEY_F11: jumpToPatternRow(inst, 2); break;
+		case FT2_KEY_F12: jumpToPatternRow(inst, 3); break;
+
 		default:
 			break;
 	}
@@ -287,19 +281,21 @@ static void handleNavigationKeys(ft2_instance_t *inst, int keyCode, int modifier
 
 /* ---------- Octave control ---------- */
 
-/* F1/F2 = octave down/up (without modifiers) */
+/* F1-F7 = set octave (without modifiers) */
 static void handleOctaveKeys(ft2_instance_t *inst, ft2_input_state_t *input, int keyCode, int modifiers)
 {
 	if (inst == NULL || input == NULL) return;
 	if (modifiers & (FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT)) return;
 
 	switch (keyCode) {
-		case FT2_KEY_F1:
-			if (input->octave > 0) { input->octave--; inst->editor.curOctave = input->octave; }
-			break;
-		case FT2_KEY_F2:
-			if (input->octave < 7) { input->octave++; inst->editor.curOctave = input->octave; }
-			break;
+		case FT2_KEY_F1: input->octave = 0; inst->editor.curOctave = 0; break;
+		case FT2_KEY_F2: input->octave = 1; inst->editor.curOctave = 1; break;
+		case FT2_KEY_F3: input->octave = 2; inst->editor.curOctave = 2; break;
+		case FT2_KEY_F4: input->octave = 3; inst->editor.curOctave = 3; break;
+		case FT2_KEY_F5: input->octave = 4; inst->editor.curOctave = 4; break;
+		case FT2_KEY_F6: input->octave = 5; inst->editor.curOctave = 5; break;
+		case FT2_KEY_F7: input->octave = 6; inst->editor.curOctave = 6; break;
+		case FT2_KEY_F8: input->octave = 6; inst->editor.curOctave = 6; break;
 		default: break;
 	}
 }
@@ -441,11 +437,12 @@ static bool handleNumpadInstrumentKeys(ft2_instance_t *inst, ft2_input_state_t *
 
 /* ---------- Edit skip ---------- */
 
-/* Backtick: cycle edit row skip 0-16 (Shift = decrease) */
+	/* ISO key (between left Shift and Z): cycle edit row skip 0-16 (Shift = decrease) */
 static void handleEditSkipKey(ft2_instance_t *inst, int keyCode, int modifiers)
 {
 	if (inst == NULL) return;
-	if (keyCode == '`' || keyCode == '~') {
+	if (keyCode == '<' || keyCode == '>' || keyCode == '|' || keyCode == '\\') {
+		uint8_t prevSkip = inst->editor.editRowSkip;
 		if (modifiers & FT2_MOD_SHIFT) {
 			if (inst->editor.editRowSkip == 0) inst->editor.editRowSkip = 16;
 			else inst->editor.editRowSkip--;
@@ -453,10 +450,391 @@ static void handleEditSkipKey(ft2_instance_t *inst, int keyCode, int modifiers)
 			if (inst->editor.editRowSkip == 16) inst->editor.editRowSkip = 0;
 			else inst->editor.editRowSkip++;
 		}
+		if (inst->editor.editRowSkip != prevSkip)
+			inst->uiState.updatePosSections = true;
 	}
 }
 
 /* ---------- Modified key shortcuts ---------- */
+
+typedef void (*ft2_key_action_fn)(ft2_instance_t *inst);
+
+typedef struct ft2_key_action_t
+{
+	int key;
+	ft2_key_action_fn action;
+} ft2_key_action_t;
+
+static bool runKeyActions(ft2_instance_t *inst, int keyCode, const ft2_key_action_t *actions, size_t count)
+{
+	for (size_t i = 0; i < count; i++)
+	{
+		if (actions[i].key == keyCode)
+		{
+			actions[i].action(inst);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool handleCtrlReturnInsert(ft2_instance_t *inst, int keyCode, int modifiers)
+{
+	const bool ctrlDown = (modifiers & FT2_MOD_CTRL) != 0;
+	const bool altDown = (modifiers & FT2_MOD_ALT) != 0;
+	const bool shiftDown = (modifiers & FT2_MOD_SHIFT) != 0;
+
+	if (ctrlDown && !altDown && (keyCode == FT2_KEY_RETURN || keyCode == '\n'))
+	{
+		if (inst->uiState.patternEditorShown && inst->replayer.playMode == FT2_PLAYMODE_EDIT)
+		{
+			int insertMods = shiftDown ? FT2_MOD_SHIFT : 0;
+			handlePatternInsertDelete(inst, FT2_KEY_INSERT, insertMods);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool handleSampleEditorClipboardShortcuts(ft2_instance_t *inst, int keyCode, bool clipMod)
+{
+	if (!clipMod || !inst->uiState.sampleEditorShown)
+		return false;
+
+	static const ft2_key_action_t actions[] = {
+		{ 'c', ft2_sample_ed_copy }, { 'C', ft2_sample_ed_copy },
+		{ 'x', ft2_sample_ed_cut },  { 'X', ft2_sample_ed_cut },
+		{ 'v', ft2_sample_ed_paste }, { 'V', ft2_sample_ed_paste }
+	};
+
+	return runKeyActions(inst, keyCode, actions, sizeof(actions) / sizeof(actions[0]));
+}
+
+static bool handlePatternClipboardShortcuts(ft2_instance_t *inst, int keyCode, bool clipMod, bool shiftDown, bool altDown)
+{
+	if (!inst->uiState.patternEditorShown || !clipMod)
+		return false;
+
+	if (!shiftDown && !altDown)
+	{
+		static const ft2_key_action_t actions[] = {
+			{ 'c', copyBlock }, { 'C', copyBlock },
+			{ 'x', cutBlock },  { 'X', cutBlock },
+			{ 'v', pasteBlock }, { 'V', pasteBlock }
+		};
+		return runKeyActions(inst, keyCode, actions, sizeof(actions) / sizeof(actions[0]));
+	}
+	else if (shiftDown && !altDown)
+	{
+		static const ft2_key_action_t actions[] = {
+			{ 'c', copyTrack }, { 'C', copyTrack },
+			{ 'x', cutTrack },  { 'X', cutTrack },
+			{ 'v', pasteTrack }, { 'V', pasteTrack }
+		};
+		return runKeyActions(inst, keyCode, actions, sizeof(actions) / sizeof(actions[0]));
+	}
+	else if (!shiftDown && altDown)
+	{
+		static const ft2_key_action_t actions[] = {
+			{ 'c', copyPattern }, { 'C', copyPattern },
+			{ 'x', cutPattern },  { 'X', cutPattern },
+			{ 'v', pastePattern }, { 'V', pastePattern }
+		};
+		return runKeyActions(inst, keyCode, actions, sizeof(actions) / sizeof(actions[0]));
+	}
+
+	return false;
+}
+
+static bool handleScaleFadeShortcuts(ft2_instance_t *inst, int keyCode, int modifiers, bool clipMod)
+{
+	if (!inst->uiState.patternEditorShown || inst->uiState.sampleEditorShown)
+		return false;
+
+	const bool ctrlDown = (modifiers & FT2_MOD_CTRL) != 0;
+	const bool altDown = (modifiers & FT2_MOD_ALT) != 0;
+	const bool shiftDown = (modifiers & FT2_MOD_SHIFT) != 0;
+
+	if (altDown && !ctrlDown && !shiftDown && !clipMod) {
+		if (keyCode == 'v' || keyCode == 'V') {
+			scaleFadeVolumeBlock(inst);
+			return true;
+		}
+	}
+
+	if (shiftDown && !ctrlDown && !altDown && !clipMod) {
+		if (keyCode == 'v' || keyCode == 'V') {
+			scaleFadeVolumeTrack(inst);
+			return true;
+		}
+	}
+
+#ifdef __APPLE__
+	if (ctrlDown && !altDown && !shiftDown && !clipMod) {
+		if (keyCode == 'v' || keyCode == 'V') {
+			scaleFadeVolumePattern(inst);
+			return true;
+		}
+	}
+#endif
+
+	return false;
+}
+
+static void resetToDefaultView(ft2_instance_t *inst)
+{
+	if (inst->uiState.extendedPatternEditor)
+		exitPatternEditorExtended(inst);
+
+	if (inst->uiState.sampleEditorShown) hideSampleEditor(inst);
+	if (inst->uiState.sampleEditorExtShown) hideSampleEditorExt(inst);
+	if (inst->uiState.instEditorShown) hideInstEditor(inst);
+	if (inst->uiState.instEditorExtShown) hideInstEditorExt(inst);
+	if (inst->uiState.transposeShown) hideTranspose(inst);
+	if (inst->uiState.aboutScreenShown) pbExitAbout(inst);
+	if (inst->uiState.configScreenShown) pbConfigExit(inst);
+	if (inst->uiState.helpScreenShown) pbHelpExit(inst);
+	if (inst->uiState.nibblesShown)
+	{
+		ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
+		const ft2_bmp_t *bmp = (ui != NULL && ui->bmpLoaded) ? &ui->bmp : NULL;
+		if (ui != NULL) ft2_nibbles_exit(inst, &ui->video, bmp);
+		else ft2_nibbles_hide(inst);
+	}
+	if (inst->uiState.diskOpShown) pbDiskOp(inst);
+	if (inst->uiState.advEditShown) hideAdvEdit(inst);
+	if (inst->uiState.trimScreenShown) hideTrimScreen(inst);
+
+	showPatternEditor(inst);
+}
+
+static bool handleScreenToggleShortcuts(ft2_instance_t *inst, int keyCode, int modifiers)
+{
+	const bool ctrlDown = (modifiers & FT2_MOD_CTRL) != 0;
+	const bool altDown = (modifiers & FT2_MOD_ALT) != 0;
+	const bool shiftDown = (modifiers & FT2_MOD_SHIFT) != 0;
+
+	if (!ctrlDown || altDown || shiftDown)
+		return false;
+
+	switch (keyCode) {
+		case 'a': case 'A':
+		{
+			ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
+			if (ui != NULL)
+			{
+				const ft2_bmp_t *bmp = ui->bmpLoaded ? &ui->bmp : NULL;
+				showAdvEdit(inst, &ui->video, bmp);
+			}
+			return true;
+		}
+		case 'b': case 'B':
+			pbAbout(inst);
+			return true;
+		case 'c': case 'C':
+			if (!inst->uiState.configScreenShown)
+				pbConfig(inst);
+			return true;
+		case 'd': case 'D':
+			if (!inst->uiState.diskOpShown)
+				pbDiskOp(inst);
+			return true;
+		case 'e': case 'E':
+			showSampleEditorExt(inst);
+			return true;
+		case 'h': case 'H':
+			pbHelp(inst);
+			return true;
+		case 'i': case 'I':
+			showInstEditor(inst);
+			return true;
+		case 'm': case 'M':
+			showInstEditorExt(inst);
+			return true;
+		case 'p': case 'P':
+			if (!inst->uiState.patternEditorShown)
+			{
+				if (inst->uiState.sampleEditorShown) hideSampleEditor(inst);
+				if (inst->uiState.sampleEditorExtShown) hideSampleEditorExt(inst);
+				if (inst->uiState.instEditorShown) hideInstEditor(inst);
+				showPatternEditor(inst);
+			}
+			return true;
+		case 's': case 'S':
+			if (!inst->uiState.sampleEditorShown)
+				showSampleEditor(inst);
+			return true;
+		case 't': case 'T':
+			showTranspose(inst);
+			return true;
+		case 'x': case 'X':
+			resetToDefaultView(inst);
+			return true;
+		case 'z': case 'Z':
+			togglePatternEditorExtended(inst);
+			return true;
+		default: break;
+	}
+
+	return false;
+}
+
+static bool handleFunctionClipboardShortcuts(ft2_instance_t *inst, int keyCode, int modifiers)
+{
+	const bool ctrlDown = (modifiers & FT2_MOD_CTRL) != 0;
+	const bool altDown = (modifiers & FT2_MOD_ALT) != 0;
+	const bool shiftDown = (modifiers & FT2_MOD_SHIFT) != 0;
+
+	if (altDown && !ctrlDown && !shiftDown) {
+		static const ft2_key_action_t actions[] = {
+			{ FT2_KEY_F3, cutBlock },
+			{ FT2_KEY_F4, copyBlock },
+			{ FT2_KEY_F5, pasteBlock }
+		};
+		return runKeyActions(inst, keyCode, actions, sizeof(actions) / sizeof(actions[0]));
+	}
+
+	if (shiftDown && !ctrlDown && !altDown) {
+		static const ft2_key_action_t actions[] = {
+			{ FT2_KEY_F3, cutTrack },
+			{ FT2_KEY_F4, copyTrack },
+			{ FT2_KEY_F5, pasteTrack }
+		};
+		return runKeyActions(inst, keyCode, actions, sizeof(actions) / sizeof(actions[0]));
+	}
+
+	if (ctrlDown && !shiftDown && !altDown) {
+		static const ft2_key_action_t actions[] = {
+			{ FT2_KEY_F3, cutPattern },
+			{ FT2_KEY_F4, copyPattern },
+			{ FT2_KEY_F5, pastePattern }
+		};
+		return runKeyActions(inst, keyCode, actions, sizeof(actions) / sizeof(actions[0]));
+	}
+
+	return false;
+}
+
+typedef struct ft2_transpose_shortcut_t
+{
+	int key;
+	uint8_t reqMods;
+	uint8_t forbidMods;
+	uint8_t mode;
+	int8_t delta;
+	bool allInstruments;
+} ft2_transpose_shortcut_t;
+
+static bool handleTransposeShortcuts(ft2_instance_t *inst, int keyCode, int modifiers)
+{
+	const uint8_t modMask = FT2_MOD_SHIFT | FT2_MOD_CTRL | FT2_MOD_ALT;
+	const uint8_t mods = (uint8_t)(modifiers & modMask);
+
+	static const ft2_transpose_shortcut_t shortcuts[] = {
+		{ FT2_KEY_F7, FT2_MOD_SHIFT, FT2_MOD_CTRL | FT2_MOD_ALT, TRANSP_TRACK, -1, TRANSP_CUR_INSTRUMENT },
+		{ FT2_KEY_F8, FT2_MOD_SHIFT, FT2_MOD_CTRL | FT2_MOD_ALT, TRANSP_TRACK,  1, TRANSP_CUR_INSTRUMENT },
+		{ FT2_KEY_F1, FT2_MOD_SHIFT, FT2_MOD_CTRL | FT2_MOD_ALT, TRANSP_TRACK, -1, TRANSP_ALL_INSTRUMENTS },
+		{ FT2_KEY_F2, FT2_MOD_SHIFT, FT2_MOD_CTRL | FT2_MOD_ALT, TRANSP_TRACK,  1, TRANSP_ALL_INSTRUMENTS },
+		{ FT2_KEY_F7, FT2_MOD_CTRL,  FT2_MOD_SHIFT | FT2_MOD_ALT, TRANSP_PATT, -1, TRANSP_CUR_INSTRUMENT },
+		{ FT2_KEY_F8, FT2_MOD_CTRL,  FT2_MOD_SHIFT | FT2_MOD_ALT, TRANSP_PATT,  1, TRANSP_CUR_INSTRUMENT },
+		{ FT2_KEY_F1, FT2_MOD_CTRL,  FT2_MOD_SHIFT | FT2_MOD_ALT, TRANSP_PATT, -1, TRANSP_ALL_INSTRUMENTS },
+		{ FT2_KEY_F2, FT2_MOD_CTRL,  FT2_MOD_SHIFT | FT2_MOD_ALT, TRANSP_PATT,  1, TRANSP_ALL_INSTRUMENTS },
+		{ FT2_KEY_F7, FT2_MOD_ALT,   FT2_MOD_SHIFT | FT2_MOD_CTRL, TRANSP_BLOCK, -1, TRANSP_CUR_INSTRUMENT },
+		{ FT2_KEY_F8, FT2_MOD_ALT,   FT2_MOD_SHIFT | FT2_MOD_CTRL, TRANSP_BLOCK,  1, TRANSP_CUR_INSTRUMENT },
+		{ FT2_KEY_F1, FT2_MOD_ALT,   FT2_MOD_SHIFT | FT2_MOD_CTRL, TRANSP_BLOCK, -1, TRANSP_ALL_INSTRUMENTS },
+		{ FT2_KEY_F2, FT2_MOD_ALT,   FT2_MOD_SHIFT | FT2_MOD_CTRL, TRANSP_BLOCK,  1, TRANSP_ALL_INSTRUMENTS }
+	};
+
+	for (size_t i = 0; i < sizeof(shortcuts) / sizeof(shortcuts[0]); i++)
+	{
+		const ft2_transpose_shortcut_t *sc = &shortcuts[i];
+		if (sc->key == keyCode && (mods & sc->reqMods) == sc->reqMods && (mods & sc->forbidMods) == 0)
+		{
+			doTranspose(inst, sc->mode, sc->delta, sc->allInstruments);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool handlePatternJumpShortcuts(ft2_instance_t *inst, int keyCode, int modifiers)
+{
+	const bool ctrlDown = (modifiers & FT2_MOD_CTRL) != 0;
+	const bool shiftDown = (modifiers & FT2_MOD_SHIFT) != 0;
+	const bool altDown = (modifiers & FT2_MOD_ALT) != 0;
+
+	if (altDown)
+		return false;
+
+	if (shiftDown && !ctrlDown)
+	{
+		switch (keyCode)
+		{
+			case FT2_KEY_F9:  inst->editor.ptnJumpPos[0] = inst->editor.row; return true;
+			case FT2_KEY_F10: inst->editor.ptnJumpPos[1] = inst->editor.row; return true;
+			case FT2_KEY_F11: inst->editor.ptnJumpPos[2] = inst->editor.row; return true;
+			case FT2_KEY_F12: inst->editor.ptnJumpPos[3] = inst->editor.row; return true;
+			default: break;
+		}
+	}
+
+	if (ctrlDown && !shiftDown)
+	{
+		switch (keyCode)
+		{
+			case FT2_KEY_F9:  ft2_instance_play(inst, FT2_PLAYMODE_PATT, inst->editor.ptnJumpPos[0]); return true;
+			case FT2_KEY_F10: ft2_instance_play(inst, FT2_PLAYMODE_PATT, inst->editor.ptnJumpPos[1]); return true;
+			case FT2_KEY_F11: ft2_instance_play(inst, FT2_PLAYMODE_PATT, inst->editor.ptnJumpPos[2]); return true;
+			case FT2_KEY_F12: ft2_instance_play(inst, FT2_PLAYMODE_PATT, inst->editor.ptnJumpPos[3]); return true;
+			default: break;
+		}
+	}
+
+	return false;
+}
+
+static bool handleAltChannelJump(ft2_instance_t *inst, int keyCode, int modifiers)
+{
+	const bool altDown = (modifiers & FT2_MOD_ALT) != 0;
+	const bool ctrlDown = (modifiers & FT2_MOD_CTRL) != 0;
+	const bool shiftDown = (modifiers & FT2_MOD_SHIFT) != 0;
+
+	if (!altDown || ctrlDown || shiftDown)
+		return false;
+
+	int channel = -1;
+	switch (keyCode) {
+		case 'q': case 'Q': channel = 0; break;
+		case 'w': case 'W': channel = 1; break;
+		case 'e': case 'E': channel = 2; break;
+		case 'r': case 'R': channel = 3; break;
+		case 't': case 'T': channel = 4; break;
+		case 'y': case 'Y': channel = 5; break;
+		case 'u': case 'U': channel = 6; break;
+		case 'i': case 'I': channel = 7; break;
+		case 'a': case 'A': channel = 8; break;
+		case 's': case 'S': channel = 9; break;
+		case 'd': case 'D': channel = 10; break;
+		case 'f': case 'F': channel = 11; break;
+		case 'g': case 'G': channel = 12; break;
+		case 'h': case 'H': channel = 13; break;
+		case 'j': case 'J': channel = 14; break;
+		case 'k': case 'K': channel = 15; break;
+		default: break;
+	}
+
+	if (channel >= 0 && channel < inst->replayer.song.numChannels) {
+		inst->cursor.ch = (uint8_t)channel;
+		inst->cursor.object = CURSOR_NOTE;
+		inst->uiState.updatePatternEditor = true;
+		return true;
+	}
+
+	return false;
+}
 
 static bool handleModifiedKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 {
@@ -473,224 +851,32 @@ static bool handleModifiedKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 	bool clipMod = ctrlDown;
 #endif
 
-	/* --- Clipboard shortcuts using platform-native modifier --- */
+	if (handleCtrlReturnInsert(inst, keyCode, modifiers))
+		return true;
 
-	/* Sample editor: clipMod+C/X/V (highest priority) */
-	if (clipMod && inst->uiState.sampleEditorShown) {
-		switch (keyCode) {
-			case 'c': case 'C': ft2_sample_ed_copy(inst); return true;
-			case 'x': case 'X': ft2_sample_ed_cut(inst); return true;
-			case 'v': case 'V': ft2_sample_ed_paste(inst); return true;
-			default: break;
-		}
-	}
+	if (handleSampleEditorClipboardShortcuts(inst, keyCode, clipMod))
+		return true;
 
-	/* Pattern editor clipboard ops with combined modifiers */
-	if (inst->uiState.patternEditorShown) {
-		/* Block ops: clipMod + C/X/V (no Shift, no Alt) */
-		if (clipMod && !shiftDown && !altDown) {
-			switch (keyCode) {
-				case 'c': case 'C': copyBlock(inst); return true;
-				case 'x': case 'X': cutBlock(inst); return true;
-				case 'v': case 'V': pasteBlock(inst); return true;
-				default: break;
-			}
-		}
-		/* Track ops: clipMod + Shift + C/X/V */
-		if (clipMod && shiftDown && !altDown) {
-			switch (keyCode) {
-				case 'c': case 'C': copyTrack(inst); return true;
-				case 'x': case 'X': cutTrack(inst); return true;
-				case 'v': case 'V': pasteTrack(inst); return true;
-				default: break;
-			}
-		}
-		/* Pattern ops: clipMod + Alt + C/X/V */
-		if (clipMod && !shiftDown && altDown) {
-			switch (keyCode) {
-				case 'c': case 'C': copyPattern(inst); return true;
-				case 'x': case 'X': cutPattern(inst); return true;
-				case 'v': case 'V': pastePattern(inst); return true;
-				default: break;
-			}
-		}
-	}
+	if (handlePatternClipboardShortcuts(inst, keyCode, clipMod, shiftDown, altDown))
+		return true;
 
-	/* --- Volume scale/fade shortcuts (pattern editor only, not sample editor) --- */
-	if (inst->uiState.patternEditorShown && !inst->uiState.sampleEditorShown) {
-		/* Alt+V alone (no clipMod) = scale/fade block */
-		if (altDown && !ctrlDown && !shiftDown && !clipMod) {
-			if (keyCode == 'v' || keyCode == 'V') {
-				scaleFadeVolumeBlock(inst);
-				return true;
-			}
-		}
-		/* Shift+V alone (no clipMod) = scale/fade track */
-		if (shiftDown && !ctrlDown && !altDown && !clipMod) {
-			if (keyCode == 'v' || keyCode == 'V') {
-				scaleFadeVolumeTrack(inst);
-				return true;
-			}
-		}
-#ifdef __APPLE__
-		/* Ctrl+V alone (no Cmd) = scale/fade pattern (Mac only) */
-		if (ctrlDown && !altDown && !shiftDown && !clipMod) {
-			if (keyCode == 'v' || keyCode == 'V') {
-				scaleFadeVolumePattern(inst);
-				return true;
-			}
-		}
-#endif
-	}
+	if (handleScaleFadeShortcuts(inst, keyCode, modifiers, clipMod))
+		return true;
 
-	/* --- Ctrl+key screen toggles (not in sample/pattern editor for C/X/V) --- */
-	if (ctrlDown && !altDown && !shiftDown) {
-		switch (keyCode) {
-			case 'a': case 'A':
-			{
-				ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
-				if (ui != NULL)
-				{
-					const ft2_bmp_t *bmp = ui->bmpLoaded ? &ui->bmp : NULL;
-					showAdvEdit(inst, &ui->video, bmp);
-				}
-				return true;
-			}
-			case 'b': case 'B':
-				pbAbout(inst);
-				return true;
-			case 'c': case 'C':
-				if (!inst->uiState.configScreenShown)
-					pbConfig(inst);
-				return true;
-			case 'd': case 'D':
-				if (!inst->uiState.diskOpShown)
-					pbDiskOp(inst);
-				return true;
-			case 'e': case 'E':
-				showSampleEditorExt(inst);
-				return true;
-			case 'h': case 'H':
-				pbHelp(inst);
-				return true;
-			case 'i': case 'I':
-				showInstEditor(inst);
-				return true;
-			case 'm': case 'M':
-				showInstEditorExt(inst);
-				return true;
-			case 'p': case 'P':
-				if (!inst->uiState.patternEditorShown)
-				{
-					if (inst->uiState.sampleEditorShown) hideSampleEditor(inst);
-					if (inst->uiState.sampleEditorExtShown) hideSampleEditorExt(inst);
-					if (inst->uiState.instEditorShown) hideInstEditor(inst);
-					showPatternEditor(inst);
-				}
-				return true;
-			case 's': case 'S':
-				if (!inst->uiState.sampleEditorShown)
-					showSampleEditor(inst);
-				return true;
-			case 't': case 'T':
-				showTranspose(inst);
-				return true;
-			case 'x': case 'X':
-			{
-				/* Restore default view */
-				if (inst->uiState.extendedPatternEditor)
-					exitPatternEditorExtended(inst);
+	if (handleScreenToggleShortcuts(inst, keyCode, modifiers))
+		return true;
 
-				if (inst->uiState.sampleEditorShown) hideSampleEditor(inst);
-				if (inst->uiState.sampleEditorExtShown) hideSampleEditorExt(inst);
-				if (inst->uiState.instEditorShown) hideInstEditor(inst);
-				if (inst->uiState.instEditorExtShown) hideInstEditorExt(inst);
-				if (inst->uiState.transposeShown) hideTranspose(inst);
-				if (inst->uiState.aboutScreenShown) pbExitAbout(inst);
-				if (inst->uiState.configScreenShown) pbConfigExit(inst);
-				if (inst->uiState.helpScreenShown) pbHelpExit(inst);
-				if (inst->uiState.nibblesShown)
-				{
-					ft2_ui_t *ui = (ft2_ui_t *)inst->ui;
-					const ft2_bmp_t *bmp = (ui != NULL && ui->bmpLoaded) ? &ui->bmp : NULL;
-					if (ui != NULL) ft2_nibbles_exit(inst, &ui->video, bmp);
-					else ft2_nibbles_hide(inst);
-				}
-				if (inst->uiState.diskOpShown) pbDiskOp(inst);
-				if (inst->uiState.advEditShown) hideAdvEdit(inst);
-				if (inst->uiState.trimScreenShown) hideTrimScreen(inst);
+	if (handleFunctionClipboardShortcuts(inst, keyCode, modifiers))
+		return true;
 
-				showPatternEditor(inst);
-				return true;
-			}
-			case 'z': case 'Z':
-				togglePatternEditorExtended(inst);
-				return true;
-			default: break;
-		}
-	}
+	if (handleTransposeShortcuts(inst, keyCode, modifiers))
+		return true;
 
-	/* --- F-key shortcuts for clipboard ops (all platforms) --- */
+	if (handlePatternJumpShortcuts(inst, keyCode, modifiers))
+		return true;
 
-	/* Alt+F3/F4/F5: Block cut/copy/paste */
-	if (altDown && !ctrlDown && !shiftDown) {
-		switch (keyCode) {
-			case FT2_KEY_F3: cutBlock(inst); return true;
-			case FT2_KEY_F4: copyBlock(inst); return true;
-			case FT2_KEY_F5: pasteBlock(inst); return true;
-			default: break;
-		}
-	}
-
-	/* Shift+F3/F4/F5: Track cut/copy/paste */
-	if (shiftDown && !ctrlDown && !altDown) {
-		switch (keyCode) {
-			case FT2_KEY_F3: cutTrack(inst); return true;
-			case FT2_KEY_F4: copyTrack(inst); return true;
-			case FT2_KEY_F5: pasteTrack(inst); return true;
-			default: break;
-		}
-	}
-
-	/* Ctrl+F3/F4/F5: Pattern cut/copy/paste */
-	if (ctrlDown && !shiftDown && !altDown) {
-		switch (keyCode) {
-			case FT2_KEY_F3: cutPattern(inst); return true;
-			case FT2_KEY_F4: copyPattern(inst); return true;
-			case FT2_KEY_F5: pastePattern(inst); return true;
-			default: break;
-		}
-	}
-
-	/* Alt+QWERTY/ASDF = jump to channel 0-15 */
-	if (altDown && !ctrlDown && !shiftDown) {
-		int channel = -1;
-		switch (keyCode) {
-			case 'q': case 'Q': channel = 0; break;
-			case 'w': case 'W': channel = 1; break;
-			case 'e': case 'E': channel = 2; break;
-			case 'r': case 'R': channel = 3; break;
-			case 't': case 'T': channel = 4; break;
-			case 'y': case 'Y': channel = 5; break;
-			case 'u': case 'U': channel = 6; break;
-			case 'i': case 'I': channel = 7; break;
-			case 'a': case 'A': channel = 8; break;
-			case 's': case 'S': channel = 9; break;
-			case 'd': case 'D': channel = 10; break;
-			case 'f': case 'F': channel = 11; break;
-			case 'g': case 'G': channel = 12; break;
-			case 'h': case 'H': channel = 13; break;
-			case 'j': case 'J': channel = 14; break;
-			case 'k': case 'K': channel = 15; break;
-			default: break;
-		}
-		if (channel >= 0 && channel < inst->replayer.song.numChannels) {
-			inst->cursor.ch = (uint8_t)channel;
-			inst->cursor.object = CURSOR_NOTE;
-			inst->uiState.updatePatternEditor = true;
-			return true;
-		}
-	}
+	if (handleAltChannelJump(inst, keyCode, modifiers))
+		return true;
 
 	return false;
 }
@@ -705,7 +891,10 @@ static bool handleModifiedKeys(ft2_instance_t *inst, int keyCode, int modifiers)
 static void handlePatternInsertDelete(ft2_instance_t *inst, int keyCode, int modifiers)
 {
 	if (inst == NULL) return;
-	if (inst->replayer.playMode != FT2_PLAYMODE_EDIT) return;
+	if (inst->replayer.playMode != FT2_PLAYMODE_EDIT &&
+	    inst->replayer.playMode != FT2_PLAYMODE_RECPATT &&
+	    inst->replayer.playMode != FT2_PLAYMODE_RECSONG)
+		return;
 
 	uint16_t patt = inst->editor.editPattern;
 	if (patt >= 256) return;
@@ -718,19 +907,34 @@ static void handlePatternInsertDelete(ft2_instance_t *inst, int keyCode, int mod
 
 	switch (keyCode) {
 		case FT2_KEY_INSERT:
-			if (pattern != NULL) {
+			if (modifiers & FT2_MOD_SHIFT)
+			{
+				if (inst->config.recTrueInsert && numRows < 256)
+				{
+					numRows++;
+					inst->replayer.patternNumRows[patt] = numRows;
+					if (inst->replayer.song.pattNum == patt)
+						inst->replayer.song.currNumRows = numRows;
+					inst->uiState.updatePosSections = true;
+					inst->uiState.updatePatternEditor = true;
+					ft2_song_mark_modified(inst);
+				}
+			}
+
+			if (pattern != NULL)
+			{
 				if (modifiers & FT2_MOD_SHIFT) {
 					/* Insert line - all channels */
 					for (int16_t row = numRows - 2; row >= curRow; row--)
 						for (uint8_t ch = 0; ch < numCh; ch++)
-							pattern[(row + 1) * numCh + ch] = pattern[row * numCh + ch];
+							pattern[(row + 1) * FT2_MAX_CHANNELS + ch] = pattern[row * FT2_MAX_CHANNELS + ch];
 					for (uint8_t ch = 0; ch < numCh; ch++)
-						memset(&pattern[curRow * numCh + ch], 0, sizeof(ft2_note_t));
+						memset(&pattern[curRow * FT2_MAX_CHANNELS + ch], 0, sizeof(ft2_note_t));
 				} else {
 					/* Insert note - current channel */
 					for (int16_t row = numRows - 2; row >= curRow; row--)
-						pattern[(row + 1) * numCh + inst->cursor.ch] = pattern[row * numCh + inst->cursor.ch];
-					memset(&pattern[curRow * numCh + inst->cursor.ch], 0, sizeof(ft2_note_t));
+						pattern[(row + 1) * FT2_MAX_CHANNELS + inst->cursor.ch] = pattern[row * FT2_MAX_CHANNELS + inst->cursor.ch];
+					memset(&pattern[curRow * FT2_MAX_CHANNELS + inst->cursor.ch], 0, sizeof(ft2_note_t));
 				}
 				ft2_song_mark_modified(inst);
 				inst->uiState.updatePatternEditor = true;
@@ -746,22 +950,45 @@ static void handlePatternInsertDelete(ft2_instance_t *inst, int keyCode, int mod
 				if (modifiers & FT2_MOD_SHIFT) {
 					for (uint16_t row = curRow; row < numRows - 1; row++)
 						for (uint8_t ch = 0; ch < numCh; ch++)
-							pattern[row * numCh + ch] = pattern[(row + 1) * numCh + ch];
+							pattern[row * FT2_MAX_CHANNELS + ch] = pattern[(row + 1) * FT2_MAX_CHANNELS + ch];
 					for (uint8_t ch = 0; ch < numCh; ch++)
-						memset(&pattern[(numRows - 1) * numCh + ch], 0, sizeof(ft2_note_t));
+						memset(&pattern[(numRows - 1) * FT2_MAX_CHANNELS + ch], 0, sizeof(ft2_note_t));
 				} else {
 					for (uint16_t row = curRow; row < numRows - 1; row++)
-						pattern[row * numCh + inst->cursor.ch] = pattern[(row + 1) * numCh + inst->cursor.ch];
-					memset(&pattern[(numRows - 1) * numCh + inst->cursor.ch], 0, sizeof(ft2_note_t));
+						pattern[row * FT2_MAX_CHANNELS + inst->cursor.ch] = pattern[(row + 1) * FT2_MAX_CHANNELS + inst->cursor.ch];
+					memset(&pattern[(numRows - 1) * FT2_MAX_CHANNELS + inst->cursor.ch], 0, sizeof(ft2_note_t));
 				}
 				ft2_song_mark_modified(inst);
 				inst->uiState.updatePatternEditor = true;
+			}
+			else if (curRow > 0)
+			{
+				inst->replayer.song.row--;
+				curRow = inst->replayer.song.row;
+				if (!inst->replayer.songPlaying) inst->editor.row = (uint8_t)curRow;
+			}
+
+			if ((modifiers & FT2_MOD_SHIFT) && inst->config.recTrueInsert && numRows > 1)
+			{
+				uint16_t newRows = numRows - 1;
+				inst->replayer.patternNumRows[patt] = newRows;
+				if (inst->replayer.song.pattNum == patt)
+					inst->replayer.song.currNumRows = newRows;
+				if (inst->replayer.song.row >= newRows)
+				{
+					inst->replayer.song.row = newRows - 1;
+					if (!inst->replayer.songPlaying)
+						inst->editor.row = (uint8_t)inst->replayer.song.row;
+				}
+				inst->uiState.updatePosSections = true;
+				inst->uiState.updatePatternEditor = true;
+				ft2_song_mark_modified(inst);
 			}
 			break;
 
 		case FT2_KEY_DELETE:
 			if (pattern != NULL) {
-				ft2_note_t *n = &pattern[curRow * numCh + inst->cursor.ch];
+				ft2_note_t *n = &pattern[curRow * FT2_MAX_CHANNELS + inst->cursor.ch];
 				if (modifiers & FT2_MOD_SHIFT)
 					memset(n, 0, sizeof(ft2_note_t));
 				else if (modifiers & FT2_MOD_CTRL)
@@ -1069,6 +1296,60 @@ void ft2_plugin_record_note_off(ft2_instance_t *inst, ft2_input_state_t *input, 
 
 /* ---------- Note input ---------- */
 
+static void insertKeyOff(ft2_instance_t *inst, ft2_input_state_t *input)
+{
+	if (inst == NULL || input == NULL)
+		return;
+
+	ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
+	bool *multiRecChn = (ui != NULL) ? ui->scopes.multiRecChn : NULL;
+	bool *channelMuted = (ui != NULL) ? ui->scopes.channelMuted : NULL;
+
+	bool editMode = inst->uiState.patternEditorShown &&
+	                (inst->replayer.playMode == FT2_PLAYMODE_EDIT);
+	bool recMode = (inst->replayer.playMode == FT2_PLAYMODE_RECSONG) ||
+	               (inst->replayer.playMode == FT2_PLAYMODE_RECPATT);
+
+	if ((editMode || recMode) && inst->uiState.patternEditorShown) {
+		uint16_t numChannels = inst->replayer.song.numChannels;
+		if (numChannels > 32) numChannels = 32;
+
+		int8_t c = inst->cursor.ch;
+		if (((inst->config.multiEdit && editMode) || (inst->config.multiRec && recMode)) && multiRecChn) {
+			int32_t time = 0x7FFFFFFF;
+			for (int8_t i = 0; i < (int8_t)numChannels; i++) {
+				if ((!channelMuted || !channelMuted[i]) && multiRecChn[i] &&
+				    input->keyOffTime[i] < time && input->keyOnTab[i] == 0)
+					{ c = i; time = input->keyOffTime[i]; }
+			}
+		}
+		if (c < 0 || c >= (int8_t)numChannels) return;
+
+		uint16_t patt = inst->editor.editPattern;
+		if (!allocatePattern(inst, patt)) return;
+
+		int16_t row = inst->replayer.song.row;
+		if (row >= 0 && row < inst->replayer.patternNumRows[patt]) {
+			ft2_note_t *n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + c];
+			n->note = FT2_KEY_NOTE_OFF;
+			n->instr = 0;
+
+			if (!recMode && inst->editor.editRowSkip > 0) {
+				uint16_t numRows = inst->replayer.patternNumRows[patt];
+				inst->replayer.song.row = (inst->replayer.song.row + inst->editor.editRowSkip) % numRows;
+				if (!inst->replayer.songPlaying) inst->editor.row = (uint8_t)inst->replayer.song.row;
+			}
+			ft2_song_mark_modified(inst);
+			inst->uiState.updatePatternEditor = true;
+		}
+	}
+}
+
+void ft2_input_insert_keyoff(ft2_instance_t *inst, ft2_input_state_t *input)
+{
+	insertKeyOff(inst, input);
+}
+
 /* Backtick = note-off in edit/record mode */
 static void handleNoteInput(ft2_instance_t *inst, ft2_input_state_t *input, int keyCode)
 {
@@ -1076,48 +1357,7 @@ static void handleNoteInput(ft2_instance_t *inst, ft2_input_state_t *input, int 
 
 	/* Note-off key */
 	if (keyCode == '`' || keyCode == '~') {
-		ft2_ui_t *ui = (ft2_ui_t*)inst->ui;
-		bool *multiRecChn = (ui != NULL) ? ui->scopes.multiRecChn : NULL;
-		bool *channelMuted = (ui != NULL) ? ui->scopes.channelMuted : NULL;
-
-		bool editMode = inst->uiState.patternEditorShown &&
-		                (inst->replayer.playMode == FT2_PLAYMODE_EDIT);
-		bool recMode = (inst->replayer.playMode == FT2_PLAYMODE_RECSONG) ||
-		               (inst->replayer.playMode == FT2_PLAYMODE_RECPATT);
-
-		if ((editMode || recMode) && inst->uiState.patternEditorShown) {
-			uint16_t numChannels = inst->replayer.song.numChannels;
-			if (numChannels > 32) numChannels = 32;
-
-			int8_t c = inst->cursor.ch;
-			if (((inst->config.multiEdit && editMode) || (inst->config.multiRec && recMode)) && multiRecChn) {
-				int32_t time = 0x7FFFFFFF;
-				for (int8_t i = 0; i < (int8_t)numChannels; i++) {
-					if ((!channelMuted || !channelMuted[i]) && multiRecChn[i] &&
-					    input->keyOffTime[i] < time && input->keyOnTab[i] == 0)
-						{ c = i; time = input->keyOffTime[i]; }
-				}
-			}
-			if (c < 0 || c >= (int8_t)numChannels) return;
-
-			uint16_t patt = inst->editor.editPattern;
-			if (!allocatePattern(inst, patt)) return;
-
-			int16_t row = inst->replayer.song.row;
-			if (row >= 0 && row < inst->replayer.patternNumRows[patt]) {
-				ft2_note_t *n = &inst->replayer.pattern[patt][row * FT2_MAX_CHANNELS + c];
-				n->note = FT2_KEY_NOTE_OFF;
-				n->instr = 0;
-
-				if (!recMode && inst->editor.editRowSkip > 0) {
-					uint16_t numRows = inst->replayer.patternNumRows[patt];
-					inst->replayer.song.row = (inst->replayer.song.row + inst->editor.editRowSkip) % numRows;
-					if (!inst->replayer.songPlaying) inst->editor.row = (uint8_t)inst->replayer.song.row;
-				}
-				ft2_song_mark_modified(inst);
-				inst->uiState.updatePatternEditor = true;
-			}
-		}
+		insertKeyOff(inst, input);
 		return;
 	}
 
@@ -1255,6 +1495,12 @@ void ft2_input_key_down(ft2_instance_t *inst, ft2_input_state_t *input, int keyC
 
 	if (modifiers & (FT2_MOD_CTRL | FT2_MOD_ALT | FT2_MOD_SHIFT | FT2_MOD_CMD))
 		if (handleModifiedKeys(inst, keyCode, modifiers)) return;
+
+	if (keyCode == FT2_KEY_BACKSPACE && inst->uiState.diskOpShown)
+	{
+		pbDiskOpParent(inst);
+		return;
+	}
 
 	/* Delete key: sample cut in sample editor */
 	if (keyCode == FT2_KEY_DELETE && inst->uiState.sampleEditorShown) {

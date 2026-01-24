@@ -769,6 +769,21 @@ void ft2_ui_text_input(ft2_ui_t *ui, void *inst, char c)
 	if (ft2_textbox_is_editing(ft2inst)) ft2_textbox_input_char(ft2inst, c);
 }
 
+void ft2_ui_insert_keyoff(ft2_ui_t *ui, void *inst)
+{
+	if (!ui) return;
+	ft2_instance_t *ft2inst = (ft2_instance_t *)inst;
+
+	if (ft2_wave_panel_is_active(ft2inst)) return;
+	if (ft2_filter_panel_is_active(ft2inst)) return;
+	if (ft2_format_panel_is_active(ft2inst)) return;
+	if (ft2_modal_panel_is_any_active(ft2inst)) return;
+	if (ft2_dialog_is_active(&ui->dialog)) return;
+	if (ft2_textbox_is_editing(ft2inst)) return;
+
+	ft2_input_insert_keyoff(ft2inst, &ui->input);
+}
+
 void ft2_ui_key_release(ft2_ui_t *ui, void *inst, int key, int modifiers)
 {
 	if (!ui) return;

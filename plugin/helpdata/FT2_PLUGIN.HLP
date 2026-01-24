@@ -399,17 +399,6 @@ using this program from the very first minute.
 references to non-ordinary keys might be wrong.
 Sh = shift key.
 >
-@X040@C001Audio:
->@X060@C002
->Ctrl & numpad+ @T160Increase master volume by 16.
->Ctrl & numpad- @T160Decrease master volume by 16.
-
-@X040@C001Video:
->@X060@C002
-Alt+Enter @T160Toggle fullscreen mode
->
->(Or "Left Ctrl + Left Command + F" on Macs)
-
 @X040@C001Cursor moves:
 >@X060@C002
 F9..F12 @T160Jump in pattern.

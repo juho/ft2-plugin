@@ -77,6 +77,20 @@ private:
     bool leftButtonHeld = false;
     bool rightButtonHeld = false;
 
+#ifdef __APPLE__
+    bool capsLockWasOn = false;
+    bool numpadEnterWasDown = false;
+    bool rightShiftWasDown = false;
+    bool rightAltWasDown = false;
+    bool rightCtrlWasDown = false;
+    bool rightCmdWasDown = false;
+#endif
+#ifdef _WIN32
+    bool rightShiftWasDown = false;
+    bool rightAltWasDown = false;
+    bool rightCtrlWasDown = false;
+#endif
+
     void handleMouseButtonTransitions(juce::Point<int> localPos, const juce::ModifierKeys& mods);
 
     enum class DropQueueMode

@@ -2,6 +2,12 @@
 
 #include <cstdio>
 #include <cstddef>
+#ifdef __APPLE__
+#include <ApplicationServices/ApplicationServices.h>
+#endif
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 #if defined(_WIN32)
 #pragma pack(push, 8)
 #endif
@@ -94,6 +100,183 @@ static int juceToFt2Key(int juceCode)
             return m->ft2Code;
     return 0;
 }
+
+static bool isKeypadKeyCode(int keyCode)
+{
+    return keyCode == juce::KeyPress::numberPad0
+        || keyCode == juce::KeyPress::numberPad1
+        || keyCode == juce::KeyPress::numberPad2
+        || keyCode == juce::KeyPress::numberPad3
+        || keyCode == juce::KeyPress::numberPad4
+        || keyCode == juce::KeyPress::numberPad5
+        || keyCode == juce::KeyPress::numberPad6
+        || keyCode == juce::KeyPress::numberPad7
+        || keyCode == juce::KeyPress::numberPad8
+        || keyCode == juce::KeyPress::numberPad9
+        || keyCode == juce::KeyPress::numberPadAdd
+        || keyCode == juce::KeyPress::numberPadSubtract
+        || keyCode == juce::KeyPress::numberPadMultiply
+        || keyCode == juce::KeyPress::numberPadDivide
+        || keyCode == juce::KeyPress::numberPadSeparator
+        || keyCode == juce::KeyPress::numberPadDecimalPoint
+        || keyCode == juce::KeyPress::numberPadEquals
+        || keyCode == juce::KeyPress::numberPadDelete;
+}
+
+struct Ft2KeyEvent
+{
+    int keyCode;
+    juce::juce_wchar textChar;
+    bool isKeypad;
+};
+
+#ifdef __APPLE__
+static const int kMacInsertFunctionKey = 0xF727; /* NSInsertFunctionKey */
+static const int kMacAnsiGraveKey = 0x32;
+static const int kMacIsoSectionKey = 0x0A;
+static const int kMacKeypadEnterKey = 0x4C;
+static const int kMacRightShiftKey = 0x3C;
+static const int kMacRightOptionKey = 0x3D;
+static const int kMacRightControlKey = 0x3E;
+static const int kMacRightCommandKey = 0x36;
+static const int kMacLeftControlKey = 0x3B;
+static bool getCapsLockState();
+static bool getMacKeyState(int keyCode);
+#endif
+#ifdef _WIN32
+static const int kWinExtendedKeyModifier = 0x10000;
+#endif
+
+static Ft2KeyEvent mapKeyPressToFt2(const juce::KeyPress& key)
+{
+    const int keyCode = key.getKeyCode();
+    const juce::juce_wchar textChar = key.getTextCharacter();
+
+    Ft2KeyEvent evt = { keyCode, textChar, isKeypadKeyCode(keyCode) };
+
+    const bool keyIsEditSkipCandidate =
+        (textChar == '`' || textChar == '~' ||
+         textChar == '<' || textChar == '>' ||
+         textChar == '|' || textChar == '\\' ||
+         textChar < 32 || textChar > 126);
+
+#ifdef __APPLE__
+    if (keyIsEditSkipCandidate)
+    {
+        if (getMacKeyState(kMacIsoSectionKey))
+        {
+            evt.keyCode = '`';
+            evt.isKeypad = false;
+            return evt;
+        }
+
+        if (getMacKeyState(kMacAnsiGraveKey))
+        {
+            evt.keyCode = '<';
+            evt.isKeypad = false;
+            return evt;
+        }
+    }
+#endif
+
+#ifdef _WIN32
+    if (keyCode == (juce::KeyPress::returnKey | kWinExtendedKeyModifier))
+    {
+        evt.keyCode = FT2_KEY_NUMPAD_ENTER;
+        evt.isKeypad = true;
+        return evt;
+    }
+
+    if (keyIsEditSkipCandidate &&
+        (keyCode == VK_OEM_102 || keyCode == (VK_OEM_102 | kWinExtendedKeyModifier)))
+    {
+        evt.keyCode = '<';
+        evt.isKeypad = false;
+        return evt;
+    }
+
+    if (keyIsEditSkipCandidate &&
+        (keyCode == VK_OEM_3 || keyCode == (VK_OEM_3 | kWinExtendedKeyModifier)))
+    {
+        evt.keyCode = '`';
+        evt.isKeypad = false;
+        return evt;
+    }
+#endif
+
+    if (textChar == '`' || textChar == '~')
+    {
+        evt.keyCode = (int)textChar;
+        evt.isKeypad = false;
+        return evt;
+    }
+
+    const int mapped = juceToFt2Key(keyCode);
+    if (mapped != 0)
+    {
+        if (textChar >= 32 && textChar <= 126)
+        {
+            const bool keypadChar =
+                (textChar >= '0' && textChar <= '9') ||
+                textChar == '.' || textChar == ',' ||
+                textChar == '+' || textChar == '-' ||
+                textChar == '*' || textChar == '/' || textChar == '=';
+
+            if (!evt.isKeypad || !keypadChar)
+            {
+                evt.keyCode = (int)textChar;
+                evt.isKeypad = false;
+                return evt;
+            }
+        }
+        evt.keyCode = mapped;
+        return evt;
+    }
+
+    if (keyCode == juce::KeyPress::spaceKey) { evt.keyCode = FT2_KEY_SPACE; return evt; }
+    if (keyCode == juce::KeyPress::returnKey) { evt.keyCode = FT2_KEY_RETURN; return evt; }
+    if (keyCode == juce::KeyPress::escapeKey) { evt.keyCode = FT2_KEY_ESCAPE; return evt; }
+    if (keyCode == juce::KeyPress::backspaceKey) { evt.keyCode = FT2_KEY_BACKSPACE; return evt; }
+    if (keyCode == juce::KeyPress::deleteKey) { evt.keyCode = FT2_KEY_DELETE; return evt; }
+    if (keyCode == juce::KeyPress::insertKey) { evt.keyCode = FT2_KEY_INSERT; return evt; }
+#ifdef __APPLE__
+    if (keyCode == kMacInsertFunctionKey) { evt.keyCode = FT2_KEY_INSERT; return evt; }
+#endif
+    if (keyCode == juce::KeyPress::tabKey) { evt.keyCode = FT2_KEY_TAB; return evt; }
+
+    if (textChar == '\b') { evt.keyCode = FT2_KEY_BACKSPACE; return evt; }
+    if (textChar == '\r') { evt.keyCode = FT2_KEY_RETURN; return evt; }
+    if (textChar == 127) { evt.keyCode = FT2_KEY_DELETE; return evt; }
+
+    if (textChar >= 32 && textChar <= 126)
+    {
+        evt.keyCode = (int)textChar;
+        evt.isKeypad = false;
+        return evt;
+    }
+
+    if (keyCode >= 32 && keyCode <= 126)
+    {
+        evt.keyCode = keyCode;
+        evt.isKeypad = false;
+        return evt;
+    }
+
+    evt.keyCode = keyCode;
+    return evt;
+}
+
+#ifdef __APPLE__
+static bool getCapsLockState()
+{
+    return (CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState) & kCGEventFlagMaskAlphaShift) != 0;
+}
+
+static bool getMacKeyState(int keyCode)
+{
+    return CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, (CGKeyCode)keyCode);
+}
+#endif
 
 //==============================================================================
 FT2PluginEditor::FT2PluginEditor (FT2PluginProcessor& p)
@@ -1152,6 +1335,59 @@ void FT2PluginEditor::timerCallback()
     ft2_instance_t* inst = audioProcessor.getInstance();
     if (inst != nullptr)
     {
+#ifdef __APPLE__
+        const bool capsOn = getCapsLockState();
+        if (capsOn != capsLockWasOn)
+            ft2_ui_insert_keyoff(ui, inst);
+        capsLockWasOn = capsOn;
+
+        const bool numpadEnterDown = getMacKeyState(kMacKeypadEnterKey);
+        if (numpadEnterDown != numpadEnterWasDown)
+        {
+            const int mods = getModifiers(juce::ModifierKeys::getCurrentModifiers());
+            if (numpadEnterDown)
+                ft2_ui_key_press(ui, inst, FT2_KEY_NUMPAD_ENTER, mods);
+            else
+                ft2_ui_key_release(ui, inst, FT2_KEY_NUMPAD_ENTER, mods);
+            numpadEnterWasDown = numpadEnterDown;
+        }
+
+        const bool rightShiftDown = getMacKeyState(kMacRightShiftKey);
+        const bool rightAltDown = getMacKeyState(kMacRightOptionKey);
+        const bool rightCtrlDown = getMacKeyState(kMacRightControlKey);
+        const bool rightCmdDown = getMacKeyState(kMacRightCommandKey);
+        const bool leftCtrlDown = getMacKeyState(kMacLeftControlKey);
+
+        if (rightShiftDown && !rightShiftWasDown)
+            ft2_instance_play(inst, FT2_PLAYMODE_RECPATT, 0);
+        if ((rightCtrlDown || rightCmdDown) && !(rightCtrlWasDown || rightCmdWasDown))
+            ft2_instance_play(inst, FT2_PLAYMODE_SONG, 0);
+        if (rightAltDown && !rightAltWasDown && !leftCtrlDown)
+            ft2_instance_play(inst, FT2_PLAYMODE_PATT, 0);
+
+        rightShiftWasDown = rightShiftDown;
+        rightAltWasDown = rightAltDown;
+        rightCtrlWasDown = rightCtrlDown;
+        rightCmdWasDown = rightCmdDown;
+#endif
+#ifdef _WIN32
+        const bool rightShiftDown = (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
+        const bool rightAltDown = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
+        const bool rightCtrlDown = (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0;
+        const bool leftCtrlDown = (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0;
+
+        if (rightShiftDown && !rightShiftWasDown)
+            ft2_instance_play(inst, FT2_PLAYMODE_RECPATT, 0);
+        if (rightCtrlDown && !rightCtrlWasDown)
+            ft2_instance_play(inst, FT2_PLAYMODE_SONG, 0);
+        if (rightAltDown && !rightAltWasDown && !leftCtrlDown)
+            ft2_instance_play(inst, FT2_PLAYMODE_PATT, 0);
+
+        rightShiftWasDown = rightShiftDown;
+        rightAltWasDown = rightAltDown;
+        rightCtrlWasDown = rightCtrlDown;
+#endif
+
         // Handle GitHub button request
         if (inst->uiState.requestOpenGitHub)
         {
@@ -1290,31 +1526,14 @@ void FT2PluginEditor::mouseWheelMove(const juce::MouseEvent& e, const juce::Mous
 
 bool FT2PluginEditor::keyPressed(const juce::KeyPress& key)
 {
-    int32_t keyCode = key.getKeyCode();
-    int modifiers = getModifiers(juce::ModifierKeys::getCurrentModifiers());
-    
-    /* Map JUCE key codes to FT2 key codes.
-       Special keys use the mapping table; ASCII keys that have different
-       JUCE constants (space, return, etc.) are handled explicitly;
-       printable ASCII passes through unchanged. */
-    int ft2Key = juceToFt2Key(keyCode);
-    if (ft2Key == 0)
-    {
-        if (keyCode == juce::KeyPress::spaceKey)         ft2Key = FT2_KEY_SPACE;
-        else if (keyCode == juce::KeyPress::returnKey)   ft2Key = FT2_KEY_RETURN;
-        else if (keyCode == juce::KeyPress::escapeKey)   ft2Key = FT2_KEY_ESCAPE;
-        else if (keyCode == juce::KeyPress::backspaceKey) ft2Key = FT2_KEY_BACKSPACE;
-        else if (keyCode == juce::KeyPress::deleteKey)   ft2Key = FT2_KEY_DELETE;
-        else if (keyCode == juce::KeyPress::tabKey)      ft2Key = FT2_KEY_TAB;
-        else ft2Key = keyCode; /* Pass through for printable ASCII */
-    }
+    int modifiers = getModifiers(key.getModifiers());
+    Ft2KeyEvent evt = mapKeyPressToFt2(key);
     
     /* Check for text character input */
-    juce::juce_wchar textChar = key.getTextCharacter();
-    if (textChar >= 32 && textChar <= 126)
-        ft2_ui_text_input(ui, audioProcessor.getInstance(), static_cast<char>(textChar));
+    if (evt.textChar >= 32 && evt.textChar <= 126)
+        ft2_ui_text_input(ui, audioProcessor.getInstance(), static_cast<char>(evt.textChar));
     
-    ft2_ui_key_press(ui, audioProcessor.getInstance(), ft2Key, modifiers);
+    ft2_ui_key_press(ui, audioProcessor.getInstance(), evt.keyCode, modifiers);
     return true;
 }
 

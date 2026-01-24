@@ -99,6 +99,7 @@ void ft2_ui_key_press(ft2_ui_t *ui, void *inst, int key, int modifiers);
 void ft2_ui_key_release(ft2_ui_t *ui, void *inst, int key, int modifiers);
 void ft2_ui_key_state_changed(ft2_ui_t *ui, bool isKeyDown);
 void ft2_ui_text_input(ft2_ui_t *ui, void *inst, char c);
+void ft2_ui_insert_keyoff(ft2_ui_t *ui, void *inst);
 
 #ifdef __cplusplus
 }
