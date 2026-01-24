@@ -1,5 +1,11 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.1.2 (Jan 24, 2026)
+
+- Fix: Marking with alt+arrows works correctly.
+- Fix: Clear sample immediately redraws sample list so the name gets emptied as well.
+- Feat: Help text updates.
+
 ## 1.1.1 (Jan 24, 2026)
 
 - Fix: Keyboard handling fixes (note-off/add/delete and other hotkeys)

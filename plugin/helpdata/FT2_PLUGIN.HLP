@@ -383,21 +383,8 @@ END
 ;***************************************************************************
 @LKeybindings
 >@X020@C002
->If you have an ambition to create music efficiently we strongly recommend
-that you learn ALL the keyboard functions. Many of them are the same
-from Fasttracker 1 and ProTracker to ensure that you feel comfortable
-using this program from the very first minute.
->
->@X020@C002Note for Mac keyboards on MacOS:
->@C002- The left Option key is the left Alt key
->- The left Command key can also be used instead of Alt for
->@X031"select all"/cut/copy/paste for text/sample editing.
->@X020@C001
->You should be aware of the fact that:
->
->@C002This help text is written using a Swedish keyboard. Therefore some
-references to non-ordinary keys might be wrong.
-Sh = shift key.
+>Keybindings in this plugin are modelled after the standalone version,
+though some are slightly different variations for better ergonomics.
 >
 @X040@C001Cursor moves:
 >@X060@C002
@@ -440,23 +427,32 @@ Delete  @T160Delete note or volume column at cursor.
 >Alt+F5 @T160Paste block.
 >Alt+C  @T160Mark current track.
 >
->@X010@C002Alternative cut/copy/paste (plugin only):
->@X060@C002These shortcuts use Cmd on Mac, Ctrl on Windows/Linux:
->Cmd/Ctrl+C @T160Copy block.
->Cmd/Ctrl+X @T160Cut block.
->Cmd/Ctrl+V @T160Paste block.
->Cmd/Ctrl+Shift+C @T160Copy track.
->Cmd/Ctrl+Shift+X @T160Cut track.
->Cmd/Ctrl+Shift+V @T160Paste track.
->Cmd/Ctrl+Alt+C @T160Copy pattern.
->Cmd/Ctrl+Alt+X @T160Cut pattern.
->Cmd/Ctrl+Alt+V @T160Paste pattern.
+>@X010@C002Alternative cut/copy/paste (Mac):
+>@X060@C002
+>Cmd+C @T160Copy block.
+>Cmd+X @T160Cut block.
+>Cmd+V @T160Paste block.
+>Cmd+Shift+C @T160Copy track.
+>Cmd+Shift+X @T160Cut track.
+>Cmd+Shift+V @T160Paste track.
+>Cmd+Alt+C @T160Copy pattern.
+>Cmd+Alt+X @T160Cut pattern.
+>Cmd+Alt+V @T160Paste pattern.
+>
+>@X010@C002Alternative cut/copy/paste (Windows/Linux):
+>@X060@C002
+>Ctrl+C @T160Copy block.
+>Ctrl+X @T160Cut block.
+>Ctrl+V @T160Paste block.
+>Ctrl+Shift+C @T160Copy track.
+>Ctrl+Shift+X @T160Cut track.
+>Ctrl+Shift+V @T160Paste track.
+>Ctrl+Alt+C @T160Copy pattern.
+>Ctrl+Alt+X @T160Cut pattern.
+>Ctrl+Alt+V @T160Paste pattern.
 
 @X040@C001Miscellaneous:
 >@X060@C002
-Right ctrl.  @T160Play song.
->Right alt    @T160Play pattern.
->Right shift  @T160Record pattern.
 >Space    @T160Stop/Edit.
 >F1..F7 @T160Select octave.
 >Key below Esc @T160Increase cursoradd.
@@ -466,12 +462,6 @@ Right ctrl.  @T160Play song.
 >Sh+Right @T160Decrease song position.
 >Ctrl+Left @T160Increase pattern number.
 >Ctrl+Right @T160Decrease pattern number.
-
-@X040@C001Miscellaneous (on a Mac keyboard):
->@X060@C002
-Right command  @T240Play song.
->Right alt/option  @T240Play pattern.
->Right shift  @T240Record pattern.
 
 @X040@C001Window switching:
 >@X060@C002
@@ -628,10 +618,10 @@ point until a key-off note has been played. When a key-off note is
 played, the "fadeout" begins.
 >One pixel in the envelope window corresponds to one player-tick. If
 the BPM is 125, you'll consume 50 pixel/second. The window's
-"size" is about 6 seconds.
+"size" is about 6 seconds (unless you change the length parameter in
+XM2 mode).
 >If you press the right mouse button at the predefine buttons,
-you'll store the current envelope into that predefine cell. The
-predefines are stored in the configuration file.
+you'll store the current envelope into that predefine cell.
 >Predefine number 1 is the default envelope. This means that if you
 load a sample, it will get all envelope information from predefine
 number 1, including the vibrato.
@@ -643,21 +633,12 @@ vibrato off.
 >Same as above, except from that the vibrato is not connected to
 the panning envelope.
 
->@X040@C001Curved envelopes (XM2 only):
->@X060@C002
->When XM2 features are enabled, you can click and drag on an envelope
-line segment (between two points) to adjust its curvature. Dragging
-up creates a logarithmic curve (fast attack/decay), dragging down
-creates an exponential curve (slow attack/decay). Double-click on
-a segment to reset it to linear.
-
->@X040@C001Envelope speed / Len. (XM2 only):
+>@X040@C001Envelope length (XM2 only):
 >@X060@C002
 >When XM2 features are enabled, a "Len." parameter appears for each
 envelope. This is a speed multiplier (1-16) that scales how long the
 envelope takes to play. A value of 1 is normal speed, 2 makes the
-envelope take twice as long, etc. This allows creating much longer
-envelopes for ambient sounds without adding more envelope points.
+envelope take twice as long, etc.
 >The envelope display is not affected by this setting; it only
 changes playback timing.
 
@@ -665,10 +646,12 @@ changes playback timing.
 >@X060@C002
 >Click and drag an envelope point to move it. The first point (at
 tick 0) can only be moved vertically.
->Right-click and drag a point to enter "stretch mode": this moves
-the selected point and all points to its right together, allowing
-you to stretch or compress sections of the envelope. The selected
-point's Y value can also be adjusted while stretching.
+>Right-click and drag a point to move the selected point and all
+points to its right together.
+>Shift-click on an envelope line to create a new point there.
+>Cmd-click (Mac) or alt-click (win/linux) to delete a point.
+>XM2 only: You can hover over a line and apply a curve by
+click-dragging on it.
 
 >@X040@C001Tune (finetune):
 >@X060@C002

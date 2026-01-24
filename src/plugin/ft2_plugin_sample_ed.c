@@ -3804,6 +3804,7 @@ static void onClearSampleResult(ft2_instance_t *inst, ft2_dialog_result_t result
 		ft2_sample_t *s = &instr->smp[curSmp];
 		memset(s->name, 0, sizeof(s->name));
 	}
+	inst->uiState.updateInstrSwitcher = true;
 
 	/* Reset sample editor view */
 	ft2_sample_ed_show_all(inst);

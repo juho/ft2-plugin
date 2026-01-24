@@ -1227,7 +1227,12 @@ void cursorRight(ft2_instance_t *inst)
 
 void rowOneUpWrap(ft2_instance_t *inst)
 {
-	if (!inst || inst->replayer.song.currNumRows <= 0) return;
+	if (!inst) return;
+	if (inst->replayer.song.currNumRows <= 0) {
+		inst->replayer.song.currNumRows = inst->replayer.patternNumRows[inst->editor.editPattern];
+		if (inst->replayer.song.currNumRows <= 0)
+			inst->replayer.song.currNumRows = 64;
+	}
 	inst->replayer.song.row = (inst->replayer.song.row - 1 + inst->replayer.song.currNumRows) % inst->replayer.song.currNumRows;
 	if (!inst->replayer.songPlaying) {
 		inst->editor.row = (uint8_t)inst->replayer.song.row;
@@ -1240,7 +1245,12 @@ void rowOneDownWrap(ft2_instance_t *inst)
 	if (!inst) return;
 	if (inst->replayer.songPlaying) {
 		inst->replayer.song.tick = 2;
-	} else if (inst->replayer.song.currNumRows > 0) {
+	} else {
+		if (inst->replayer.song.currNumRows <= 0) {
+			inst->replayer.song.currNumRows = inst->replayer.patternNumRows[inst->editor.editPattern];
+			if (inst->replayer.song.currNumRows <= 0)
+				inst->replayer.song.currNumRows = 64;
+		}
 		inst->replayer.song.row = (inst->replayer.song.row + 1) % inst->replayer.song.currNumRows;
 		inst->editor.row = (uint8_t)inst->replayer.song.row;
 		inst->uiState.updatePatternEditor = true;
@@ -1315,42 +1325,145 @@ void checkMarkLimits(ft2_instance_t *inst)
 
 void keybPattMarkUp(ft2_instance_t *inst)
 {
-	if (!inst || inst->replayer.song.row == 0) return;
-	START_MARK_Y(inst);
-	inst->editor.pattMark.markY2--;
-	rowOneUpWrap(inst);
+	if (!inst) return;
+
+	int8_t xPos = inst->cursor.ch;
+	int16_t row = inst->editor.row;
+	ft2_patt_mark_t *mark = &inst->editor.pattMark;
+
+	if (xPos != mark->markX1 && xPos != mark->markX2)
+	{
+		mark->markX1 = xPos;
+		mark->markX2 = xPos;
+		mark->markY1 = row;
+		mark->markY2 = row + 1;
+	}
+
+	if (row == mark->markY1 - 1)
+	{
+		mark->markY1 = row;
+	}
+	else if (row == mark->markY2)
+	{
+		mark->markY2 = row - 1;
+	}
+	else if (row != mark->markY1 && row != mark->markY2)
+	{
+		mark->markX1 = xPos;
+		mark->markX2 = xPos;
+		mark->markY1 = row;
+		mark->markY2 = row + 1;
+	}
+
 	checkMarkLimits(inst);
+	rowOneUpWrap(inst);
 	inst->uiState.updatePatternEditor = true;
 }
 
 void keybPattMarkDown(ft2_instance_t *inst)
 {
 	if (!inst) return;
-	if (inst->replayer.song.row >= inst->replayer.patternNumRows[inst->editor.editPattern] - 1) return;
-	START_MARK_Y(inst);
-	inst->editor.pattMark.markY2++;
-	rowOneDownWrap(inst);
+
+	int8_t xPos = inst->cursor.ch;
+	int16_t row = inst->editor.row;
+	ft2_patt_mark_t *mark = &inst->editor.pattMark;
+
+	if (xPos != mark->markX1 && xPos != mark->markX2)
+	{
+		mark->markX1 = xPos;
+		mark->markX2 = xPos;
+		mark->markY1 = row;
+		mark->markY2 = row + 1;
+	}
+
+	if (row == mark->markY2)
+	{
+		mark->markY2 = row + 1;
+	}
+	else if (row == mark->markY1 - 1)
+	{
+		mark->markY1 = row + 2;
+	}
+	else if (row != mark->markY1 && row != mark->markY2)
+	{
+		mark->markX1 = xPos;
+		mark->markX2 = xPos;
+		mark->markY1 = row;
+		mark->markY2 = row + 1;
+	}
+
 	checkMarkLimits(inst);
+	rowOneDownWrap(inst);
 	inst->uiState.updatePatternEditor = true;
 }
 
 void keybPattMarkLeft(ft2_instance_t *inst)
 {
-	if (!inst || inst->cursor.ch == 0) return;
-	START_MARK_X(inst);
-	inst->editor.pattMark.markX2--;
-	chanLeft(inst);
+	if (!inst) return;
+
+	int8_t xPos = inst->cursor.ch;
+	int16_t row = inst->editor.row;
+	ft2_patt_mark_t *mark = &inst->editor.pattMark;
+
+	if (row != mark->markY1 - 1 && row != mark->markY2)
+	{
+		mark->markY1 = row - 1;
+		mark->markY2 = row;
+	}
+
+	if (xPos == mark->markX1)
+	{
+		mark->markX1 = xPos - 1;
+	}
+	else if (xPos == mark->markX2)
+	{
+		mark->markX2 = xPos - 1;
+	}
+	else if (xPos != mark->markX1 && xPos != mark->markX2)
+	{
+		mark->markX1 = xPos - 1;
+		mark->markX2 = xPos;
+		mark->markY1 = row - 1;
+		mark->markY2 = row;
+	}
+
 	checkMarkLimits(inst);
+	chanLeft(inst);
 	inst->uiState.updatePatternEditor = true;
 }
 
 void keybPattMarkRight(ft2_instance_t *inst)
 {
-	if (!inst || inst->cursor.ch >= inst->replayer.song.numChannels - 1) return;
-	START_MARK_X(inst);
-	inst->editor.pattMark.markX2++;
-	chanRight(inst);
+	if (!inst) return;
+
+	int8_t xPos = inst->cursor.ch;
+	int16_t row = inst->editor.row;
+	ft2_patt_mark_t *mark = &inst->editor.pattMark;
+
+	if (row != mark->markY1 - 1 && row != mark->markY2)
+	{
+		mark->markY1 = row - 1;
+		mark->markY2 = row;
+	}
+
+	if (xPos == mark->markX2)
+	{
+		mark->markX2 = xPos + 1;
+	}
+	else if (xPos == mark->markX1)
+	{
+		mark->markX1 = xPos + 1;
+	}
+	else if (xPos != mark->markX1 && xPos != mark->markX2)
+	{
+		mark->markX1 = xPos;
+		mark->markX2 = xPos + 1;
+		mark->markY1 = row - 1;
+		mark->markY2 = row;
+	}
+
 	checkMarkLimits(inst);
+	chanRight(inst);
 	inst->uiState.updatePatternEditor = true;
 }
 
