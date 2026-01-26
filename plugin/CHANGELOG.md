@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.1.3 (Jan 27, 2026)
+
+- Fix: Closing and reopening the plugin UI does a full redraw.
+
 ## 1.1.2 (Jan 24, 2026)
 
 - Fix: Marking with alt+arrows works correctly.

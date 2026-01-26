@@ -103,6 +103,31 @@ void ft2_ui_set_screen(ft2_ui_t *ui, ft2_ui_screen screen)
 	ui->needsFullRedraw = true;
 }
 
+static void restoreEditorVisibility(ft2_instance_t *inst)
+{
+	if (!inst) return;
+
+	if (inst->uiState.sampleEditorExtShown)
+	{
+		showSampleEditorExt(inst);
+	}
+	else if (inst->uiState.sampleEditorShown)
+	{
+		showSampleEditor(inst);
+	}
+	else if (inst->uiState.instEditorShown)
+	{
+		showInstEditor(inst);
+	}
+	else
+	{
+		showPatternEditor(inst);
+	}
+
+	if (inst->uiState.instEditorExtShown)
+		showInstEditorExt(inst);
+}
+
 /* ------------------------------------------------------------------------- */
 /*                         DRAWING                                           */
 /* ------------------------------------------------------------------------- */
@@ -134,6 +159,9 @@ void ft2_ui_draw(ft2_ui_t *ui, void *inst)
 
 	if (ui->needsFullRedraw && ft2inst)
 		drawGUILayout(ft2inst, video, bmp);
+
+	if (ui->needsFullRedraw && ft2inst)
+		restoreEditorVisibility(ft2inst);
 
 	if (ui->needsFullRedraw && ft2inst && ft2inst->uiState.sampleEditorShown)
 	{
