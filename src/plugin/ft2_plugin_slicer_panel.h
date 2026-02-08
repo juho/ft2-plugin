@@ -23,6 +23,7 @@ struct ft2_bmp_t;
 /* Screen visibility */
 void showSlicerScreen(struct ft2_instance_t *inst);
 void hideSlicerScreen(struct ft2_instance_t *inst);
+void restoreSlicerWidgets(struct ft2_instance_t *inst);
 void drawSlicerScreen(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 
 /* Controls */

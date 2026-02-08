@@ -66,5 +66,6 @@ void pbSfxSetAmp(struct ft2_instance_t *inst);
 /* Screen visibility */
 void showSampleEffectsScreen(struct ft2_instance_t *inst);
 void hideSampleEffectsScreen(struct ft2_instance_t *inst);
+void restoreSampleEffectsWidgets(struct ft2_instance_t *inst);
 void drawSampleEffectsScreen(struct ft2_instance_t *inst, struct ft2_video_t *video, const struct ft2_bmp_t *bmp);
 

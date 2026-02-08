@@ -870,6 +870,40 @@ void hideSampleEffectsScreen(ft2_instance_t *inst)
 	inst->uiState.needsFullRedraw = true;
 }
 
+void restoreSampleEffectsWidgets(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return;
+	if (!inst->uiState.sampleEditorShown || !inst->uiState.sampleEditorEffectsShown) return;
+
+	ft2_widgets_t *widgets = &((ft2_ui_t *)inst->ui)->widgets;
+
+	/* Hide sample editor buttons */
+	widgets->pushButtonVisible[PB_SAMP_PNOTE_UP] = widgets->pushButtonVisible[PB_SAMP_PNOTE_DOWN] = false;
+	widgets->pushButtonVisible[PB_SAMP_STOP] = widgets->pushButtonVisible[PB_SAMP_PWAVE] = false;
+	widgets->pushButtonVisible[PB_SAMP_PRANGE] = widgets->pushButtonVisible[PB_SAMP_PDISPLAY] = false;
+	widgets->pushButtonVisible[PB_SAMP_SHOW_RANGE] = widgets->pushButtonVisible[PB_SAMP_RANGE_ALL] = false;
+	widgets->pushButtonVisible[PB_SAMP_CLR_RANGE] = widgets->pushButtonVisible[PB_SAMP_ZOOM_OUT] = false;
+	widgets->pushButtonVisible[PB_SAMP_SHOW_ALL] = widgets->pushButtonVisible[PB_SAMP_SLICER] = false;
+	widgets->pushButtonVisible[PB_SAMP_CUT] = widgets->pushButtonVisible[PB_SAMP_COPY] = false;
+	widgets->pushButtonVisible[PB_SAMP_PASTE] = widgets->pushButtonVisible[PB_SAMP_CROP] = false;
+	widgets->pushButtonVisible[PB_SAMP_VOLUME] = widgets->pushButtonVisible[PB_SAMP_EFFECTS] = false;
+
+	/* Show effects widgets */
+	smpfx_state_t *fx = SMPFX_STATE(inst);
+	widgets->checkBoxChecked[CB_SAMPFX_NORM] = fx->normalization;
+	widgets->checkBoxVisible[CB_SAMPFX_NORM] = true;
+
+	widgets->pushButtonVisible[PB_SAMPFX_CYCLES_UP] = widgets->pushButtonVisible[PB_SAMPFX_CYCLES_DOWN] = true;
+	widgets->pushButtonVisible[PB_SAMPFX_TRIANGLE] = widgets->pushButtonVisible[PB_SAMPFX_SAW] = true;
+	widgets->pushButtonVisible[PB_SAMPFX_SINE] = widgets->pushButtonVisible[PB_SAMPFX_SQUARE] = true;
+	widgets->pushButtonVisible[PB_SAMPFX_RESO_UP] = widgets->pushButtonVisible[PB_SAMPFX_RESO_DOWN] = true;
+	widgets->pushButtonVisible[PB_SAMPFX_LOWPASS] = widgets->pushButtonVisible[PB_SAMPFX_HIGHPASS] = true;
+	widgets->pushButtonVisible[PB_SAMPFX_SUB_BASS] = widgets->pushButtonVisible[PB_SAMPFX_ADD_BASS] = true;
+	widgets->pushButtonVisible[PB_SAMPFX_SUB_TREBLE] = widgets->pushButtonVisible[PB_SAMPFX_ADD_TREBLE] = true;
+	widgets->pushButtonVisible[PB_SAMPFX_SET_AMP] = widgets->pushButtonVisible[PB_SAMPFX_UNDO] = true;
+	widgets->pushButtonVisible[PB_SAMPFX_XFADE] = widgets->pushButtonVisible[PB_SAMPFX_BACK] = true;
+}
+
 /* ------------------------------------------------------------------------- */
 /*                            DRAWING                                        */
 /* ------------------------------------------------------------------------- */

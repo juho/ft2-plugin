@@ -286,6 +286,41 @@ void hideSlicerScreen(ft2_instance_t *inst)
 	inst->uiState.needsFullRedraw = true;
 }
 
+void restoreSlicerWidgets(ft2_instance_t *inst)
+{
+	if (!inst || !inst->ui) return;
+	if (!inst->uiState.sampleEditorShown || !inst->uiState.sampleEditorSlicerShown) return;
+
+	ft2_widgets_t *widgets = &FT2_UI(inst)->widgets;
+
+	/* Hide sample editor buttons */
+	widgets->pushButtonVisible[PB_SAMP_PNOTE_UP] = false;
+	widgets->pushButtonVisible[PB_SAMP_PNOTE_DOWN] = false;
+	widgets->pushButtonVisible[PB_SAMP_STOP] = false;
+	widgets->pushButtonVisible[PB_SAMP_PWAVE] = false;
+	widgets->pushButtonVisible[PB_SAMP_PRANGE] = false;
+	widgets->pushButtonVisible[PB_SAMP_PDISPLAY] = false;
+	widgets->pushButtonVisible[PB_SAMP_SHOW_RANGE] = false;
+	widgets->pushButtonVisible[PB_SAMP_RANGE_ALL] = false;
+	widgets->pushButtonVisible[PB_SAMP_CLR_RANGE] = false;
+	widgets->pushButtonVisible[PB_SAMP_ZOOM_OUT] = false;
+	widgets->pushButtonVisible[PB_SAMP_SHOW_ALL] = false;
+	widgets->pushButtonVisible[PB_SAMP_SLICER] = false;
+	widgets->pushButtonVisible[PB_SAMP_CUT] = false;
+	widgets->pushButtonVisible[PB_SAMP_COPY] = false;
+	widgets->pushButtonVisible[PB_SAMP_PASTE] = false;
+	widgets->pushButtonVisible[PB_SAMP_CROP] = false;
+	widgets->pushButtonVisible[PB_SAMP_VOLUME] = false;
+	widgets->pushButtonVisible[PB_SAMP_EFFECTS] = false;
+
+	/* Setup slicer widgets */
+	setupWidgets(inst);
+
+	/* Show radio buttons without changing selection */
+	widgets->radioButtonVisible[RB_SLICER_SAMPLES] = true;
+	widgets->radioButtonVisible[RB_SLICER_INSTRUMENTS] = true;
+}
+
 /* ------------------------------------------------------------------------- */
 /*                            DRAWING                                        */
 /* ------------------------------------------------------------------------- */

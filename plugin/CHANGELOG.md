@@ -1,5 +1,9 @@
 # Changelog for Fasttracker II Plugin
 
+## 1.1.4 (Feb 8, 2026)
+
+- Fix: Regression in clearing panels when drawing sample editor effects and slicer.
+
 ## 1.1.3 (Jan 27, 2026)
 
 - Fix: Closing and reopening the plugin UI does a full redraw.

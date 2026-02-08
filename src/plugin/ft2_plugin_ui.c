@@ -26,6 +26,7 @@
 #include "ft2_plugin_wave_panel.h"
 #include "ft2_plugin_filter_panel.h"
 #include "ft2_plugin_format_panel.h"
+#include "ft2_plugin_slicer_panel.h"
 #include "ft2_plugin_smpfx.h"
 #include "ft2_plugin_instr_ed.h"
 #include "ft2_plugin_about.h"
@@ -122,6 +123,14 @@ static void restoreEditorVisibility(ft2_instance_t *inst)
 	else
 	{
 		showPatternEditor(inst);
+	}
+
+	if (inst->uiState.sampleEditorShown)
+	{
+		if (inst->uiState.sampleEditorSlicerShown)
+			restoreSlicerWidgets(inst);
+		else if (inst->uiState.sampleEditorEffectsShown)
+			restoreSampleEffectsWidgets(inst);
 	}
 
 	if (inst->uiState.instEditorExtShown)

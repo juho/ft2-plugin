@@ -309,7 +309,7 @@ void ft2_volume_panel_hide(ft2_instance_t *inst)
 	
 	hideWidgets(inst);
 	state->active = false;
-	inst->uiState.updateSampleEditor = true;
+	ft2_sample_ed_mark_waveform_dirty(inst);
 	ft2_modal_panel_set_inactive(inst, MODAL_PANEL_VOLUME);
 }
 
