@@ -15,6 +15,13 @@ extern "C" {
 #if defined(_WIN32)
 #pragma pack(pop)
 #endif
+#ifdef __linux__
+#include <cstddef>
+#define XDG_CONFIG_HOME "XDG_CONFIG_HOME"
+#define XDG_CONFIG_HOME_DEFAULT ".config"
+#endif
+#define APPLICATION_NAME "FT2 Clone"
+#define CONFIGURATION_FOLDER_NAME APPLICATION_NAME
 
 FT2PluginProcessor::FT2PluginProcessor()
     : AudioProcessor([]()
@@ -641,12 +648,20 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 
 void FT2PluginProcessor::initAppProperties()
 {
+    juce::String folderName;
     juce::PropertiesFile::Options options;
-    options.applicationName = "FT2 Clone";
+    options.applicationName = APPLICATION_NAME;
     options.filenameSuffix = ".settings";
     options.osxLibrarySubFolder = "Application Support";
-    options.folderName = "FT2 Clone";
-    
+#ifdef __linux__
+    const char* xdgConfigHome = std::getenv(XDG_CONFIG_HOME);
+
+    folderName += xdgConfigHome ? xdgConfigHome : XDG_CONFIG_HOME_DEFAULT;
+    folderName += "/" CONFIGURATION_FOLDER_NAME;
+#else
+    folderName = CONFIGURATION_FOLDER_NAME;
+#endif
+    options.folderName = folderName;
     appProperties = std::make_unique<juce::ApplicationProperties>();
     appProperties->setStorageParameters(options);
 }
